@@ -1,0 +1,77 @@
+.shell {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+.shell-sidebar {
+  flex: none;
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid var(--color-separator);
+}
+.shell-sidebar-inner {
+  width: var(--sidebar-width);
+  height: 100%;
+}
+.shell-main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.shell-right {
+  flex: none;
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid var(--color-separator);
+}
+.shell-right-inner {
+  width: var(--rightbar-width);
+  height: 100%;
+}
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--color-scrim);
+}
+.right-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-modal);
+  width: min(var(--rightbar-width), 88vw);
+  box-shadow: var(--shadow-lg);
+}
+
+.shell.is-mobile {
+  position: relative;
+  display: block;
+}
+.mobile-layer {
+  position: absolute;
+  inset: 0;
+  background: var(--color-bg);
+}
+.mobile-layer .sidebar {
+  background: var(--color-bg-secondary);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.mobile-layer.is-detail {
+  box-shadow: var(--shadow-lg);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar {
+    background: var(--color-bg-sidebar-solid) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .editor-bar {
+    background: var(--color-bg-bar-solid) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

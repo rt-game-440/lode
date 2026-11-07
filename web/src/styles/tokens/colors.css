@@ -1,0 +1,170 @@
+/*
+ * 颜色 tokens。组件只引用这里的变量，不写字面量颜色。
+ * 亮/暗色默认跟随系统；html[data-theme] 可手动覆盖。
+ * 文字色按 WCAG AA（≥ 4.5:1）在对应背景上校验过。
+ */
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* 背景层级 */
+  --color-bg: #ffffff; /* 编辑区 */
+  --color-bg-secondary: #f5f5f7; /* 窗口底色 */
+  --color-bg-tertiary: #ebebf0;
+  --color-bg-elevated: #ffffff; /* 弹出层、对话框 */
+  --color-bg-sidebar: rgba(242, 242, 247, 0.78); /* 半透明材质 */
+  --color-bg-sidebar-solid: #f2f2f7; /* 不支持 backdrop-filter 时 */
+  --color-bg-bar: rgba(255, 255, 255, 0.72);
+  --color-bg-bar-solid: #ffffff;
+
+  /* 文字 */
+  --color-label: #1d1d1f;
+  --color-label-secondary: rgba(60, 60, 67, 0.82);
+  --color-label-tertiary: rgba(60, 60, 67, 0.72);
+  --color-label-quaternary: rgba(60, 60, 67, 0.35); /* 仅装饰，不承载信息 */
+
+  /* 分隔与填充 */
+  --color-separator: rgba(60, 60, 67, 0.16);
+  --color-separator-strong: rgba(60, 60, 67, 0.29);
+  --color-fill: rgba(120, 120, 128, 0.1); /* hover */
+  --color-fill-strong: rgba(120, 120, 128, 0.18); /* 按下、选中 */
+  --color-fill-selected: rgba(0, 113, 227, 0.14);
+
+  /* 强调色（Apple 蓝的 AA 变体） */
+  --color-accent: #0066cc; /* 文字、图标、焦点环 */
+  --color-accent-fill: #0071e3; /* 按钮底色（白字 4.6:1） */
+  --color-accent-fill-pressed: #0062c4;
+  --color-on-accent: #ffffff;
+  --color-focus-ring: rgba(0, 113, 227, 0.55);
+  --color-text-selection: rgba(0, 113, 227, 0.2);
+
+  /* 状态 */
+  --color-danger: #c4001a;
+  --color-success: #1e7a35;
+  --color-warning: #a14500;
+  --color-search-highlight: rgba(255, 204, 0, 0.5);
+
+  /* 遮罩与阴影色 */
+  --color-scrim: rgba(0, 0, 0, 0.22);
+  --color-shadow: rgba(0, 0, 0, 0.12);
+  --color-shadow-strong: rgba(0, 0, 0, 0.22);
+  --color-edge-highlight: rgba(255, 255, 255, 0.6); /* 材质顶边受光 */
+
+  /* 编辑器语法色 */
+  --color-code-bg: rgba(120, 120, 128, 0.1);
+  --color-code-keyword: #9b2393;
+  --color-code-string: #c41a16;
+  --color-code-number: #1c00cf;
+  --color-code-comment: #5d6c79;
+  --color-code-function: #326d74;
+  --color-code-type: #0b4f79;
+  --color-code-meta: #643820;
+  --color-md-mark: rgba(60, 60, 67, 0.55); /* 光标所在行显示的 Markdown 标记 */
+  --color-md-quote-bar: rgba(60, 60, 67, 0.25);
+}
+
+/* 跟随系统暗色（未手动选择亮色时） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --color-bg: #1c1c1e;
+    --color-bg-secondary: #141416;
+    --color-bg-tertiary: #2c2c2e;
+    --color-bg-elevated: #2c2c2e;
+    --color-bg-sidebar: rgba(36, 36, 38, 0.78);
+    --color-bg-sidebar-solid: #242426;
+    --color-bg-bar: rgba(28, 28, 30, 0.72);
+    --color-bg-bar-solid: #1c1c1e;
+    --color-label: #f5f5f7;
+    --color-label-secondary: rgba(235, 235, 245, 0.74);
+    --color-label-tertiary: rgba(235, 235, 245, 0.6);
+    --color-label-quaternary: rgba(235, 235, 245, 0.3);
+    --color-separator: rgba(84, 84, 88, 0.55);
+    --color-separator-strong: rgba(84, 84, 88, 0.85);
+    --color-fill: rgba(120, 120, 128, 0.22);
+    --color-fill-strong: rgba(120, 120, 128, 0.34);
+    --color-fill-selected: rgba(10, 132, 255, 0.28);
+    --color-accent: #4da3ff;
+    --color-accent-fill: #0071e3;
+    --color-accent-fill-pressed: #0062c4;
+    --color-on-accent: #ffffff;
+    --color-focus-ring: rgba(77, 163, 255, 0.6);
+    --color-text-selection: rgba(77, 163, 255, 0.3);
+    --color-danger: #ff6961;
+    --color-success: #4cd964;
+    --color-warning: #ffb340;
+    --color-search-highlight: rgba(255, 214, 10, 0.4);
+    --color-scrim: rgba(0, 0, 0, 0.45);
+    --color-shadow: rgba(0, 0, 0, 0.4);
+    --color-shadow-strong: rgba(0, 0, 0, 0.6);
+    --color-edge-highlight: rgba(255, 255, 255, 0.08);
+    --color-code-bg: rgba(120, 120, 128, 0.2);
+    --color-code-keyword: #ff7ab2;
+    --color-code-string: #ff8170;
+    --color-code-number: #d9c97c;
+    --color-code-comment: #8c9aa6;
+    --color-code-function: #78c2b3;
+    --color-code-type: #6bdfff;
+    --color-code-meta: #fd8f3f;
+    --color-md-mark: rgba(235, 235, 245, 0.5);
+    --color-md-quote-bar: rgba(235, 235, 245, 0.25);
+  }
+}
+
+/* 手动选择暗色 */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-bg: #1c1c1e;
+  --color-bg-secondary: #141416;
+  --color-bg-tertiary: #2c2c2e;
+  --color-bg-elevated: #2c2c2e;
+  --color-bg-sidebar: rgba(36, 36, 38, 0.78);
+  --color-bg-sidebar-solid: #242426;
+  --color-bg-bar: rgba(28, 28, 30, 0.72);
+  --color-bg-bar-solid: #1c1c1e;
+  --color-label: #f5f5f7;
+  --color-label-secondary: rgba(235, 235, 245, 0.74);
+  --color-label-tertiary: rgba(235, 235, 245, 0.6);
+  --color-label-quaternary: rgba(235, 235, 245, 0.3);
+  --color-separator: rgba(84, 84, 88, 0.55);
+  --color-separator-strong: rgba(84, 84, 88, 0.85);
+  --color-fill: rgba(120, 120, 128, 0.22);
+  --color-fill-strong: rgba(120, 120, 128, 0.34);
+  --color-fill-selected: rgba(10, 132, 255, 0.28);
+  --color-accent: #4da3ff;
+  --color-accent-fill: #0071e3;
+  --color-accent-fill-pressed: #0062c4;
+  --color-on-accent: #ffffff;
+  --color-focus-ring: rgba(77, 163, 255, 0.6);
+  --color-text-selection: rgba(77, 163, 255, 0.3);
+  --color-danger: #ff6961;
+  --color-success: #4cd964;
+  --color-warning: #ffb340;
+  --color-search-highlight: rgba(255, 214, 10, 0.4);
+  --color-scrim: rgba(0, 0, 0, 0.45);
+  --color-shadow: rgba(0, 0, 0, 0.4);
+  --color-shadow-strong: rgba(0, 0, 0, 0.6);
+  --color-edge-highlight: rgba(255, 255, 255, 0.08);
+  --color-code-bg: rgba(120, 120, 128, 0.2);
+  --color-code-keyword: #ff7ab2;
+  --color-code-string: #ff8170;
+  --color-code-number: #d9c97c;
+  --color-code-comment: #8c9aa6;
+  --color-code-function: #78c2b3;
+  --color-code-type: #6bdfff;
+  --color-code-meta: #fd8f3f;
+  --color-md-mark: rgba(235, 235, 245, 0.5);
+  --color-md-quote-bar: rgba(235, 235, 245, 0.25);
+}
+
+/* 提高对比度 */
+@media (prefers-contrast: more) {
+  :root {
+    --color-label-secondary: var(--color-label);
+    --color-label-tertiary: var(--color-label);
+    --color-separator: var(--color-separator-strong);
+    --color-bg-sidebar: var(--color-bg-sidebar-solid);
+    --color-bg-bar: var(--color-bg-bar-solid);
+  }
+}
