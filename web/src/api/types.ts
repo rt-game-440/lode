@@ -14,6 +14,8 @@ export interface Note {
 
 export interface NoteContent extends Note {
   content: string
+  /** 写入基于旧版本、服务器做了三方合并时为 true，content 是合并后的全文 */
+  merged?: boolean
 }
 
 export interface Tree {

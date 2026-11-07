@@ -370,6 +370,7 @@ func (s *Service) NoteTags(ctx context.Context, id string) ([]string, error) {
 }
 
 // Changes 返回 seq 大于 since 的变更（最多 limit 条）以及当前最新 seq。
+// since 早于已清理的范围或晚于最新 seq（数据库被重建）时返回 ErrGone。
 func (s *Service) Changes(ctx context.Context, since int64, limit int) ([]Change, int64, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
@@ -377,6 +378,13 @@ func (s *Service) Changes(ctx context.Context, since int64, limit int) ([]Change
 	latest, err := s.LatestSeq(ctx)
 	if err != nil {
 		return nil, 0, err
+	}
+	floor, err := s.changesFloor(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if since < floor || since > latest {
+		return nil, latest, ErrGone
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT seq, note_id, type, path, rev, device_id, device_name, created_at FROM changes WHERE seq > ? ORDER BY seq LIMIT ?`, since, limit)
 	if err != nil {

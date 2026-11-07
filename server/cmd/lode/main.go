@@ -83,6 +83,7 @@ func serve(cfg config.Config, log *slog.Logger) error {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	httpSrv.RegisterOnShutdown(srv.Close) // 让 WebSocket 连接随关闭退出
 
 	// 后台任务：先建立文件监听，再全量对账（中间的外部修改由监听事件补上）。HTTP 服务立即可用。
 	// 退出时先停掉后台任务并等它们结束，再关闭数据库（defer 逆序执行）。
@@ -119,14 +120,28 @@ func serve(cfg config.Config, log *slog.Logger) error {
 		debug.FreeOSMemory()
 	})
 	bg.Go(func() {
-		t := time.NewTicker(6 * time.Hour)
-		defer t.Stop()
+		session := time.NewTicker(6 * time.Hour)
+		defer session.Stop()
+		history := time.NewTicker(time.Hour)
+		defer history.Stop()
+		prune := func() {
+			if st, err := svc.PruneHistory(bgCtx); err != nil {
+				if bgCtx.Err() == nil {
+					log.Error("清理历史版本失败", "err", err)
+				}
+			} else if st.Versions+st.Changes > 0 {
+				log.Info("已清理历史", "versions", st.Versions, "changes", st.Changes)
+			}
+		}
+		prune()
 		for {
 			select {
 			case <-bgCtx.Done():
 				return
-			case <-t.C:
+			case <-session.C:
 				_ = authSvc.PurgeExpired(bgCtx)
+			case <-history.C:
+				prune()
 			}
 		}
 	})

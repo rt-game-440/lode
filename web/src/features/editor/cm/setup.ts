@@ -64,25 +64,3 @@ export function editorExtensions(env: EditorEnv): Extension[] {
 
 /** 标记来自服务器的内容替换，不触发自动保存。 */
 export const remoteSync = Annotation.define<boolean>()
-
-/**
- * 把编辑器内容替换为 next，只改动首尾相同部分之间的区域，
- * 让光标和滚动位置尽量保持不动。
- */
-export function replaceDoc(view: EditorView, next: string) {
-  const cur = view.state.doc.toString()
-  if (cur === next) return
-  let start = 0
-  const min = Math.min(cur.length, next.length)
-  while (start < min && cur.charCodeAt(start) === next.charCodeAt(start)) start++
-  let endCur = cur.length
-  let endNext = next.length
-  while (endCur > start && endNext > start && cur.charCodeAt(endCur - 1) === next.charCodeAt(endNext - 1)) {
-    endCur--
-    endNext--
-  }
-  view.dispatch({
-    changes: { from: start, to: endCur, insert: next.slice(start, endNext) },
-    annotations: [remoteSync.of(true)],
-  })
-}

@@ -1,16 +1,19 @@
 #!/usr/bin/env sh
 # 测量空闲内存：生成 N 篇笔记 → 首次启动建立索引 → 重启并等待对账完成 → 空闲若干秒后读取常驻内存。
-# 验收标准：1000 篇笔记时空闲 RSS ≤ 50MB。需先运行 scripts/build.sh。
+# 验收标准：1000 篇笔记、保持 2 个 WebSocket 连接（环境变量 WS）时空闲 RSS ≤ 50MB。需先运行 scripts/build.sh。
 set -eu
 N=${N:-1000}
 PORT=${PORT:-18788}
 IDLE=${IDLE:-15}
+WS=${WS:-2}
 root=$(cd "$(dirname "$0")/.." && pwd)
 bin="$root/bin/lode$(go env GOEXE)"
 [ -x "$bin" ] || { echo "找不到 $bin，请先运行 scripts/build.sh"; exit 1; }
 data="$root/data-rss"
 rm -rf "$data"
 (cd "$root/server" && go run ./cmd/gennotes -dir "$data/vault" -n "$N") >&2
+probe="$data/wsprobe$(go env GOEXE)"
+(cd "$root/server" && go build -o "$probe" ./cmd/wsprobe)
 
 export LODE_DATA_DIR="$data" LODE_ADDR="127.0.0.1:$PORT" LODE_LOG_LEVEL=warn
 base="http://127.0.0.1:$PORT"
@@ -19,6 +22,9 @@ jar="$data/cookies.txt"
 rnd=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 login="$data/login.json"
 printf '{"%s":"%s"}' password "$rnd" >"$login"
+
+# 中途失败也要结束启动过的进程，避免占住端口
+trap 'kill ${probe_pid:-} ${pid:-} 2>/dev/null || true' EXIT
 
 start() {
   "$bin" serve &
@@ -56,10 +62,20 @@ kill "$pid"; wait "$pid" 2>/dev/null || true
 start
 curl -fs -c "$jar" -H 'Content-Type: application/json' -d "@$login" "$base/api/auth/login" >/dev/null
 wait_indexed
+# 保持 $WS 个 WebSocket 连接，模拟在线设备
+"$probe" -base "$base" -login "$login" -n "$WS" >"$data/probe.log" &
+probe_pid=$!
+i=0
+until grep -q "WebSocket" "$data/probe.log" 2>/dev/null; do
+  i=$((i + 1)); [ $i -gt 100 ] && { echo "WebSocket 连接失败"; exit 1; }
+  sleep 0.1
+done
 sleep "$IDLE"
 rss=$(rss_mb "$pid")
+kill "$probe_pid" 2>/dev/null || true
 kill "$pid"; wait "$pid" 2>/dev/null || true
 
 echo "笔记数：$N"
+echo "WebSocket 连接：$WS"
 echo "空闲 ${IDLE}s 后 RSS：$rss MB"
 if awk "BEGIN { exit !($rss <= 50) }"; then echo "结果：通过（≤ 50MB）"; else echo "结果：超出 50MB"; exit 1; fi

@@ -4,6 +4,7 @@ import { DialogHost, MenuHost, ToastHost } from '../../components/overlays'
 import { useEditor } from '../../stores/editor'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { sync } from '../../sync/engine'
 import { fadeTransition, springPanel } from '../../styles/tokens/motion'
 import { errorMessage, newNote } from '../actions'
 import { EditorPane } from '../editor/EditorPane'
@@ -12,9 +13,6 @@ import { Sidebar } from '../sidebar/Sidebar'
 import { QuickSwitcher } from '../switcher/QuickSwitcher'
 import { HomeView, TagView, TrashView } from '../views/Views'
 import './shell.css'
-
-/** 没有 WebSocket 之前（阶段 2 引入），用轮询 /api/changes 感知外部修改。 */
-const POLL_MS = 1000
 
 // 与 tokens 中 --sidebar-width / --rightbar-width 一致
 const SIDEBAR_W = 264
@@ -31,37 +29,11 @@ function useMedia(query: string): boolean {
   )
 }
 
-function usePolling() {
+/** 实时同步：连接 WebSocket、重放离线写队列（替代阶段 1 的轮询）。 */
+function useRealtimeSync() {
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null
-    let stopped = false
-    const tick = async () => {
-      timer = null
-      if (document.visibilityState === 'visible') {
-        try {
-          const changes = await useVault.getState().poll()
-          const current = useEditor.getState().noteId
-          if (current && changes.some((c) => c.id === current)) await useEditor.getState().reload()
-          if (changes.length) void useVault.getState().refreshTags()
-        } catch {
-          /* 网络错误时下次再试 */
-        }
-      }
-      if (!stopped) timer = setTimeout(tick, POLL_MS)
-    }
-    timer = setTimeout(tick, POLL_MS)
-    const onVisible = () => {
-      if (document.visibilityState === 'visible' && timer) {
-        clearTimeout(timer)
-        void tick()
-      }
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => {
-      stopped = true
-      if (timer) clearTimeout(timer)
-      document.removeEventListener('visibilitychange', onVisible)
-    }
+    sync.start()
+    return () => sync.stop()
   }, [])
 }
 
@@ -144,7 +116,7 @@ export function AppShell() {
     if (route.view !== 'note') useEditor.getState().close()
   }, [route])
 
-  usePolling()
+  useRealtimeSync()
   useShortcuts()
 
   const noteId = route.view === 'note' ? route.id : null

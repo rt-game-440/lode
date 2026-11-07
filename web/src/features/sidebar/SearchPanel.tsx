@@ -31,7 +31,7 @@ export function SearchPanel({ autoFocus }: { autoFocus?: boolean }) {
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const seq = useVault((s) => s.seq)
+  const version = useVault((s) => s.version)
   const route = useUI((s) => s.route)
   const input = useRef<HTMLInputElement>(null)
 
@@ -66,7 +66,7 @@ export function SearchPanel({ autoFocus }: { autoFocus?: boolean }) {
       cancelled = true
       clearTimeout(t)
     }
-  }, [query, seq])
+  }, [query, version])
 
   const activeId = route.view === 'note' ? route.id : null
 

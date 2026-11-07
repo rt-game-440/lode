@@ -15,6 +15,8 @@ export interface Toast {
   message: string
   tone?: 'info' | 'error' | 'success'
   action?: { label: string; run: () => void }
+  /** 不自动消失（需要用户处理或手动关闭） */
+  persistent?: boolean
 }
 
 function parseRoute(pathname: string): Route {
@@ -142,7 +144,7 @@ export const useUI = create<UIState>((set, get) => {
     toast: (t) => {
       const id = ++toastSeq
       set((s) => ({ toasts: [...s.toasts.slice(-2), { ...t, id }] }))
-      setTimeout(() => get().dismissToast(id), t.action ? 6000 : 3500)
+      if (!t.persistent) setTimeout(() => get().dismissToast(id), t.action ? 6000 : 3500)
     },
     dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })),
   }

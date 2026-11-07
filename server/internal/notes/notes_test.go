@@ -17,6 +17,7 @@ type fixture struct {
 	svc  *Service
 	root string // vault 根目录
 	ctx  context.Context
+	now  time.Time // 非零时作为服务的当前时间
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -32,8 +33,14 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := New(Options{DB: d, Vault: v, TrashDir: filepath.Join(dir, "trash")})
-	return &fixture{svc: svc, root: v.Root(), ctx: ctx}
+	f := &fixture{root: v.Root(), ctx: ctx}
+	f.svc = New(Options{DB: d, Vault: v, TrashDir: filepath.Join(dir, "trash"), Now: func() time.Time {
+		if f.now.IsZero() {
+			return time.Now()
+		}
+		return f.now
+	}})
+	return f
 }
 
 func (f *fixture) create(t *testing.T, p, content string) NoteContent {

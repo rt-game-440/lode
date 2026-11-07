@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rt-game-440/lode/server/internal/auth"
@@ -33,6 +34,11 @@ type Server struct {
 	// TrustedProxies 是可信的反向代理地址。只有直连地址在其中时，才采用
 	// X-Forwarded-For（登录限流按真实客户端计数）和 X-Forwarded-Proto（决定 cookie 是否加 Secure）。
 	TrustedProxies []netip.Prefix
+	// WSPingInterval 是 WebSocket 心跳间隔，默认 30 秒。
+	WSPingInterval time.Duration
+
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Handler 构建完整的 HTTP 处理链。
@@ -43,6 +49,10 @@ func (s *Server) Handler() http.Handler {
 	if s.MaxUploadBytes == 0 {
 		s.MaxUploadBytes = 20 << 20
 	}
+	if s.WSPingInterval == 0 {
+		s.WSPingInterval = 30 * time.Second
+	}
+	s.done = make(chan struct{})
 	mux := http.NewServeMux()
 
 	// 公开接口
@@ -78,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("POST /api/attachments", s.uploadAttachment)
 	p.HandleFunc("GET /api/files/{path...}", s.serveFile)
 	p.HandleFunc("GET /api/changes", s.changes)
+	p.HandleFunc("GET /api/ws", s.ws)
 	mux.Handle("/api/", s.requireSession(p))
 
 	if s.Web != nil {
@@ -204,7 +215,13 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var pe *notes.PatchError
 	switch {
 	case errors.As(err, &ce):
-		writeError(w, http.StatusConflict, "conflict", ce.Error(), map[string]any{"current_rev": ce.CurrentRev})
+		extra := map[string]any{"current_rev": ce.CurrentRev}
+		if ce.CopyPath != "" {
+			extra["conflict_id"], extra["conflict_path"] = ce.CopyID, ce.CopyPath
+		}
+		writeError(w, http.StatusConflict, "conflict", ce.Error(), extra)
+	case errors.Is(err, notes.ErrGone):
+		writeError(w, http.StatusGone, "gone", "变更记录已被清理，请全量重新加载", nil)
 	case errors.As(err, &pe):
 		writeError(w, http.StatusUnprocessableEntity, "patch_failed", pe.Error(), map[string]any{"index": pe.Index, "matches": pe.Matches})
 	case errors.Is(err, notes.ErrNotFound):

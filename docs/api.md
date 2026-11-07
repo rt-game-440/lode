@@ -1,6 +1,6 @@
 # Lode HTTP API
 
-阶段 1 的 REST 接口。所有请求和响应体都是 UTF-8 JSON（附件上传和文件下载除外），时间字段都是 unix 毫秒。
+REST 接口（阶段 1）和实时同步接口（阶段 2）。所有请求和响应体都是 UTF-8 JSON（附件上传和文件下载除外），时间字段都是 unix 毫秒。
 
 ## 约定
 
@@ -9,13 +9,16 @@
 - **设备标识**（可选）：请求头 `X-Device-Id`（≤64 字符）和 `X-Device-Name`（URL 编码，≤64 字符），写入变更事件的 `device_id` / `device_name`。
 - **符号链接**：vault 内不跟随符号链接和目录联接，经过它们的路径返回 `invalid_path`。
 - **路径**：相对 vault 根目录，用 `/` 分隔，笔记以 `.md` 结尾。`..`、绝对路径或盘符、以 `.` 开头的段、控制字符和 `<>"|?*`、以空格结尾的名称都会被拒绝（`invalid_path`）。
-- **乐观并发**：修改正文必须带 `base_rev`，与服务器当前 `rev` 不一致时返回 `409 conflict` 和 `current_rev`。
+- **乐观并发与三方合并**（阶段 2 起）：修改正文必须带 `base_rev`。与服务器当前 `rev` 一致时直接写入；不一致时服务器从历史版本表取出 `base_rev` 那一版，与当前版本、请求内容做按行三方合并：
+  - 两边改动不重叠：写入合并结果，返回 `200`，响应带 `"merged": true`，`content` 是合并后的全文，客户端用它替换本地内容；
+  - 两边改动重叠，或 `base_rev` 那一版已被清理：服务器版本不变，请求内容另存为冲突副本 `名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md`（与原笔记同目录，设备名取 `X-Device-Name`，缺省为“未知设备”），返回 `409 conflict`，带 `current_rev`、`conflict_id`、`conflict_path`。
+  - 阶段 1 中 `base_rev` 过期一律返回 409；阶段 2 起只有无法自动合并时才返回 409，且 409 意味着请求内容已经保存在冲突副本里，客户端不需要重试。
 - **请求体上限**：JSON 32 MB；附件 20 MB。
 
 ### 错误格式
 
 ```json
-{ "code": "conflict", "message": "版本冲突：当前 rev 为 7", "current_rev": 7 }
+{ "code": "conflict", "message": "版本冲突：当前 rev 为 7", "current_rev": 7, "conflict_id": "…", "conflict_path": "日记/a.conflict-Pixel 手机-20261107-163005.md" }
 ```
 
 | HTTP | code | 说明 | 附加字段 |
@@ -26,10 +29,11 @@
 | 401 | `unauthorized` | 未登录或会话过期 | |
 | 401 | `wrong_password` | 密码错误 | |
 | 404 | `not_found` | 笔记、文件夹、回收站条目或文件不存在 | |
-| 409 | `conflict` | `base_rev` 过期 | `current_rev` |
+| 409 | `conflict` | `base_rev` 过期且无法自动合并，请求内容已另存为冲突副本（PATCH 在 base 版本缺失时不生成副本） | `current_rev`、`conflict_id`、`conflict_path` |
 | 409 | `exists` | 目标路径已被占用 | |
 | 409 | `already_initialized` | 密码已经设置过 | |
 | 409 | `not_initialized` | 还没设置密码就尝试登录 | |
+| 410 | `gone` | `/api/changes` 的 `since` 早于已清理的范围（或大于最新序号），需要全量重拉 `/api/tree` | |
 | 422 | `patch_failed` | patch 的某处 `old` 没有唯一匹配 | `index`（从 0 开始）、`matches` |
 | 429 | `rate_limited` | 同一 IP 连续 5 次密码错误后锁定 | `retry_after`（秒），并带 `Retry-After` 头 |
 | 500 | `internal` | 服务器内部错误（详情只写服务器日志） | |
@@ -49,7 +53,10 @@ type Note = {
   created_at: number
   updated_at: number
 }
-type NoteContent = Note & { content: string }
+type NoteContent = Note & {
+  content: string
+  merged?: boolean    // 仅写入响应：服务器做了三方合并
+}
 type TrashItem = { id: string; path: string; title: string; deleted_at: number }
 type Change = {
   seq: number
@@ -84,8 +91,8 @@ type Change = {
 | POST | `/api/notes` | `{"path":"a/b.md","content":"…","auto_rename":false}` | `201 NoteContent`；`auto_rename=true` 时路径被占用会自动加序号（如 `b 1.md`）；否则 `409 exists` |
 | GET | `/api/notes/{id}` | | `200 NoteContent` |
 | GET | `/api/notes/by-path?path=` | | `200 NoteContent` |
-| PUT | `/api/notes/{id}` | `{"base_rev":3,"content":"…"}` | `200 NoteContent`；`409 conflict` |
-| PATCH | `/api/notes/{id}` | `{"base_rev":3,"edits":[{"old":"…","new":"…"}]}` | `200 NoteContent`；`422 patch_failed`；`409 conflict` |
+| PUT | `/api/notes/{id}` | `{"base_rev":3,"content":"…"}` | `200 NoteContent`（合并时带 `merged`）；`409 conflict`（已生成冲突副本） |
+| PATCH | `/api/notes/{id}` | `{"base_rev":3,"edits":[{"old":"…","new":"…"}]}` | `200 NoteContent`；`422 patch_failed`；`409 conflict`。`base_rev` 过期时把 edits 应用到 base 版本再与当前版本三方合并 |
 | DELETE | `/api/notes/{id}` | | `200 TrashItem`（移到回收站） |
 | POST | `/api/notes/{id}/move` | `{"path":"新/路径.md"}` | `200 {"note":Note,"updated":Note[]}`；`updated` 是因改写 `[[链接]]` 而被修改的其他笔记 |
 | GET | `/api/notes/{id}/backlinks` | | `200 {"backlinks":[{"id","path","title","lines":[{"line":number,"text":string}]}]}` |
@@ -137,6 +144,31 @@ PATCH 的 `edits` 按顺序应用，每处 `old` 必须在当时的正文里恰�
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
-| GET | `/api/changes?since=&limit=` | `since` 上次拿到的 `seq`；`limit` 默认且最大 1000 | `200 {"changes":Change[],"seq":number}` |
+| GET | `/api/changes?since=&limit=` | `since` 上次拿到的 `seq`；`limit` 默认且最大 1000 | `200 {"changes":Change[],"seq":number}`；`410 gone` |
+| GET | `/api/ws` | WebSocket 升级（会话 cookie 鉴权，校验 Origin 与 Host 一致） | 见下文 |
 
-所有写入（API、外部编辑器、文件监听对账）都会产生变更事件。阶段 1 的前端每秒轮询一次；阶段 2 改为 WebSocket 推送，此接口保留用于断线补齐。
+所有写入（API、外部编辑器、文件监听对账，以及之后的 MCP 和 Agent 写入）都会产生变更事件。
+
+- `seq` 单调递增；返回的 `seq` 是当前最新序号。一页拿满 `limit` 条时用最后一条的 `seq` 继续取。
+- 变更事件保留 30 天，后台每小时清理一次；`since` 早于已清理的范围（或大于最新序号，例如服务器数据被重置）时返回 `410 gone`，客户端应全量重拉 `/api/tree`，并保留本地尚未同步的写入，之后照常重放。
+- 历史版本：每篇笔记保留最近 50 版；超过 30 天的版本只保留最新一版。
+
+### WebSocket `/api/ws`
+
+服务器只推送变更通知，不推正文，客户端按需拉取。消息都是 JSON 文本帧：
+
+```ts
+// 连接建立后第一条
+{ type: 'hello', seq: number }          // seq 为服务器当前最新序号
+// 约每 30 秒一次的心跳
+{ type: 'ping', seq: number }
+// 每次变更（字段与 REST 的 Change 相同，蛇形命名）
+{ seq, type: 'upsert' | 'move' | 'delete', id, path, rev, device_id, device_name, created_at }
+```
+
+客户端约定（`web/src/sync/`）：
+
+- 收到任何消息时，若 `seq` 大于本地已同步到的序号，就用 `/api/changes?since=` 补齐；推送的变更本身也走同一个补齐流程，保证不漏不重。
+- 超过 75 秒没有收到任何消息视为断线，按 1 秒起、最长 30 秒的指数退避重连；重连成功后先补齐再重放写队列。
+- 服务器关闭时以 `1001 going away` 关闭连接。
+

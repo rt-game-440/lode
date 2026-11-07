@@ -1,19 +1,21 @@
 import { create } from 'zustand'
 import { api } from '../api/client'
 import type { Change, MoveResult, Note, TagCount } from '../api/types'
-import { deviceId } from '../lib/device'
 import { dirname, join } from '../lib/paths'
+import { sync } from '../sync/engine'
 import { useEditor } from './editor'
 
 /**
- * 笔记树与所有写操作的入口。编辑器和文件树都通过这里读写笔记，
- * 阶段 2 会在这一层接入同步引擎（离线队列、WebSocket）。
+ * 笔记树。所有读写都经过同步引擎（sync），这里只维护界面要用的列表。
  */
 interface VaultState {
   loaded: boolean
+  /** 当前显示的是离线缓存 */
+  fromCache: boolean
+  /** 笔记内容或结构每变化一次加一，供反链、搜索等派生数据刷新 */
+  version: number
   folders: string[]
   notes: Record<string, Note>
-  seq: number
   tags: TagCount[]
 
   load: () => Promise<void>
@@ -28,27 +30,29 @@ interface VaultState {
   createFolder: (path: string) => Promise<void>
   moveFolder: (from: string, to: string) => Promise<void>
   deleteFolder: (path: string) => Promise<number>
-
-  /** 拉取 seq 之后的变更；有其他来源的变更时刷新树，并返回这些变更。 */
-  poll: () => Promise<Change[]>
 }
 
 export const useVault = create<VaultState>((set, get) => ({
   loaded: false,
+  fromCache: false,
+  version: 0,
   folders: [],
   notes: {},
-  seq: 0,
   tags: [],
 
   load: async () => {
-    const t = await api.tree()
+    const t = await sync.loadTree()
     const notes: Record<string, Note> = {}
     for (const n of t.notes) notes[n.id] = n
-    set({ loaded: true, folders: t.folders, notes, seq: Math.max(get().seq, t.seq) })
-    void get().refreshTags()
+    set((s) => ({ loaded: true, fromCache: t.fromCache, folders: t.folders, notes, version: s.version + 1 }))
+    if (!t.fromCache) void get().refreshTags()
   },
 
-  upsert: (n) => set((s) => ({ notes: { ...s.notes, [n.id]: n } })),
+  upsert: (n) => {
+    // 只保留元数据，不把正文放进列表
+    const { id, path, title, rev, hash, size, mtime, created_at, updated_at } = n
+    set((s) => ({ notes: { ...s.notes, [id]: { id, path, title, rev, hash, size, mtime, created_at, updated_at } } }))
+  },
   remove: (id) =>
     set((s) => {
       const notes = { ...s.notes }
@@ -65,13 +69,13 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   createNote: async (dir, name = '未命名') => {
-    const n = await api.createNote(join(dir, `${name}.md`), '', true)
+    const n = await sync.createNote(join(dir, `${name}.md`), '', true)
     get().upsert(n)
     return n
   },
 
   moveNote: async (id, newPath) => {
-    const res = await api.moveNote(id, newPath)
+    const res = await sync.moveNote(id, newPath)
     get().upsert(res.note)
     for (const u of res.updated) get().upsert(u)
     await useEditor.getState().syncServerNotes([res.note, ...res.updated])
@@ -81,47 +85,33 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   deleteNote: async (id) => {
-    await api.deleteNote(id)
+    await sync.deleteNote(id)
     get().remove(id)
     void get().refreshTags()
   },
 
   restoreNote: async (id) => {
-    const n = await api.restore(id)
+    const n = await sync.restoreNote(id)
     get().upsert(n)
     void get().refreshTags()
     return n
   },
 
   createFolder: async (path) => {
-    await api.createFolder(path)
+    await sync.createFolder(path)
     await get().load()
   },
 
   moveFolder: async (from, to) => {
-    const res = await api.moveFolder(from, to)
+    const res = await sync.moveFolder(from, to)
     await get().load()
     await useEditor.getState().syncServerNotes(res.updated)
   },
 
   deleteFolder: async (path) => {
-    const r = await api.deleteFolder(path)
+    const r = await sync.deleteFolder(path)
     await get().load()
     return r.trashed
-  },
-
-  poll: async () => {
-    const { changes, seq } = await api.changes(get().seq)
-    if (!changes.length) {
-      if (seq > get().seq) set({ seq })
-      return []
-    }
-    const me = deviceId()
-    const foreign = changes.filter((c) => c.device_id !== me)
-    // 先刷新树，成功后再推进 seq；刷新失败时下次轮询会重新拉到这些变更
-    if (foreign.length) await get().load()
-    set({ seq: Math.max(get().seq, seq, changes[changes.length - 1].seq) })
-    return foreign
   },
 }))
 
@@ -131,3 +121,61 @@ export function findByPath(notes: Record<string, Note>, path: string): Note | un
   for (const n of Object.values(notes)) if (n.path.toLowerCase() === lower) return n
   return undefined
 }
+
+// ---- 与同步引擎的衔接 ----
+
+/** 本机已经知道这条变更（自己写入的回声，或已经载入过的版本）。 */
+sync.isKnown = (c: Change) => {
+  const n = useVault.getState().notes[c.id]
+  if (c.type === 'delete') return !n
+  return !!n && n.rev >= c.rev && n.path === c.path
+}
+
+let changeTimer: ReturnType<typeof setTimeout> | null = null
+/** 笔记内容有变化：稍后刷新标签和依赖内容的派生数据（反链、搜索结果等） */
+const contentChanged = () => {
+  if (changeTimer) clearTimeout(changeTimer)
+  changeTimer = setTimeout(() => {
+    useVault.setState((s) => ({ version: s.version + 1 }))
+    void useVault.getState().refreshTags()
+  }, 300)
+}
+
+sync.on('remote', async (changes) => {
+  const v = useVault.getState()
+  // 只是已知笔记的正文更新时直接改 rev；新建、移动、删除重拉整棵树（文件夹也可能变化）
+  const structural = changes.some((c) => c.type !== 'upsert' || !v.notes[c.id] || v.notes[c.id].path !== c.path)
+  if (structural) {
+    await v.load().catch(() => {})
+  } else {
+    for (const c of changes) {
+      const n = useVault.getState().notes[c.id]
+      if (n && c.rev > n.rev) v.upsert({ ...n, rev: c.rev, updated_at: c.created_at })
+    }
+  }
+  contentChanged()
+})
+
+sync.on('gone', () => useVault.getState().load().catch(() => {}))
+
+sync.on('applied', ({ result }) => {
+  useVault.getState().upsert(result)
+  contentChanged()
+})
+
+sync.on('recovered', ({ id, note }) => {
+  useVault.getState().remove(id)
+  useVault.getState().upsert(note)
+  contentChanged()
+})
+
+// 笔记树变化后更新离线缓存
+let cacheTimer: ReturnType<typeof setTimeout> | null = null
+useVault.subscribe((s, prev) => {
+  if (!s.loaded || s.fromCache || (s.notes === prev.notes && s.folders === prev.folders)) return
+  if (cacheTimer) clearTimeout(cacheTimer)
+  cacheTimer = setTimeout(() => {
+    const { folders, notes } = useVault.getState()
+    sync.cacheTree(folders, Object.values(notes))
+  }, 500)
+})

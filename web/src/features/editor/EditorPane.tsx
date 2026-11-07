@@ -1,19 +1,20 @@
-import { EditorState } from '@codemirror/state'
+import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { ArrowLeft, Ellipsis, FileText, PanelLeft, PanelRight, Pencil, RotateCcw, Trash } from 'lucide-react'
+import { ArrowLeft, Ellipsis, FileText, PanelLeft, PanelRight, Pencil, Trash } from 'lucide-react'
 import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { api } from '../../api/client'
 import { openMenu } from '../../components/overlays'
-import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
+import { EmptyState, IconButton, Spinner } from '../../components/ui'
 import { Autosaver } from '../../lib/autosave'
 import { dirname } from '../../lib/paths'
 import { LinkResolver, linkTextFor } from '../../lib/wikilink'
-import { extractHeadings, useEditor } from '../../stores/editor'
+import { editorBridge, extractHeadings, useEditor } from '../../stores/editor'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import { deleteNote, errorMessage, openWikiLink, renameNote } from '../actions'
 import { refreshPreview } from './cm/livePreview'
-import { type EditorEnv, editorExtensions, replaceDoc } from './cm/setup'
+import { sync } from '../../sync/engine'
+import { diffChangeSet, rebase } from '../../sync/textdiff'
+import { type EditorEnv, editorExtensions, remoteSync } from './cm/setup'
 import { editorRef, takeTitleFocus } from './editorRef'
 import './editor.css'
 
@@ -35,7 +36,6 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   const notFound = useEditor((s) => s.notFound)
   const status = useEditor((s) => s.status)
   const error = useEditor((s) => s.error)
-  const stale = useEditor((s) => s.stale)
   const note = useVault((s) => s.notes[id])
   const notes = useVault((s) => s.notes)
   const sidebarOpen = useUI((s) => s.sidebarOpen)
@@ -52,6 +52,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   const headingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** 组字期间推迟套用的服务器版本（base 已固定为推迟时的编辑器内容或共同祖先） */
+  const deferred = useRef<{ base: string; next: string }[]>([])
 
   // 供 CodeMirror 扩展读取的最新状态
   const notesRef = useRef(notes)
@@ -82,7 +84,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
           .map((n) => ({ path: n.path, title: n.title, linkText: linkTextFor(n.path, paths) }))
       },
       upload: async (file) => {
-        const res = await api.uploadAttachment(file, file.name && file.name !== 'image.png' ? file.name : undefined)
+        const res = await sync.uploadAttachment(file, file.name && file.name !== 'image.png' ? file.name : undefined)
         return res.path
       },
       onUploadError: (err) => toast({ message: `图片上传失败：${errorMessage(err)}`, tone: 'error' }),
@@ -98,7 +100,36 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
     viewRef.current = view
     editorRef.view = view
     editorRef.extensions = extensions
+
+    // 服务器版本套进编辑器；编辑器有本地修改时变基并重新保存
+    const apply = (base: string | null, next: string) => {
+      if (applyRemoteTo(view, base, next)) saverRef.current?.change(view.state.doc.toString())
+      useEditor.getState().setHeadings(extractHeadings(view.state.doc.toString()))
+    }
+    const flushDeferred = () => {
+      if (view.composing) return
+      const list = deferred.current
+      deferred.current = []
+      for (const d of list) apply(d.base, d.next)
+    }
+    const onCompositionEnd = () => setTimeout(flushDeferred, 0)
+    view.contentDOM.addEventListener('compositionend', onCompositionEnd)
+    const bridge = {
+      applyRemote: (noteId: string, base: string | null, next: string) => {
+        if (loadedFor.current?.id !== noteId) return
+        // 正在用输入法组字：推迟到组字结束，避免打断输入
+        if (view.composing) deferred.current.push({ base: base ?? view.state.doc.toString(), next })
+        else apply(base, next)
+      },
+      isDirty: () => saverRef.current?.dirty ?? false,
+      saveSoon: () => saverRef.current?.kick(),
+      discardPending: () => saverRef.current?.reset() ?? null,
+    }
+    editorBridge.current = bridge
+
     return () => {
+      view.contentDOM.removeEventListener('compositionend', onCompositionEnd)
+      if (editorBridge.current === bridge) editorBridge.current = null
       void saverRef.current?.flush()
       saverRef.current?.dispose()
       saverRef.current = null
@@ -115,17 +146,22 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
     const prev = loadedFor.current
     if (prev && prev.id === id && prev.version === docVersion) return
     if (prev && prev.id === id) {
-      replaceDoc(view, doc.content)
+      applyRemoteTo(view, null, doc.content)
     } else {
       // 切换笔记：先保存上一篇
       const old = saverRef.current
       if (old) {
         void old.flush().finally(() => old.dispose())
       }
+      deferred.current = []
       const noteId = id
       saverRef.current = new Autosaver({
         delay: SAVE_DELAY,
-        save: (content) => useEditor.getState().save(noteId, content),
+        // 组字期间推迟套用的服务器版本也要并进要保存的内容，否则会被当成本地删除
+        save: async (content) => {
+          for (const d of deferred.current) content = rebase(d.base, d.next, content)
+          await useEditor.getState().save(noteId, content)
+        },
         onStatus: (s, err) => {
           if (useEditor.getState().noteId === noteId) useEditor.getState().setStatus(s, err)
         },
@@ -212,29 +248,6 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         )}
       </header>
 
-      {stale && (
-        <div className="editor-banner" role="alert">
-          <span>这篇笔记已在别处被修改，你的修改尚未保存。</span>
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={<RotateCcw size={14} />}
-            onClick={async () => {
-              saverRef.current?.dispose()
-              saverRef.current = null
-              loadedFor.current = null
-              try {
-                await useEditor.getState().forceReload()
-              } catch (err) {
-                toast({ message: errorMessage(err), tone: 'error' })
-              }
-            }}
-          >
-            载入最新版本
-          </Button>
-        </div>
-      )}
-
       <div className="editor-scroll" ref={scrollRef}>
         {note && showEditor && (
           <TitleInput
@@ -259,6 +272,21 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
       </div>
     </section>
   )
+}
+
+/**
+ * 把服务器版本 next 套到编辑器上：按行 diff 生成最小改动，光标和滚动位置随改动映射。
+ * base 是 next 与编辑器内容的共同祖先（null 表示就是编辑器当前内容）；编辑器在 base 之后
+ * 还有修改时，把服务器的改动映射到本地修改之后再套用（变基），返回 true 表示结果需要重新保存。
+ * 来自服务器的改动不进撤销历史。
+ */
+function applyRemoteTo(view: EditorView, base: string | null, next: string): boolean {
+  const cur = view.state.doc.toString()
+  const from = base ?? cur
+  const theirs = diffChangeSet(from, next)
+  const changes = from === cur ? theirs : theirs.map(diffChangeSet(from, cur))
+  if (!changes.empty) view.dispatch({ changes, annotations: [remoteSync.of(true), Transaction.addToHistory.of(false)] })
+  return from !== cur
 }
 
 function SaveIndicator({ status, error, onRetry }: { status: keyof typeof STATUS_TEXT; error: string | null; onRetry: () => void }) {

@@ -42,6 +42,21 @@ export class Autosaver {
     if (this.pending !== null) await this.run(true)
   }
 
+  /** 不等停顿，尽快保存（正在组字时仍会推迟到组字结束）。 */
+  kick() {
+    if (this.disposed) return
+    this.clearTimer()
+    void this.run(false)
+  }
+
+  /** 丢弃尚未开始保存的修改，返回被丢弃的内容。 */
+  reset(): string | null {
+    const p = this.pending
+    this.pending = null
+    this.clearTimer()
+    return p
+  }
+
   dispose() {
     this.disposed = true
     this.clearTimer()
