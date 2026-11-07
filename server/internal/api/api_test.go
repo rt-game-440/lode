@@ -18,9 +18,12 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/rt-game-440/lode/server/internal/audit"
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/db"
+	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
+	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
 )
 
@@ -40,7 +43,9 @@ func newServer(t *testing.T, opts ...func(*Server)) *client {
 	t.Cleanup(func() { d.Close() })
 	v, _ := vault.New(filepath.Join(dir, "vault"))
 	svc := notes.New(notes.Options{DB: d, Vault: v, TrashDir: filepath.Join(dir, "trash")})
-	s := &Server{Notes: svc, Auth: auth.New(d), Version: "test"}
+	a, log := auth.New(d), audit.New(d)
+	s := &Server{Notes: svc, Auth: a, Version: "test", Audit: log,
+		MCP: mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: a, Audit: log, Version: "test"})}
 	for _, o := range opts {
 		o(s)
 	}

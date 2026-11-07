@@ -195,3 +195,29 @@ func TestExternalChangesProduceChangeEvents(t *testing.T) {
 		t.Fatalf("外部新建、修改、删除都应产生变更事件（WS 推送和增量接口共用）：\n得到 %v\n期望 %v", got, want)
 	}
 }
+
+func TestAppendAddsLineToLatestVersion(t *testing.T) {
+	f := newFixture(t)
+	n := f.create(t, "日记.md", "第一行")
+	// 别处先改了一次：追加总是基于最新版本，不会冲突
+	if _, err := f.svc.Update(f.ctx, n.ID, 1, "第一行（改）"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.svc.Append(f.ctx, n.ID, "追加的一行")
+	if err != nil || got.Content != "第一行（改）\n追加的一行\n" || got.Rev != 3 {
+		t.Fatalf("Append = %q rev %d, %v", got.Content, got.Rev, err)
+	}
+	got, err = f.svc.Append(f.ctx, n.ID, "再来一行\n")
+	if err != nil || got.Content != "第一行（改）\n追加的一行\n再来一行\n" {
+		t.Fatalf("已以换行结尾时不应多出空行：%q, %v", got.Content, err)
+	}
+
+	crlf := f.create(t, "crlf.md", "a\r\nb\r\n")
+	got, err = f.svc.Append(f.ctx, crlf.ID, "c")
+	if err != nil || got.Content != "a\r\nb\r\nc\r\n" {
+		t.Fatalf("CRLF 笔记应沿用 CRLF：%q, %v", got.Content, err)
+	}
+	if _, err := f.svc.Append(f.ctx, "nope", "x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("不存在的笔记：%v", err)
+	}
+}

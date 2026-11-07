@@ -15,10 +15,13 @@ import (
 	"time"
 
 	"github.com/rt-game-440/lode/server/internal/api"
+	"github.com/rt-game-440/lode/server/internal/audit"
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/config"
 	"github.com/rt-game-440/lode/server/internal/db"
+	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
+	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
 	"github.com/rt-game-440/lode/server/internal/webui"
 )
@@ -76,7 +79,11 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	svc := notes.New(notes.Options{DB: database, Vault: v, TrashDir: cfg.TrashDir(), Logger: log})
 	authSvc := auth.New(database)
 
-	srv := &api.Server{Notes: svc, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies}
+	auditLog := audit.New(database)
+	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: authSvc, Audit: auditLog, Version: version, Log: log})
+
+	srv := &api.Server{Notes: svc, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
+		Audit: auditLog, MCP: mcpHandler}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),

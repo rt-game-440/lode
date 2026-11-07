@@ -169,6 +169,34 @@ func (s *Service) Patch(ctx context.Context, id string, baseRev int64, edits []E
 	return s.writeContentLocked(ctx, n, content)
 }
 
+// Append 在笔记末尾追加 text：总是基于最新版本，不会冲突。原文不以换行结尾时先补一个换行，
+// 追加后保证以换行结尾；换行符沿用原文（含 CRLF 时用 CRLF）。
+func (s *Service) Append(ctx context.Context, id, text string) (NoteContent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n, err := s.freshLocked(ctx, id)
+	if err != nil {
+		return NoteContent{}, err
+	}
+	b, err := s.vault.ReadFile(n.Path)
+	if err != nil {
+		return NoteContent{}, err
+	}
+	cur := string(b)
+	nl := "\n"
+	if strings.Contains(cur, "\r\n") {
+		nl = "\r\n"
+		text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
+	}
+	if cur != "" && !strings.HasSuffix(cur, "\n") {
+		cur += nl
+	}
+	if !strings.HasSuffix(text, "\n") {
+		text += nl
+	}
+	return s.writeContentLocked(ctx, n, cur+text)
+}
+
 // ApplyEdits 依次应用替换；任何一处 old 不是唯一匹配时返回 *PatchError。
 func ApplyEdits(content string, edits []Edit) (string, error) {
 	for i, e := range edits {

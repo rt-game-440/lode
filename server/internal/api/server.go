@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rt-game-440/lode/server/internal/audit"
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/notes"
 )
@@ -28,6 +29,10 @@ type Server struct {
 	Version string
 	Web     http.Handler // 内嵌前端；为 nil 时只提供 API
 	Log     *slog.Logger
+	// Audit 是 MCP 调用记录，供设置页查看。
+	Audit *audit.Log
+	// MCP 挂在 /mcp，自带 Bearer token 鉴权；为 nil 时不提供。
+	MCP http.Handler
 
 	// MaxUploadBytes 是附件大小上限，默认 20MB。
 	MaxUploadBytes int64
@@ -89,12 +94,22 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("GET /api/files/{path...}", s.serveFile)
 	p.HandleFunc("GET /api/changes", s.changes)
 	p.HandleFunc("GET /api/ws", s.ws)
+	p.HandleFunc("GET /api/tokens", s.listTokens)
+	p.HandleFunc("POST /api/tokens", s.createToken)
+	p.HandleFunc("DELETE /api/tokens/{id}", s.revokeToken)
+	p.HandleFunc("GET /api/audit", s.auditLog)
 	mux.Handle("/api/", s.requireSession(p))
 
 	if s.Web != nil {
 		mux.Handle("/", s.Web)
 	}
-	return s.recoverer(s.securityHeaders(s.csrf(s.withActor(mux))))
+	// /mcp 只认 Bearer token（不是浏览器自动携带的凭据），不走会话和跨站检查
+	root := http.NewServeMux()
+	if s.MCP != nil {
+		root.Handle("/mcp", s.MCP)
+	}
+	root.Handle("/", s.csrf(s.withActor(mux)))
+	return s.recoverer(s.securityHeaders(root))
 }
 
 // ---- 中间件 ----
