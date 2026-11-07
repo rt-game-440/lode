@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,8 +21,8 @@ import (
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
-// Open 打开（必要时创建）数据库，启用 WAL 并执行全部迁移。
-func Open(ctx context.Context, path string) (*sql.DB, error) {
+// Connect 打开（必要时创建）数据库并设置连接参数，不执行迁移。
+func Connect(ctx context.Context, path string) (*sql.DB, error) {
 	q := url.Values{}
 	for _, p := range []string{
 		"journal_mode(WAL)",
@@ -46,11 +47,70 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	return db, nil
+}
+
+// Open 打开数据库并执行迁移；已有数据库需要迁移时先在 backups/ 下备份。
+func Open(ctx context.Context, path string) (*sql.DB, error) {
+	db, err := Connect(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := backupBeforeMigrate(ctx, db, path); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("迁移前备份数据库: %w", err)
+	}
 	if err := Migrate(ctx, db); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return db, nil
+}
+
+// keepMigrationBackups 是保留的迁移前备份数量，更早的删除。
+const keepMigrationBackups = 5
+
+// backupBeforeMigrate 在已有数据库有待执行的迁移时，把当前数据库备份到同目录的 backups/ 下。
+// 新建的数据库（还没有迁移记录）不备份。
+func backupBeforeMigrate(ctx context.Context, db *sql.DB, path string) error {
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&n); err != nil || n == 0 {
+		return err
+	}
+	cur, err := Version(ctx, db)
+	if err != nil || cur == 0 || cur >= LatestVersion() {
+		return err
+	}
+	dir := filepath.Join(filepath.Dir(path), "backups")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	out := filepath.Join(dir, fmt.Sprintf("app-v%d-%s.db", cur, time.Now().Format("20060102-150405")))
+	if err := Snapshot(ctx, db, out); err != nil {
+		return err
+	}
+	// 只保留最近的几份
+	old, _ := filepath.Glob(filepath.Join(dir, "app-v*.db"))
+	sort.Slice(old, func(i, j int) bool { return modTime(old[i]).Before(modTime(old[j])) })
+	for len(old) > keepMigrationBackups {
+		os.Remove(old[0])
+		old = old[1:]
+	}
+	return nil
+}
+
+// Snapshot 用 VACUUM INTO 把数据库一致地复制到 out（服务运行中也可以执行）。out 不能已存在。
+func Snapshot(ctx context.Context, db *sql.DB, out string) error {
+	_, err := db.ExecContext(ctx, `VACUUM INTO ?`, out)
+	return err
+}
+
+func modTime(p string) time.Time {
+	st, err := os.Stat(p)
+	if err != nil {
+		return time.Time{}
+	}
+	return st.ModTime()
 }
 
 // Migrate 按文件名顺序执行未执行过的迁移。迁移文件名形如 0001_xxx.sql。

@@ -1,0 +1,43 @@
+# systemd 服务：二进制部署时使用。
+#   sudo useradd --system --home /var/lib/lode --shell /usr/sbin/nologin lode
+#   sudo install -m 755 lode-<版本>-linux-amd64 /usr/local/bin/lode
+#   sudo install -d -o lode -g lode -m 700 /var/lib/lode
+#   sudo install -m 600 /dev/null /etc/lode.env   # 写入 LODE_SECRET_KEY=... 等
+#   sudo cp lode.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl enable --now lode
+# 查看日志：journalctl -u lode -f
+[Unit]
+Description=Lode 笔记服务
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lode
+Group=lode
+Environment=LODE_ADDR=127.0.0.1:8787
+Environment=LODE_DATA_DIR=/var/lib/lode
+Environment=LODE_LOG_LEVEL=info
+Environment=GOMEMLIMIT=100MiB
+# LODE_SECRET_KEY 等敏感配置放在这个文件里（权限 600）
+EnvironmentFile=-/etc/lode.env
+ExecStart=/usr/local/bin/lode serve
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+
+# 加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/lode
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

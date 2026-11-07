@@ -1,0 +1,36 @@
+# 叠加在 docker-compose.yml 上，用 Caddy 反向代理并自动申请 HTTPS 证书：
+#   LODE_DOMAIN=notes.example.com docker compose -f docker-compose.yml -f deploy/compose.caddy.yml up -d
+# 域名的 A/AAAA 记录要先指向这台机器，80 和 443 端口要能从公网访问。
+services:
+  lode:
+    # 只让 Caddy 访问，不再映射到宿主机
+    ports: !reset []
+    environment:
+      # 信任同一 compose 网络里 Caddy 转发的 X-Forwarded-For / X-Forwarded-Proto
+      LODE_TRUSTED_PROXIES: 172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
+    networks: [web]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      LODE_DOMAIN: ${LODE_DOMAIN:?请设置 LODE_DOMAIN，例如 notes.example.com}
+      LODE_UPSTREAM: lode:8787
+    volumes:
+      # 多个 -f 叠加时相对路径以第一个文件（仓库根目录）为准
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [lode]
+    networks: [web]
+
+networks:
+  web:
+
+volumes:
+  caddy-data:
+  caddy-config:

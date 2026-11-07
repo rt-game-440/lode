@@ -135,3 +135,22 @@
 
 下一步：阶段 6。
 
+## 阶段 6：发布、部署与运维（issue #6）
+
+已完成：
+
+- 运维子命令（`server/cmd/lode/ops.go`、`internal/ops`）：`backup`（`VACUUM INTO` 在线快照 + vault + trash 打包成 tar.gz，带清单）、`restore`（需停服，校验后替换，原数据移到 `pre-restore-<时间>/`）、`reset-password`、`healthcheck`；`serve` 和 `restore` 对数据目录加文件锁。
+- 数据库：启动迁移前自动把旧库备份到 `backups/`（保留 5 份）。
+- 安全头：新增 CSP；原有 `nosniff`、`Referrer-Policy`、`X-Frame-Options` 和 HTTPS 下的 `Secure` cookie 保持。
+- 构建发布：`scripts/release.{sh,ps1}` 交叉编译 6 个平台并生成 `SHA256SUMS`；Dockerfile（node → go → distroless nonroot，`/data` 卷，`HEALTHCHECK`，`GOMEMLIMIT=100MiB`）；`docker-compose.yml`、`deploy/compose.caddy.yml` + `Caddyfile`、`deploy/lode.service`。
+- CI（`.github/workflows/ci.yml`）：测试与构建（go vet / test、govulncheck、前端类型检查和单测、pnpm audit、Playwright 冒烟）、性能基准、容器冒烟（`scripts/docker-smoke.sh`：compose up + 冒烟、`--memory=256m` + 冒烟、发布二进制在容器里的健康检查）。Release（`release.yml`）：`v*` tag 触发，上传二进制和校验文件、推送多架构镜像到 ghcr.io。本阶段没有打 tag。
+- 性能基准：`server/cmd/bench`，结果见 `docs/benchmark.md`。
+- 文档：README 重写、`docs/deploy.md`、`CHANGELOG.md`（v0.1.0）、`docs/checklist/stage-6.md`。
+- 证据：`docs/evidence/stage-6/`。
+
+遗留：
+
+- 本机没有 Docker，容器验收只在 CI 上跑；本机运行 govulncheck 被拒绝，同样由 CI 执行。
+- `pnpm audit` 有 1 个 low、2 个 moderate，都在 vite-plugin-pwa → workbox-build 的构建期依赖里，不进入产物（`docs/evidence/stage-6/pnpm-audit.txt`）。
+
+下一步：人工验收 `docs/checklist/stage-1.md` 至 `stage-6.md`；确认后打 `v0.1.0` tag 发版。
