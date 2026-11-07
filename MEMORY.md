@@ -10,6 +10,8 @@
 - **迁移前备份**：`db.Open` = `Connect` + 有待执行迁移时复制到 `backups/app-v<旧版本>-<时间>.db`（保留 5 份）+ `Migrate`。全新数据库不备份。运维子命令用 `Connect`，不触发迁移。
 - **镜像**：distroless static nonroot（uid 65532），`HEALTHCHECK` 调用 `lode healthcheck` 子命令（distroless 没有 curl/wget）。用 `BUILDPLATFORM` 交叉编译，多架构构建不走 QEMU 跑 Go 编译器。
 - **本机没有 Docker**：容器相关验收（compose up、`--memory=256m`、发布二进制在容器里跑）放在 CI 的“容器冒烟”任务里，脚本是 `scripts/docker-smoke.sh`；`web/e2e/container.spec.ts` 只在设置 `LODE_E2E_URL` 时运行，对外部实例跑冒烟。
+- **新增依赖**：`golang.org/x/term`（`reset-password` 从终端读密码不回显）；`golang.org/x/sys/windows` 原本就是间接依赖，现在 `internal/ops` 的 Windows 文件锁和 `cmd/bench` 的内存读取直接使用。
+- **文件锁不可用**：文件系统不支持加锁（部分 NFS、SMB 挂载）时 `ops.Lock` 返回 `ErrLockUnsupported`，`serve` 打警告继续运行，`restore` 也照常执行；只有锁被别的进程持有才拒绝。
 - **性能基准**：`server/cmd/bench`；Windows 的工作集会被系统修剪，内存以 CI（Linux）的 VmRSS 为准。两个字的中文查询走 LIKE 扫描，是搜索 p95 的主要来源。
 
 ## 2026-11-07 19:20 阶段 5 评审后的修正

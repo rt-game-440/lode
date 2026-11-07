@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -43,6 +44,9 @@ func main() {
 	saves := flag.Int("saves", 200, "保存请求次数")
 	keep := flag.Bool("keep", false, "保留数据目录")
 	flag.Parse()
+	if *searches < 1 || *saves < 1 {
+		fail(errors.New("-searches 和 -saves 至少为 1"))
+	}
 
 	var rows []result
 	for _, s := range strings.Split(*counts, ",") {
@@ -167,6 +171,9 @@ func run(bin string, n, port int, idle time.Duration, searches, saves int, keep 
 	}
 	if err := c.get("/api/tree", &tree); err != nil {
 		return res, err
+	}
+	if len(tree.Notes) == 0 {
+		return res, errors.New("笔记树是空的")
 	}
 	lat = lat[:0]
 	for i := 0; i < saves; i++ {
@@ -307,10 +314,14 @@ func (c *client) do(method, path string, body, out any) error {
 
 // ---- 统计与环境 ----
 
+// percentiles 用最近秩法返回 p50 和 p95：第 ceil(p·n) 个最小值。
 func percentiles(d []time.Duration) [2]time.Duration {
+	if len(d) == 0 {
+		return [2]time.Duration{}
+	}
 	s := slices.Clone(d)
 	slices.Sort(s)
-	at := func(p float64) time.Duration { return s[min(len(s)-1, int(float64(len(s))*p))] }
+	at := func(p float64) time.Duration { return s[max(0, int(math.Ceil(p*float64(len(s))))-1)] }
 	return [2]time.Duration{at(0.50), at(0.95)}
 }
 
@@ -330,8 +341,37 @@ func fail(err error) {
 
 // machine 返回测试机的描述。
 func machine() string {
-	cpu := cpuModel()
-	return fmt.Sprintf("测试机：%s/%s，%d 个逻辑 CPU%s，测试时间 %s", runtime.GOOS, runtime.GOARCH, runtime.NumCPU(), cpu, time.Now().Format("2006-01-02 15:04"))
+	return fmt.Sprintf("测试机：%s/%s%s，%d 个逻辑 CPU%s%s，%s，测试时间 %s", runtime.GOOS, runtime.GOARCH, osName(),
+		runtime.NumCPU(), cpuModel(), memTotal(), runtime.Version(), time.Now().Format("2006-01-02 15:04"))
+}
+
+// osName 读 Linux 的 /etc/os-release；其他系统返回空串。
+func osName() string {
+	b, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(line, "PRETTY_NAME="); ok {
+			return "（" + strings.Trim(v, `"`) + "）"
+		}
+	}
+	return ""
+}
+
+// memTotal 读 Linux 的 /proc/meminfo；其他系统返回空串。
+func memTotal() string {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(line, "MemTotal:"); ok {
+			kb, _ := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "kB")), 64)
+			return fmt.Sprintf("，内存 %.1f GB", kb/(1<<20))
+		}
+	}
+	return ""
 }
 
 func cpuModel() string {

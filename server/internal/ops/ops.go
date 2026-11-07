@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -58,10 +59,21 @@ func Lock(dataDir string) (func(), error) {
 	}
 	if err := lockFile(f); err != nil {
 		f.Close()
-		return nil, ErrLocked
+		if errors.Is(err, errLockBusy) {
+			return nil, ErrLocked
+		}
+		// 文件系统不支持加锁（部分 NFS、SMB 挂载）：不阻止使用，由调用方提示风险
+		return func() {}, fmt.Errorf("%w: %v", ErrLockUnsupported, err)
 	}
 	return func() { f.Close() }, nil
 }
+
+// ErrLockUnsupported 表示数据目录所在的文件系统不支持文件锁。Lock 返回它时同时返回一个空的解锁函数，
+// 调用方可以提示后继续，只是失去了“防止两个进程同时使用”的保护。
+var ErrLockUnsupported = errors.New("数据目录所在的文件系统不支持文件锁")
+
+// errLockBusy 由各平台的 lockFile 在锁已被其他进程持有时返回。
+var errLockBusy = errors.New("lock busy")
 
 // Backup 把数据库快照和笔记文件打包到 out（tar.gz）。d 是已打开的数据库，服务运行中也可以执行。
 func Backup(ctx context.Context, d *sql.DB, dataDir, out string) error {
@@ -101,6 +113,13 @@ func Backup(ctx context.Context, d *sql.DB, dataDir, out string) error {
 		return err
 	}
 	for _, sub := range dataDirs {
+		// 目录不存在时也写一个空目录条目，恢复时据此确认备份完整
+		if _, err := os.Stat(filepath.Join(dataDir, sub)); errors.Is(err, fs.ErrNotExist) {
+			if err := tw.WriteHeader(&tar.Header{Name: sub + "/", Mode: 0o755, Typeflag: tar.TypeDir, ModTime: time.Now()}); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := addDir(ctx, tw, dataDir, sub); err != nil {
 			return fmt.Errorf("打包 %s: %w", sub, err)
 		}
@@ -172,7 +191,7 @@ func addFile(tw *tar.Writer, src, name string) error {
 // 备份文件无效时不改动数据目录。
 func Restore(ctx context.Context, dataDir, archive string) (string, error) {
 	unlock, err := Lock(dataDir)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrLockUnsupported) {
 		return "", err
 	}
 	defer unlock()
@@ -182,30 +201,50 @@ func Restore(ctx context.Context, dataDir, archive string) (string, error) {
 		return "", err
 	}
 	defer os.RemoveAll(staging)
-	if err := extract(ctx, archive, staging); err != nil {
+	m, err := extract(ctx, archive, staging)
+	if err != nil {
 		return "", fmt.Errorf("读取备份: %w", err)
+	}
+	if m.DBVersion > db.LatestVersion() {
+		return "", fmt.Errorf("备份来自更新的 Lode（%s，数据库版本 %d），当前程序只支持到 %d，请先升级", m.Version, m.DBVersion, db.LatestVersion())
 	}
 	if err := checkDB(ctx, filepath.Join(staging, dbName)); err != nil {
 		return "", fmt.Errorf("备份里的数据库无效: %w", err)
 	}
+	if st, err := os.Stat(filepath.Join(staging, "vault")); err != nil || !st.IsDir() {
+		return "", errors.New("备份不完整：没有 vault/ 目录")
+	}
 
 	// 原有数据移走保留
 	kept := filepath.Join(dataDir, "pre-restore-"+time.Now().Format("20060102-150405"))
-	moved := false
+	var moved, placed []string
+	// rollback 把已放入的新数据移回 staging，再把移走的原有数据放回原处。
+	rollback := func(cause error) (string, error) {
+		for _, name := range placed {
+			os.Rename(filepath.Join(dataDir, name), filepath.Join(staging, name))
+		}
+		for _, name := range moved {
+			if err := os.Rename(filepath.Join(kept, name), filepath.Join(dataDir, name)); err != nil {
+				return kept, fmt.Errorf("%w；回滚也失败了，原有数据在 %s", cause, kept)
+			}
+		}
+		os.Remove(kept)
+		return "", fmt.Errorf("%w；已回滚，数据目录没有改动", cause)
+	}
 	for _, name := range append([]string{dbName, dbName + "-wal", dbName + "-shm"}, dataDirs...) {
 		src := filepath.Join(dataDir, name)
 		if _, err := os.Lstat(src); err != nil {
 			continue
 		}
-		if !moved {
+		if len(moved) == 0 {
 			if err := os.MkdirAll(kept, 0o700); err != nil {
 				return "", err
 			}
-			moved = true
 		}
 		if err := os.Rename(src, filepath.Join(kept, name)); err != nil {
-			return kept, fmt.Errorf("移走原有的 %s: %w（已移走的在 %s）", name, err, kept)
+			return rollback(fmt.Errorf("移走原有的 %s: %w", name, err))
 		}
+		moved = append(moved, name)
 	}
 	for _, name := range append([]string{dbName}, dataDirs...) {
 		src := filepath.Join(staging, name)
@@ -213,73 +252,86 @@ func Restore(ctx context.Context, dataDir, archive string) (string, error) {
 			continue
 		}
 		if err := os.Rename(src, filepath.Join(dataDir, name)); err != nil {
-			return kept, fmt.Errorf("放入 %s: %w（原有数据在 %s）", name, err, kept)
+			return rollback(fmt.Errorf("放入 %s: %w", name, err))
 		}
+		placed = append(placed, name)
 	}
-	if !moved {
+	if len(moved) == 0 {
 		kept = ""
 	}
 	return kept, nil
 }
 
-// extract 解出备份到 dst。第一个条目必须是清单；只接受 app.db、vault/、trash/ 下的普通文件和目录。
-func extract(ctx context.Context, archive, dst string) error {
+// extract 解出备份到 dst 并返回清单。第一个条目必须是清单；只接受 app.db、vault/、trash/ 下的普通文件和目录。
+func extract(ctx context.Context, archive, dst string) (Manifest, error) {
+	var m Manifest
 	f, err := os.Open(archive)
 	if err != nil {
-		return err
+		return m, err
 	}
 	defer f.Close()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return errors.New("不是 Lode 备份文件（不是 gzip）")
+		return m, errors.New("不是 Lode 备份文件（不是 gzip）")
 	}
 	tr := tar.NewReader(gz)
 	first := true
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return m, err
 		}
 		h, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return err
+			return m, err
 		}
 		if first {
 			first = false
 			if h.Name != manifestName {
-				return errors.New("不是 Lode 备份文件（缺少清单）")
+				return m, errors.New("不是 Lode 备份文件（缺少清单）")
 			}
-			var m Manifest
 			if err := json.NewDecoder(io.LimitReader(tr, 1<<16)).Decode(&m); err != nil || m.Format != 1 {
-				return errors.New("不支持的备份格式")
+				return m, errors.New("不支持的备份格式")
 			}
 			continue
 		}
 		name := strings.TrimSuffix(h.Name, "/")
-		top, _, _ := strings.Cut(name, "/")
-		if !fs.ValidPath(name) || path.Clean(name) != name || (name != dbName && top != "vault" && top != "trash") {
-			return fmt.Errorf("备份里有不允许的条目: %q", h.Name)
+		if !safeEntry(name) {
+			return m, fmt.Errorf("备份里有不允许的条目: %q", h.Name)
 		}
 		target := filepath.Join(dst, filepath.FromSlash(name))
 		switch h.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
+				return m, err
 			}
 		case tar.TypeReg:
 			if err := writeEntry(tr, target, h.ModTime); err != nil {
-				return err
+				return m, err
 			}
 		default:
-			return fmt.Errorf("备份里有不支持的条目类型: %q", h.Name)
+			return m, fmt.Errorf("备份里有不支持的条目类型: %q", h.Name)
 		}
 	}
 	if first {
-		return errors.New("备份文件是空的")
+		return m, errors.New("备份文件是空的")
 	}
-	return nil
+	return m, nil
+}
+
+// safeEntry 判断 tar 条目名能否安全解到临时目录里：必须是 app.db 或 vault/、trash/ 下的相对路径，
+// 不能有 ..、绝对路径；Windows 上还不能含 \（会被当成分隔符）、:（盘符和备用数据流）和保留设备名。
+func safeEntry(name string) bool {
+	top, _, _ := strings.Cut(name, "/")
+	if !fs.ValidPath(name) || path.Clean(name) != name || (name != dbName && top != "vault" && top != "trash") {
+		return false
+	}
+	if runtime.GOOS == "windows" && strings.ContainsAny(name, `\:`) {
+		return false
+	}
+	return filepath.IsLocal(filepath.FromSlash(name))
 }
 
 func writeEntry(r io.Reader, target string, mtime time.Time) error {
@@ -305,7 +357,9 @@ func checkDB(ctx context.Context, p string) error {
 	if _, err := os.Stat(p); err != nil {
 		return errors.New("备份里没有数据库")
 	}
-	d, err := sql.Open("sqlite", "file:"+filepath.ToSlash(p)+"?mode=ro")
+	// URI 里 % ? # 有特殊含义，路径中出现时要转义
+	esc := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(filepath.ToSlash(p))
+	d, err := sql.Open("sqlite", "file:"+esc+"?mode=ro")
 	if err != nil {
 		return err
 	}

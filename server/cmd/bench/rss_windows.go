@@ -3,7 +3,6 @@
 package main
 
 import (
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -23,7 +22,7 @@ type processMemoryCounters struct {
 	PeakPagefileUsage          uintptr
 }
 
-var getProcessMemoryInfo = syscall.NewLazyDLL("psapi.dll").NewProc("GetProcessMemoryInfo")
+var getProcessMemoryInfo = windows.NewLazySystemDLL("psapi.dll").NewProc("GetProcessMemoryInfo")
 
 // rssMB 返回进程的工作集（Windows 上对应 RSS）。
 func rssMB(pid int) (float64, error) {

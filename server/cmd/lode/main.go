@@ -90,6 +90,10 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	if errors.Is(err, ops.ErrLocked) {
 		return fmt.Errorf("数据目录 %s 正被另一个 lode 进程使用", cfg.DataDir)
 	}
+	if errors.Is(err, ops.ErrLockUnsupported) {
+		log.Warn("无法锁定数据目录，请确保同一时间只有一个 lode 进程使用它", "err", err)
+		err = nil
+	}
 	if err != nil {
 		return err
 	}

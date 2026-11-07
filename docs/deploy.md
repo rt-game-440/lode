@@ -10,7 +10,7 @@ data/
   backups/      升级迁移前自动备份的数据库（保留最近 5 份）
 ```
 
-空闲内存在 50MB 以内（见 [benchmark.md](benchmark.md)），512MB 内存的机器足够。下面三种部署方式任选一种。
+空闲内存的实测数据见 [benchmark.md](benchmark.md)，目标是 1000 篇笔记 50MB 以内，512MB 内存的机器足够。下面三种部署方式任选一种。
 
 ## 1. VPS（Docker + Caddy 自动 HTTPS）
 
@@ -108,7 +108,7 @@ docker compose exec lode lode backup /data/lode-$(date +%F).tar.gz
 docker compose cp lode:/data/lode-$(date +%F).tar.gz .
 ```
 
-运行镜像是 distroless，没有 shell 和 `rm`。备份文件留在卷里不影响服务（它不会被再次打包），也可以在宿主机上清理：`docker run --rm -v lode_lode-data:/data alpine rm /data/lode-<日期>.tar.gz`（卷名用 `docker volume ls` 查看）。
+运行镜像是 distroless，没有 shell 和 `rm`。备份文件留在卷里不影响服务（它不会被再次打包），也可以在宿主机上清理：`docker run --rm -v <项目名>_lode-data:/data alpine rm /data/lode-<日期>.tar.gz`（项目名默认是仓库目录名，完整卷名用 `docker volume ls` 查看）。
 
 备份包含：全部笔记和附件、回收站、数据库里的设置、登录密码哈希、API token（哈希）、助手的供应商配置（API key 以 `LODE_SECRET_KEY` 加密保存）和对话记录。
 

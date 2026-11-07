@@ -6,8 +6,10 @@ services:
     # 只让 Caddy 访问，不再映射到宿主机
     ports: !reset []
     environment:
-      # 信任同一 compose 网络里 Caddy 转发的 X-Forwarded-For / X-Forwarded-Proto
-      LODE_TRUSTED_PROXIES: 172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
+      # 信任 Caddy 转发的 X-Forwarded-For / X-Forwarded-Proto。Caddy 的容器地址由 Docker 分配，
+      # 所以默认信任全部私网段；lode 只接在 web 网络上、不映射宿主机端口，能直接访问它的只有 Caddy。
+      # 知道 web 网络的网段时（docker network inspect）可以在 .env 里收窄。
+      LODE_TRUSTED_PROXIES: ${LODE_TRUSTED_PROXIES:-172.16.0.0/12,192.168.0.0/16,10.0.0.0/8}
     networks: [web]
 
   caddy:

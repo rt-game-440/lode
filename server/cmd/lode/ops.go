@@ -76,7 +76,8 @@ func runRestore(cfg config.Config, args []string, in io.Reader) error {
   - 数据库和全部笔记文件会被备份里的内容替换，备份之后的修改都会丢失。
     现有数据会移到数据目录下的 pre-restore-<时间>/，确认无误后可以手动删除。
   - LODE_SECRET_KEY 要和备份时相同，否则已保存的助手 API key 无法解密，需要重新填写。
-  - 已登录的设备需要重新登录（如果备份里的会话已过期）；多端的离线修改会按备份时的版本重新同步。
+  - 登录密码、登录会话和 API token 都回到备份时的状态，备份之后创建的 token 会失效；
+    各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
 `, files[0], cfg.DataDir)
 	if !yes {
 		fmt.Fprint(os.Stderr, "输入 yes 继续：")
@@ -127,8 +128,9 @@ func runResetPassword(cfg config.Config) error {
 		pw = strings.TrimRight(line, "\r\n")
 	}
 	ctx := context.Background()
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-		return err
+	// 不新建数据库：LODE_DATA_DIR 写错时应报错，而不是在别处建一个空库并提示成功
+	if _, err := os.Stat(cfg.DBPath()); err != nil {
+		return fmt.Errorf("数据目录 %s 里没有数据库，请检查 LODE_DATA_DIR：%w", cfg.DataDir, err)
 	}
 	d, err := db.Open(ctx, cfg.DBPath())
 	if err != nil {

@@ -1,0 +1,41 @@
+# 本机 CLI 冒烟（logs/ops-smoke.sh）：构建产物 bin/lode.exe 上依次执行 serve → 备份（运行中）→ 停服 → 删除数据 → 恢复 → reset-password → 登录。
+# 输出里中文文件名乱码是 Git Bash 的 curl 在 Windows 上传中文路径的编码问题，与恢复无关（Go 测试 TestBackupRestoreRoundTrip 用中文路径验证）。
+lode dev (none)
+time=2026-11-07T19:55:25.540+08:00 level=WARN msg="没有设置 LODE_SECRET_KEY：助手不能保存供应商的 API key"
+== 第二个实例应因数据目录被占用而退出
+time=2026-11-07T19:55:25.852+08:00 level=ERROR msg=服务退出 err="数据目录 C:\\Users\\15575\\AppData\\Local\\Temp\\tmp.XgEc11M3Ho\\data 正被另一个 lode 进程使用"
+exit=1
+已建笔记
+== 运行中备份
+已备份到 C:/Users/15575/AppData/Local/Temp/tmp.XgEc11M3Ho/b.tar.gz（0.0 MB）
+== 运行中恢复应被拒绝
+从 C:/Users/15575/AppData/Local/Temp/tmp.XgEc11M3Ho/b.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.XgEc11M3Ho\data。
+注意：
+  - 必须先停止 lode 服务；服务运行中会拒绝恢复。
+  - 数据库和全部笔记文件会被备份里的内容替换，备份之后的修改都会丢失。
+    现有数据会移到数据目录下的 pre-restore-<时间>/，确认无误后可以手动删除。
+  - LODE_SECRET_KEY 要和备份时相同，否则已保存的助手 API key 无法解密，需要重新填写。
+  - 登录密码、登录会话和 API token 都回到备份时的状态，备份之后创建的 token 会失效；
+    各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
+错误: lode 服务正在运行，请先停止服务再恢复
+exit=1
+== 恢复
+从 C:/Users/15575/AppData/Local/Temp/tmp.XgEc11M3Ho/b.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.XgEc11M3Ho\data。
+注意：
+  - 必须先停止 lode 服务；服务运行中会拒绝恢复。
+  - 数据库和全部笔记文件会被备份里的内容替换，备份之后的修改都会丢失。
+    现有数据会移到数据目录下的 pre-restore-<时间>/，确认无误后可以手动删除。
+  - LODE_SECRET_KEY 要和备份时相同，否则已保存的助手 API key 无法解密，需要重新填写。
+  - 登录密码、登录会话和 API token 都回到备份时的状态，备份之后创建的 token 会失效；
+    各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
+恢复完成。启动服务后会自动对账笔记文件。
+exit=0
+== 重置密码（标准输入）
+密码已重置，所有设备需要重新登录。
+time=2026-11-07T19:55:26.518+08:00 level=WARN msg="没有设置 LODE_SECRET_KEY：助手不能保存供应商的 API key"
+新密码登录成功
+{"folders":[],"notes":[{"id":"7hi65zcai3eu3r4z","path":"ð��.md","title":"ð��","rev":1,"hash":"fd47ff30605dbb96ea174aa29ed0e541f3409bc81dd2d7d2953a13ad7b468965","size":21,"mtime":1794052526000,"created_at":1794052525971,"updated_at":1794052525971}],"seq":1}
+
+{"results":[]}
+
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'

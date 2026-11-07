@@ -99,7 +99,7 @@ lode healthcheck                   # 检查本机服务是否正常
 lode --version
 ```
 
-在 Docker 里运行时加上 `docker compose exec lode` 前缀，或参考 [docs/deploy.md](docs/deploy.md) 的备份与恢复。
+在 Docker 里运行时，`backup`、`reset-password` 加上 `docker compose exec lode` 前缀；`restore` 要先停止服务，再用 `docker compose run`，步骤见 [docs/deploy.md](docs/deploy.md) 的“恢复”。
 
 ## 文档
 

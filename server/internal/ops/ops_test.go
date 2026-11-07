@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/rt-game-440/lode/server/internal/agent"
@@ -67,6 +69,9 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	if _, err := e.agent.CreateProvider(ctx, agent.ProviderInput{Name: "测试", Kind: llm.KindOpenAI, APIKey: &key}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := e.agent.UpdateSettings(ctx, agent.Settings{AutoApprove: true}); err != nil {
+		t.Fatal(err)
+	}
 
 	archive := filepath.Join(t.TempDir(), "lode-backup.tar.gz")
 	if err := Backup(ctx, e.db, dir, archive); err != nil { // 数据库仍然打开着
@@ -98,6 +103,9 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	ps, err := r.agent.Providers(ctx)
 	if err != nil || len(ps) != 1 {
 		t.Fatalf("供应商：%v %v", ps, err)
+	}
+	if st, err := r.agent.Settings(ctx); err != nil || !st.AutoApprove {
+		t.Errorf("助手设置：%+v %v", st, err)
 	}
 	cfg, err := r.agent.Config(ctx, ps[0].ID)
 	if err != nil || cfg.APIKey != key {
@@ -165,5 +173,87 @@ func TestRestoreRejectsBadArchive(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "escape.txt")); !os.IsNotExist(err) {
 		t.Error("越界条目不应被写出")
+	}
+}
+
+func TestSafeEntry(t *testing.T) {
+	cases := []struct {
+		name string
+		ok   bool
+	}{
+		{"app.db", true},
+		{"vault", true},
+		{"vault/日记/今天.md", true},
+		{"trash/a.md", true},
+		{"../x", false},
+		{"vault/../../x", false},
+		{"/vault/x", false},
+		{"other/x", false},
+		{"app.db/x", false},
+	}
+	if runtime.GOOS == "windows" {
+		cases = append(cases,
+			struct {
+				name string
+				ok   bool
+			}{`vault/..\..\x`, false},
+			struct {
+				name string
+				ok   bool
+			}{"vault/a:b", false},
+			struct {
+				name string
+				ok   bool
+			}{"vault/CON", false},
+		)
+	}
+	for _, c := range cases {
+		if got := safeEntry(c.name); got != c.ok {
+			t.Errorf("safeEntry(%q) = %v，应为 %v", c.name, got, c.ok)
+		}
+	}
+}
+
+// 来自更新版本的备份、缺少 vault/ 的备份都拒绝，数据目录保持原样。
+func TestRestoreRejectsNewerOrIncompleteBackup(t *testing.T) {
+	ctx := context.Background()
+	src := filepath.Join(t.TempDir(), "src")
+	e := open(t, src)
+	e.db.Close()
+	dbBytes, err := os.ReadFile(filepath.Join(src, dbName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, dbName), []byte("keep"), 0o600)
+
+	newer := filepath.Join(t.TempDir(), "newer.tar.gz")
+	writeTestArchive(t, newer, map[string]string{manifestName: `{"format":1,"version":"v9","db_version":9999}`, dbName: string(dbBytes), "vault/a.md": "x"})
+	if _, err := Restore(ctx, dir, newer); err == nil || !strings.Contains(err.Error(), "更新的 Lode") {
+		t.Errorf("应拒绝来自更新版本的备份：%v", err)
+	}
+	noVault := filepath.Join(t.TempDir(), "novault.tar.gz")
+	writeTestArchive(t, noVault, map[string]string{manifestName: `{"format":1,"db_version":1}`, dbName: string(dbBytes)})
+	if _, err := Restore(ctx, dir, noVault); err == nil || !strings.Contains(err.Error(), "vault") {
+		t.Errorf("应拒绝没有 vault/ 的备份：%v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, dbName)); string(b) != "keep" {
+		t.Error("恢复失败时不应改动数据目录")
+	}
+}
+
+// 备份时 vault/ 还不存在（从未启动过），备份里也有空的 vault/，可以正常恢复。
+func TestBackupOfEmptyDataDirRestores(t *testing.T) {
+	ctx := context.Background()
+	src := filepath.Join(t.TempDir(), "src")
+	e := open(t, src)
+	os.RemoveAll(filepath.Join(src, "vault"))
+	archive := filepath.Join(t.TempDir(), "empty.tar.gz")
+	if err := Backup(ctx, e.db, src, archive); err != nil {
+		t.Fatal(err)
+	}
+	e.db.Close()
+	if _, err := Restore(ctx, filepath.Join(t.TempDir(), "dst"), archive); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -42,6 +42,7 @@ jobs:
         run: go test ./...
       - name: govulncheck
         working-directory: server
+        # 用最新版：漏洞库和对新 Go 版本的支持都跟着工具更新，固定旧版本反而可能解析不了新语法
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       - name: 前端依赖

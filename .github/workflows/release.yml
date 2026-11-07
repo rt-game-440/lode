@@ -43,6 +43,8 @@ jobs:
 
   image:
     name: 多架构镜像
+    # 二进制发布成功后再推镜像，避免一边失败时留下半套发布
+    needs: binaries
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -60,7 +62,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            # 预发布版本（v0.2.0-rc.1 这类带 - 的 tag）不更新 latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - uses: docker/build-push-action@v6
         with:
           context: .
