@@ -54,5 +54,6 @@ Lode：自托管、单用户的 Markdown 笔记 PWA，多端即时同步，自�
 - PWA 图标：`node web/scripts/gen-icons.mjs` 从 SVG 重新生成 `web/public/` 下的图标。
 - 手机测试（局域网 HTTPS）：见 [docs/dev-https.md](docs/dev-https.md)。
 - 内存：`scripts/rss.sh`（需先构建），生成 1000 篇笔记、重启对账后用 `server/cmd/wsprobe` 保持 2 个 WebSocket 连接（`WS=` / `-WebSockets` 可改），再测量空闲 RSS 并打印结果；PowerShell 版加 `-Out docs/evidence/stage-<N>/rss.txt` 直接写证据文件。
+- MCP 实测（需先构建）：`node web/scripts/mcp-live-check.mjs` 起独立实例（18788 端口，数据在 `data-live4/`），用本机 Claude Code 经 MCP 搜索 → 读取 → 追加，并截图；`bash web/scripts/mcp-curl-check.sh` 实测 `docs/mcp.md` 里的 curl 示例。证据写到 `docs/evidence/stage-4/`。
 - 生成测试笔记：`cd server && go run ./cmd/gennotes -dir <vault目录> -n 1000`。
-- 接口文档：[docs/api.md](docs/api.md)。
+- 接口文档：[docs/api.md](docs/api.md)；MCP 接入：[docs/mcp.md](docs/mcp.md)。

@@ -49,3 +49,32 @@
 - iOS 上的真实安装体验和真实输入法，待人工验收。
 
 下一步：阶段 4（MCP）。
+
+## 阶段 4：API token 与 MCP 服务（issue #4）
+
+**状态**：已完成，等待人工验收（`docs/checklist/stage-4.md`）。
+
+已完成：
+
+- 后端：
+  - API token：只存 SHA-256，分只读和读写两种权限，可吊销，记录最后使用时间（`internal/auth/tokens.go`）。
+  - 工具注册表 `internal/tools`：10 个工具，描述写给大模型看，错误翻译成中文说明。阶段 5 的 Agent 复用这份注册表。
+  - `/mcp`：官方 go-sdk v1.8.0，无状态 Streamable HTTP，Bearer 鉴权。只读 token 看不到写工具。
+  - 审计日志 `internal/audit`：保留最近 1000 条。
+  - MCP 写入走阶段 2 的合并和变更流，设备名为 token 名称。
+  - REST：`/api/tokens`、`/api/audit`。
+- 前端：设置页（侧栏底部齿轮，`/settings`）。可以创建 token（明文只显示一次，可复制，附 Claude Code 接入命令）、查看列表、吊销 token，查看调用记录；手机上表格改为卡片布局。
+- 测试：
+  - Go：`internal/mcpserver` 用 SDK 客户端覆盖全部工具和错误情况、401、只读权限、审计与变更事件；另有 `internal/tools`、`internal/audit`、`internal/auth` 的单测。
+  - Playwright：`e2e/tokens.spec.ts` 3 个用例。
+- 实测：Claude Code（haiku）经 MCP 完成搜索 → 读取 → 追加，浏览器未刷新就看到修改（`web/scripts/mcp-live-check.mjs`）；curl 示例见 `web/scripts/mcp-curl-check.sh`。
+- 文档：`docs/mcp.md`（Claude Code 已实测，Codex、Cursor 未实测）、`docs/api.md`。
+- 证据：`docs/evidence/stage-4/`、`docs/screenshots/stage-4/`。
+
+遗留：
+
+- Codex、Cursor 本机没有安装，接入写法未实测。
+- REST API 不接受 Bearer token；以后如果需要脚本调用 REST，再考虑支持。
+- MCP 的 OAuth、stdio 桥接、resources 和 prompts 不在本阶段范围内。
+
+下一步：阶段 3。

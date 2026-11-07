@@ -33,7 +33,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 	}
 	t, secret, err := s.Auth.CreateToken(r.Context(), req.Name, req.Scope)
 	if errors.Is(err, auth.ErrInvalidTokenInput) {
-		writeError(w, http.StatusBadRequest, "invalid", "名称不能为空且不超过 64 个字符，权限只能是 read 或 write", nil)
+		writeError(w, http.StatusBadRequest, "bad_request", "名称不能为空且不超过 64 个字符，权限只能是 read 或 write", nil)
 		return
 	}
 	if err != nil {
