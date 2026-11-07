@@ -53,7 +53,7 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn
 }
 
-async function request<T>(method: string, url: string, body?: unknown, init: RequestInit = {}): Promise<T> {
+export async function request<T>(method: string, url: string, body?: unknown, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     'X-Device-Id': deviceId(),
     'X-Device-Name': encodeURIComponent(deviceName()),
@@ -137,6 +137,8 @@ export const api = {
     fd.append('file', file, name ?? (file instanceof File ? file.name : 'image.png'))
     return request<{ path: string; url: string }>('POST', '/api/attachments', fd)
   },
+
+  images: () => request<{ images: { path: string; size: number; mtime: number }[] }>('GET', '/api/images').then((r) => r.images),
 
   changes: (since: number) => request<{ changes: Change[]; seq: number }>('GET', `/api/changes${q({ since })}`),
 

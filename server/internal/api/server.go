@@ -99,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("POST /api/trash/{id}/restore", s.restoreTrash)
 	p.HandleFunc("DELETE /api/trash/{id}", s.purgeTrash)
 	p.HandleFunc("POST /api/attachments", s.uploadAttachment)
+	p.HandleFunc("GET /api/images", s.listImages)
 	p.HandleFunc("GET /api/files/{path...}", s.serveFile)
 	p.HandleFunc("GET /api/changes", s.changes)
 	p.HandleFunc("GET /api/ws", s.ws)

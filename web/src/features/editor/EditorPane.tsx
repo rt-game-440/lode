@@ -1,6 +1,6 @@
 import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { ArrowLeft, Ellipsis, FileText, PanelLeft, PanelRight, Pencil, Trash } from 'lucide-react'
+import { ArrowLeft, Ellipsis, FileText, PanelLeft, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { openMenu } from '../../components/overlays'
@@ -226,6 +226,9 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         <div className="editor-crumb">{note && dirname(note.path) ? dirname(note.path).split('/').join(' / ') : ''}</div>
         <span className="spacer" />
         <SaveIndicator status={status} error={error} onRetry={() => void saverRef.current?.flush()} />
+        <IconButton label="助手" onClick={() => useUI.getState().openAgent()}>
+          <Sparkles size={18} />
+        </IconButton>
         <IconButton label={rightOpen ? '隐藏右栏' : '显示右栏'} active={rightOpen} onClick={() => toggleRight()}>
           <PanelRight size={18} />
         </IconButton>

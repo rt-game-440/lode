@@ -410,6 +410,16 @@ func (s *Server) uploadAttachment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"path": rel, "url": "/api/files/" + escapePath(rel)})
 }
 
+// listImages 列出 vault 里的图片，供助手选择附件。
+func (s *Server) listImages(w http.ResponseWriter, r *http.Request) {
+	imgs, err := s.Notes.Images(500)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"images": imgs})
+}
+
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 	f, info, err := s.Notes.OpenFile(r.PathValue("path"))
 	if err != nil {

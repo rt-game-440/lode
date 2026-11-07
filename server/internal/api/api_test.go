@@ -265,6 +265,9 @@ func TestAttachmentUploadAndServe(t *testing.T) {
 	if resp.StatusCode != 200 || string(b) != "\x89PNG fake" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "sandbox") {
 		t.Fatalf("serve = %d %q %v", resp.StatusCode, b, resp.Header)
 	}
+	if st, body := c.do("GET", "/api/images", nil); st != 200 || !strings.Contains(mustJSON(body), `"path":"attachments/图 片.png"`) {
+		t.Fatalf("images = %d %v", st, body)
+	}
 }
 
 func TestStaleWriteMergesOrReturnsConflictCopy(t *testing.T) {

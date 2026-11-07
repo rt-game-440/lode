@@ -43,6 +43,8 @@
 
   /* 状态 */
   --color-danger: #c4001a;
+  --color-diff-add: rgba(36, 138, 61, 0.13); /* diff 新增行底色 */
+  --color-diff-del: rgba(196, 0, 26, 0.1); /* diff 删除行底色 */
   --color-success: #1e7a35;
   --color-warning: #a14500;
   --color-search-highlight: rgba(255, 204, 0, 0.5);
@@ -96,6 +98,8 @@
     --color-focus-ring: rgba(77, 163, 255, 0.6);
     --color-text-selection: rgba(77, 163, 255, 0.3);
     --color-danger: #ff6961;
+    --color-diff-add: rgba(48, 209, 88, 0.18);
+    --color-diff-del: rgba(255, 105, 97, 0.18);
     --color-success: #4cd964;
     --color-warning: #ffb340;
     --color-search-highlight: rgba(255, 214, 10, 0.4);
@@ -145,6 +149,8 @@
   --color-focus-ring: rgba(77, 163, 255, 0.6);
   --color-text-selection: rgba(77, 163, 255, 0.3);
   --color-danger: #ff6961;
+  --color-diff-add: rgba(48, 209, 88, 0.18);
+  --color-diff-del: rgba(255, 105, 97, 0.18);
   --color-success: #4cd964;
   --color-warning: #ffb340;
   --color-search-highlight: rgba(255, 214, 10, 0.4);

@@ -1,4 +1,4 @@
-import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, PanelLeft, Search, Settings, Sun, Trash } from 'lucide-react'
+import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, PanelLeft, Search, Settings, Sparkles, Sun, Trash } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { EmptyState, IconButton } from '../../components/ui'
 import { useSession } from '../../stores/session'
@@ -121,6 +121,15 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
           回收站
         </button>
         <span className="spacer" />
+        <IconButton
+          label="助手"
+          className={route.view === 'agent' ? 'is-active' : undefined}
+          aria-current={route.view === 'agent' ? 'page' : undefined}
+          onClick={() => useUI.getState().openAgent()}
+          data-testid="open-agent"
+        >
+          <Sparkles size={17} />
+        </IconButton>
         <IconButton
           label="设置"
           className={route.view === 'settings' ? 'is-active' : undefined}
