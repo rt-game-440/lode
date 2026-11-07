@@ -18,7 +18,10 @@ export function deviceId(): string {
   const s = storage()
   let id = s?.getItem(ID_KEY) ?? null
   if (!id) {
-    id = crypto.randomUUID().replace(/-/g, '').slice(0, 16)
+    // 不用 crypto.randomUUID：它只在安全上下文（HTTPS 或 localhost）里存在，
+    // 手机经 http://局域网 IP 访问时没有它，所有请求都会在发出前失败
+    const bytes = crypto.getRandomValues(new Uint8Array(8))
+    id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
     s?.setItem(ID_KEY, id)
   }
   cachedId = id
