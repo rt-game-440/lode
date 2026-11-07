@@ -1,4 +1,4 @@
-# notevault 产品总规格
+# Lode 产品总规格
 
 各阶段 issue 只写本阶段的增量，共同约定以本文件为准。需要修改本文件时，先在对应 issue 或 PR 里说明理由。
 
@@ -10,7 +10,7 @@
 
 - 后端：Go 单二进制，用 `embed` 内嵌前端产物；路由用标准库 net/http，依赖尽量少。SQLite 用 `modernc.org/sqlite`（纯 Go、免 CGO，便于交叉编译到 arm64 低配机）。
 - 前端：React + TypeScript + Vite（pnpm）。编辑器用 CodeMirror 6 + `@codemirror/lang-markdown`，实时预览（光标不在的行隐藏 Markdown 标记）。状态管理用 zustand，动效用 motion，测试用 vitest + Playwright。
-- 默认配置：`NOTEVAULT_ADDR=127.0.0.1:8787`、`NOTEVAULT_DATA_DIR=./data`、`NOTEVAULT_SECRET_KEY`（阶段 5 用于加密 API key）。
+- 默认配置：`LODE_ADDR=127.0.0.1:8787`、`LODE_DATA_DIR=./data`、`LODE_SECRET_KEY`（阶段 5 用于加密 API key）。
 
 ## 数据
 
@@ -43,7 +43,7 @@
 
 ## Agent
 
-- 供应商类型：OpenAI 兼容（覆盖 OpenAI / DeepSeek / OpenRouter / Ollama 等）、Anthropic、Google Gemini。每个供应商有：名称、类型、base URL、API key。API key 用 AES-GCM 加密存库，主密钥取自 `NOTEVAULT_SECRET_KEY`（32 字节随机值的 base64，可用 `openssl rand -base64 32` 生成）。
+- 供应商类型：OpenAI 兼容（覆盖 OpenAI / DeepSeek / OpenRouter / Ollama 等）、Anthropic、Google Gemini。每个供应商有：名称、类型、base URL、API key。API key 用 AES-GCM 加密存库，主密钥取自 `LODE_SECRET_KEY`（32 字节随机值的 base64，可用 `openssl rand -base64 32` 生成）。
 - 每个供应商下可以有多个模型，每个模型单独设置：
   - 模型 ID、显示名；
   - 上下文窗口、最大输出；

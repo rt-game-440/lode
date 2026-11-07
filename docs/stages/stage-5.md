@@ -15,7 +15,7 @@
 ### 供应商与模型管理（设置页）
 
 - 供应商：名称、类型（OpenAI 兼容 / Anthropic / Gemini）、base URL、API key；"测试连接"按钮。
-- API key 用 AES-GCM 加密存库，主密钥取自 `NOTEVAULT_SECRET_KEY`。没设置这个环境变量时不允许保存 key，界面说明如何设置。接口永远不返回明文 key，只显示末 4 位。
+- API key 用 AES-GCM 加密存库，主密钥取自 `LODE_SECRET_KEY`。没设置这个环境变量时不允许保存 key，界面说明如何设置。接口永远不返回明文 key，只显示末 4 位。
 - 模型：可从供应商的模型列表接口导入，也可手动添加。每个模型的字段：
   - 模型 ID、显示名、是否启用；
   - 上下文窗口（tokens）、最大输出（tokens）；
@@ -74,6 +74,6 @@ MCP 工具的行为和描述不变（如需修改，同时验证 MCP 测试）�
 3. 上下文测试：分别用中文和英文构造超过窗口的历史，最终发给适配器的请求按上面的估算方法 ≤ 可用预算，且系统提示和最近一轮完整保留。
 4. 数据库里的 API key 不是明文；任何接口的响应里都没有明文 key；日志里不出现 key。
 5. Playwright 用模拟的 OpenAI 兼容服务跑完整流程：添加供应商和模型 → 新建对话 → 流式回复出现 → 工具调用卡片 → 批准写入 → 编辑器内容更新。
-6. 真实供应商冒烟：读取环境变量 `NOTEVAULT_TEST_OPENAI_KEY`、`NOTEVAULT_TEST_ANTHROPIC_KEY`、`NOTEVAULT_TEST_GEMINI_KEY`，设置了的就跑一轮带工具调用的对话，没设置的跳过并在汇报中注明。
+6. 真实供应商冒烟：读取环境变量 `LODE_TEST_OPENAI_KEY`、`LODE_TEST_ANTHROPIC_KEY`、`LODE_TEST_GEMINI_KEY`，设置了的就跑一轮带工具调用的对话，没设置的跳过并在汇报中注明。
 7. 3 级：录屏流式对话、切换模型、批准 diff 三个场景并推送。
 8. 写入 `docs/checklist/stage-5.md`：用你自己的密钥配置至少两家供应商，试推理强度、图片输入和写入批准。

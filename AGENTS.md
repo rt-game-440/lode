@@ -2,7 +2,7 @@
 
 ## 项目
 
-notevault：自托管、单用户的 Markdown 笔记 PWA，多端即时同步，自带 Agent 助手并对外提供 MCP。完整规格见 [docs/SPEC.md](docs/SPEC.md)。
+Lode：自托管、单用户的 Markdown 笔记 PWA，多端即时同步，自带 Agent 助手并对外提供 MCP。完整规格见 [docs/SPEC.md](docs/SPEC.md)。
 
 开发分 6 个阶段，阶段 N 对应 GitHub issue #N（标签 `stage`），依赖关系见 SPEC 的"阶段"表。issue 正文就是该阶段的任务说明，同一份内容也存在 `docs/stages/stage-<N>.md`。
 
