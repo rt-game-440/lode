@@ -12,6 +12,7 @@
 - **本机没有 Docker**：容器相关验收（compose up、`--memory=256m`、发布二进制在容器里跑）放在 CI 的“容器冒烟”任务里，脚本是 `scripts/docker-smoke.sh`；`web/e2e/container.spec.ts` 只在设置 `LODE_E2E_URL` 时运行，对外部实例跑冒烟。
 - **新增依赖**：`golang.org/x/term`（`reset-password` 从终端读密码不回显）；`golang.org/x/sys/windows` 原本就是间接依赖，现在 `internal/ops` 的 Windows 文件锁和 `cmd/bench` 的内存读取直接使用。
 - **文件锁不可用**：文件系统不支持加锁（部分 NFS、SMB 挂载）时 `ops.Lock` 返回 `ErrLockUnsupported`，`serve` 打警告继续运行，`restore` 也照常执行；只有锁被别的进程持有才拒绝。
+- **本机改动要自己刷新派生数据**：本机删除、恢复、移动笔记后，WebSocket 回声会被 `sync.isKnown` 当成已知而忽略，所以 `stores/vault.ts` 里这些操作要自己调用 `contentChanged()`（递增 `version`，搜索结果、反链等据此刷新）。以前偶尔靠回声先于本地更新到达才刷新，CI 上暴露为 smoke 用例的竞态。
 - **性能基准**：`server/cmd/bench`；Windows 的工作集会被系统修剪，内存以 CI（Linux）的 VmRSS 为准。两个字的中文查询走 LIKE 扫描，是搜索 p95 的主要来源。
 
 ## 2026-11-07 19:20 阶段 5 评审后的修正

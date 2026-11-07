@@ -61,6 +61,8 @@ test('新建笔记、输入、自动保存、刷新、磁盘一致、搜索、�
   await page.getByRole('menuitem', { name: '移到回收站' }).click()
   await expect(page.getByText('“冒烟测试”已移到回收站')).toBeVisible()
   expect(existsSync(join(vault, '冒烟测试.md'))).toBe(false)
+  // 搜索结果在 vault 变化后约 200ms 刷新；等它消失再打开回收站，否则两处都匹配“冒烟测试”
+  await expect(hit).toBeHidden()
 
   await page.getByRole('button', { name: '回收站' }).click()
   const row = page.getByRole('listitem').filter({ hasText: '冒烟测试' })
