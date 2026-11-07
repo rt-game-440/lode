@@ -21,7 +21,9 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          # 用 1.26 的最新补丁版本：go.mod 写的是最低版本 1.26.0，标准库的安全修复在补丁版本里
+          go-version: '1.26.x'
+          check-latest: true
           cache-dependency-path: server/go.sum
       - uses: pnpm/action-setup@v4
         with:

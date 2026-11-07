@@ -4,13 +4,14 @@
 # 多架构：docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t lode .
 
 FROM --platform=$BUILDPLATFORM node:24-alpine AS web
-WORKDIR /src
+# 在 web/ 目录里运行 pnpm：corepack 按当前目录 package.json 的 packageManager 选择 pnpm 版本
+WORKDIR /src/web
 RUN corepack enable
-COPY web/package.json web/pnpm-lock.yaml web/
-RUN pnpm -C web install --frozen-lockfile
-COPY web web
-# 前端构建输出到 server/internal/webui/dist
-RUN mkdir -p server/internal/webui && pnpm -C web build
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web ./
+# 前端构建输出到 ../server/internal/webui/dist
+RUN mkdir -p ../server/internal/webui && pnpm build
 
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS server
 ARG TARGETOS TARGETARCH TARGETVARIANT
