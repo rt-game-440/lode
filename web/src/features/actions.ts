@@ -1,5 +1,7 @@
 // 跨界面复用的笔记操作：带提示、确认和错误处理。
-import { ApiError } from '../api/client'
+import { errorMessage } from '../api/client'
+
+export { errorMessage }
 import type { Note } from '../api/types'
 import { confirmDialog, promptDialog } from '../components/overlays'
 import { basename, dirname, invalidNameReason, join } from '../lib/paths'
@@ -8,25 +10,6 @@ import { requestTitleFocus } from './editor/editorRef'
 import { useEditor } from '../stores/editor'
 import { useUI } from '../stores/ui'
 import { findByPath, useVault } from '../stores/vault'
-
-export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    switch (err.code) {
-      case 'exists':
-        return '同名的笔记或文件夹已存在'
-      case 'invalid_path':
-        return '名称不合法'
-      case 'not_found':
-        return '笔记不存在，可能已被删除'
-      case 'conflict':
-        return '笔记已在别处被修改'
-      case 'network':
-        return '网络不可用'
-    }
-    return err.message || '操作失败'
-  }
-  return err instanceof Error ? err.message : String(err)
-}
 
 function toastError(err: unknown) {
   useUI.getState().toast({ message: errorMessage(err), tone: 'error' })

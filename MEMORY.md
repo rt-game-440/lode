@@ -2,13 +2,21 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-07 16:05 阶段 1 审查后的决策
+
+- **符号链接**：vault 内不跟随符号链接和 Windows 目录联接。`vault.Resolve` 从根逐段 Lstat，遇到 `ModeSymlink|ModeIrregular` 就返回 `ErrInvalidPath`，所有读写都经过它，和 Walk 不索引链接一致。Go 1.23 起 `EvalSymlinks` 不解析目录联接，不能拿它做越界检查。Windows 测试用 `mklink /J` 建联接，不需要管理员权限。
+- **反向代理**：`LODE_TRUSTED_PROXIES`（默认 `127.0.0.0/8,::1`）。只有直连方在列表里时才采用 `X-Forwarded-For`（从右往左取第一个不可信地址作为限流键）和 `X-Forwarded-Proto`（决定 cookie 的 Secure）。阶段 6 的 Docker/Caddy 文档要说明：代理不在本机时把代理地址加进去。
+- **启动顺序**：先建立 fsnotify 监听（`Watch` 的 ready 回调），再全量对账；关闭时先取消后台任务并等它们结束，再关数据库。
+- **已知限制**：外部改名只在同一个对账批次（300ms 合并，最长 1.2s）内按 hash 配对。改名的两个事件落在不同批次时，旧 id 和历史版本会丢，新文件按新建处理。常见编辑器的改名是一次 rename 调用，实际很少触发。
+- **前端自身操作改写了打开中的笔记**（重命名时改写链接）：`editor.syncServerNotes` 会重新载入它。轮询会过滤本机设备的变更，不能靠轮询发现。
+
 ## 2026-11-07 15:55 阶段 1 决策
 
 - **Go 版本**：`go.mod` 声明 go 1.26.0。modernc sqlite 和 x/crypto 的当前版本要求 ≥1.26，比阶段说明里的 1.22 高；本地是 1.27。Dockerfile（阶段 6）要用 1.26 以上的镜像。
 - **回收站位置**：放在 `DATA_DIR/trash`，不在 vault 里，避免被 Obsidian、同步盘看到。删除文件夹时，其中的笔记逐篇进回收站，非笔记文件整体移到 `trash/folders`。
 - **id 只存在数据库**：不写进 frontmatter。外部改名靠内容 hash 匹配"同一批对账里消失的旧路径"来保留 id，hash 不同则当作删除加新建。
 - **外部修改感知**：fsnotify 事件先合并 300ms（最长 1.2s）再对账；启动时全量对账。阶段 1 的前端每 1s 轮询 `/api/changes`，阶段 2 换成 WebSocket 后保留该接口用于断线补齐。
-- **SQLite**：WAL、`cache_size(-2000)`、最多 4 个连接。1000 篇笔记空闲 WorkingSet 17.9MB，私有内存 52.2MB（Windows 实测，见 `docs/evidence/stage-1/rss.txt`）。
+- **SQLite**：WAL、`cache_size(-2000)`、最多 4 个连接。1000 篇笔记空闲 WorkingSet 18.6MB，私有内存 52.4MB（Windows 实测，见 `docs/evidence/stage-1/rss.txt`）。
 - **鉴权**：argon2id，m=19MiB、t=2、p=1，32 字节；会话 30 天、每次使用顺延；同一 IP 1 分钟内 5 次错误锁定 60s，锁定期间正确密码也返回 429。
 - **搜索**：FTS5 trigram；少于 3 个字符的词改用 LIKE；bm25 标题权重 10。snippet 用 `\x02`/`\x03` 标记命中，前端拆分后高亮，避免 HTML 注入。
 - **标签规则前后端各一份**：后端 `mdparse` 和前端 `wikilinkSyntax.ts` 的 HashTag 边界字符、标签字符必须保持一致，改一边要改另一边（各有单测）。

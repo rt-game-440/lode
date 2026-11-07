@@ -2,7 +2,9 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,10 +16,13 @@ type Config struct {
 	DataDir   string // LODE_DATA_DIR，默认 ./data
 	SecretKey string // LODE_SECRET_KEY，阶段 5 用于加密 API key
 	LogLevel  slog.Level
+	// LODE_TRUSTED_PROXIES，逗号分隔的 IP 或 CIDR，默认只信任本机回环。
+	// 反向代理不在本机时（例如 Docker 里的 Caddy）需要加上代理的地址。
+	TrustedProxies []netip.Prefix
 }
 
 // Load 读取环境变量并填充默认值。
-func Load() Config {
+func Load() (Config, error) {
 	c := Config{
 		Addr:      env("LODE_ADDR", "127.0.0.1:8787"),
 		DataDir:   env("LODE_DATA_DIR", "./data"),
@@ -27,7 +32,37 @@ func Load() Config {
 	if abs, err := filepath.Abs(c.DataDir); err == nil {
 		c.DataDir = abs
 	}
-	return c
+	proxies, err := ParsePrefixes(env("LODE_TRUSTED_PROXIES", "127.0.0.0/8,::1"))
+	if err != nil {
+		return c, fmt.Errorf("LODE_TRUSTED_PROXIES: %w", err)
+	}
+	c.TrustedProxies = proxies
+	return c, nil
+}
+
+// ParsePrefixes 解析逗号分隔的 IP 或 CIDR 列表。
+func ParsePrefixes(s string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "/") {
+			p, err := netip.ParsePrefix(part)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(part)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
+	}
+	return out, nil
 }
 
 // VaultDir 是笔记文件所在目录。

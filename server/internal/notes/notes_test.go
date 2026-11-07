@@ -306,12 +306,13 @@ func TestWatcherReflectsExternalEditsWithinTwoSeconds(t *testing.T) {
 	ctx, cancel := context.WithCancel(f.ctx)
 	defer cancel()
 	done := make(chan struct{})
+	ready := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = f.svc.Watch(ctx, 150*time.Millisecond)
+		_ = f.svc.Watch(ctx, 150*time.Millisecond, func() { close(ready) })
 	}()
 	defer func() { cancel(); <-done }()
-	time.Sleep(100 * time.Millisecond) // 等监听建立
+	<-ready
 
 	f.writeDisk(t, "监听/新文件.md", "监听测试独特词")
 	deadline := time.Now().Add(2 * time.Second)
@@ -388,5 +389,19 @@ func TestTagsAndFolders(t *testing.T) {
 	items, _ := f.svc.ListTrash(f.ctx)
 	if len(items) != 1 {
 		t.Fatalf("删除文件夹后其中笔记应进回收站: %+v", items)
+	}
+}
+
+func TestSearchTitleOnlyHitStillHasSnippet(t *testing.T) {
+	f := newFixture(t)
+	f.create(t, "季度计划草稿.md", "第一行正文内容\n第二行")
+	for _, q := range []string{"季度计划", "季度"} {
+		res, err := f.svc.Search(f.ctx, SearchQuery{Query: q})
+		if err != nil || len(res) != 1 {
+			t.Fatalf("%q: %v %v", q, res, err)
+		}
+		if !strings.Contains(res[0].Snippet, "第一行正文") {
+			t.Errorf("%q 只命中标题时应返回正文开头作为摘要，得到 %q", q, res[0].Snippet)
+		}
 	}
 }

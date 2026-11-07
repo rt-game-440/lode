@@ -24,6 +24,26 @@ export class ApiError extends Error {
   }
 }
 
+/** 把错误转成给用户看的中文提示。 */
+export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case 'exists':
+        return '同名的笔记或文件夹已存在'
+      case 'invalid_path':
+        return '名称不合法'
+      case 'not_found':
+        return '笔记不存在，可能已被删除'
+      case 'conflict':
+        return '笔记已在别处被修改'
+      case 'network':
+        return '网络不可用'
+    }
+    return err.message || '操作失败'
+  }
+  return err instanceof Error ? err.message : String(err)
+}
+
 /** 未登录（会话失效）时的回调，由会话 store 注册。 */
 let onUnauthorized: (() => void) | null = null
 export function setUnauthorizedHandler(fn: () => void) {
@@ -100,7 +120,8 @@ export const api = {
   notesByTag: (tag: string) => request<{ notes: Note[] }>('GET', `/api/tags/notes${q({ tag })}`).then((r) => r.notes),
 
   createFolder: (path: string) => request<{ path: string }>('POST', '/api/folders', { path }),
-  moveFolder: (from: string, to: string) => request<{ path: string; moved: number }>('POST', '/api/folders/move', { from, to }),
+  moveFolder: (from: string, to: string) =>
+    request<{ path: string; moved: number; updated: Note[] }>('POST', '/api/folders/move', { from, to }),
   deleteFolder: (path: string) => request<{ trashed: number }>('DELETE', `/api/folders${q({ path })}`),
 
   trash: () => request<{ items: TrashItem[] }>('GET', '/api/trash').then((r) => r.items),

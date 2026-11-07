@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -214,11 +215,15 @@ func hashToken(t string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// truncate 最多保留 n 个字节，且不切断 UTF-8 字符。
 func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
+	if len(s) <= n {
+		return s
 	}
-	return s
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // Limiter 是登录失败限速器：窗口内失败 max 次后锁定 lock 时长。按客户端（IP）分别计数。

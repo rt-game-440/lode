@@ -1,5 +1,6 @@
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete'
 import { EditorView } from '@codemirror/view'
+import { dirname } from '../../../lib/paths'
 import { fuzzyScore } from '../../../lib/snippet'
 
 export interface LinkCandidate {
@@ -30,7 +31,7 @@ export function wikiLinkCompletion(candidates: () => LinkCandidate[]) {
     scored.sort((a, b) => b.s - a.s || a.c.path.length - b.c.path.length)
     const options: Completion[] = scored.slice(0, 50).map(({ c }) => ({
       label: c.title,
-      detail: c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : '',
+      detail: dirname(c.path),
       type: 'text',
       apply: (view, _completion, f, t) => {
         // 光标移到 ]] 之后

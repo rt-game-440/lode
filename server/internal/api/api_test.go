@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ type client struct {
 	hc   *http.Client
 }
 
-func newServer(t *testing.T) *client {
+func newServer(t *testing.T, opts ...func(*Server)) *client {
 	t.Helper()
 	dir := t.TempDir()
 	d, err := db.Open(context.Background(), filepath.Join(dir, "app.db"))
@@ -36,6 +37,9 @@ func newServer(t *testing.T) *client {
 	v, _ := vault.New(filepath.Join(dir, "vault"))
 	svc := notes.New(notes.Options{DB: d, Vault: v, TrashDir: filepath.Join(dir, "trash")})
 	s := &Server{Notes: svc, Auth: auth.New(d), Version: "test"}
+	for _, o := range opts {
+		o(s)
+	}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	jar, _ := cookiejar.New(nil)
@@ -44,6 +48,11 @@ func newServer(t *testing.T) *client {
 
 func (c *client) do(method, path string, body any) (int, map[string]any) {
 	c.t.Helper()
+	return c.doH(method, path, body, nil)
+}
+
+func (c *client) doH(method, path string, body any, hdr map[string]string) (int, map[string]any) {
+	c.t.Helper()
 	var r io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -51,6 +60,9 @@ func (c *client) do(method, path string, body any) (int, map[string]any) {
 	}
 	req, _ := http.NewRequest(method, c.base+path, r)
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
@@ -106,6 +118,41 @@ func TestLoginRateLimit(t *testing.T) {
 	st, body := c.do("POST", "/api/auth/login", map[string]string{"password": "correct-horse"})
 	if st != 429 || body["code"] != "rate_limited" {
 		t.Fatalf("锁定期间即使密码正确也应 429，得到 %d %v", st, body)
+	}
+}
+
+// 反向代理后面所有请求的 RemoteAddr 相同：只有来自可信代理时才按 X-Forwarded-For 区分客户端。
+func TestRateLimitTrustsForwardedForOnlyFromTrustedProxies(t *testing.T) {
+	loopback := func(s *Server) {
+		s.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}
+	}
+	attacker := map[string]string{"X-Forwarded-For": "203.0.113.7"}
+	owner := map[string]string{"X-Forwarded-For": "198.51.100.9"}
+	wrong := map[string]string{"password": "wrong"}
+	right := map[string]string{"password": "correct-horse"}
+
+	c := newServer(t, loopback)
+	c.setup()
+	c.do("POST", "/api/auth/logout", nil)
+	for i := 0; i < 5; i++ {
+		c.doH("POST", "/api/auth/login", wrong, attacker)
+	}
+	if st, body := c.doH("POST", "/api/auth/login", right, owner); st != 204 {
+		t.Fatalf("其他客户端不应被别人的错误尝试锁定，得到 %d %v", st, body)
+	}
+	if st, _ := c.doH("POST", "/api/auth/login", right, attacker); st != 429 {
+		t.Fatalf("出错的客户端应被锁定，得到 %d", st)
+	}
+
+	// 未配置可信代理时忽略 X-Forwarded-For，伪造它也绕不过限流
+	c2 := newServer(t)
+	c2.setup()
+	c2.do("POST", "/api/auth/logout", nil)
+	for i := 0; i < 5; i++ {
+		c2.doH("POST", "/api/auth/login", wrong, attacker)
+	}
+	if st, _ := c2.doH("POST", "/api/auth/login", right, owner); st != 429 {
+		t.Fatalf("不可信来源的 X-Forwarded-For 不应生效，得到 %d", st)
 	}
 }
 

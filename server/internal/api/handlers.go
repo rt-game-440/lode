@@ -60,7 +60,7 @@ func (s *Server) authSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if ok, wait := s.Auth.Limiter.Allow(ip); !ok {
 		secs := int(wait.Seconds() + 0.999)
 		w.Header().Set("Retry-After", strconv.Itoa(secs))
@@ -102,7 +102,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 		Expires:  exp,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isHTTPS(r),
+		Secure:   s.isHTTPS(r),
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -111,12 +111,8 @@ func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(SessionCookie); err == nil {
 		_ = s.Auth.DeleteSession(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isHTTPS(r)})
+	http.SetCookie(w, &http.Cookie{Name: SessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.isHTTPS(r)})
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func isHTTPS(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // ---- 笔记 ----
@@ -238,14 +234,18 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, item)
 }
 
-type moveReq struct {
+// pathReq 是只带一个目标路径的请求（移动笔记、新建文件夹）。
+type pathReq struct {
 	Path string `json:"path"`
+}
+
+type folderMoveReq struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 }
 
 func (s *Server) moveNote(w http.ResponseWriter, r *http.Request) {
-	var req moveReq
+	var req pathReq
 	if err := decode(w, r, &req); err != nil {
 		s.fail(w, r, err)
 		return
@@ -308,7 +308,7 @@ func (s *Server) notesByTag(w http.ResponseWriter, r *http.Request) {
 // ---- 文件夹 ----
 
 func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
-	var req moveReq
+	var req pathReq
 	if err := decode(w, r, &req); err != nil {
 		s.fail(w, r, err)
 		return
@@ -322,7 +322,7 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) moveFolder(w http.ResponseWriter, r *http.Request) {
-	var req moveReq
+	var req folderMoveReq
 	if err := decode(w, r, &req); err != nil {
 		s.fail(w, r, err)
 		return

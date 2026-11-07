@@ -171,7 +171,6 @@ type rewrite struct {
 
 // planLinkRewrites 在移动发生前计算需要改写的引用。moves 为 笔记 id → 新路径。
 func (s *Service) planLinkRewrites(ctx context.Context, moves map[string]string) ([]rewrite, error) {
-	moved := map[string]noteRow{}
 	keySet := map[string]bool{}
 	srcSet := map[string]bool{}
 	var srcOrder []string
@@ -180,7 +179,6 @@ func (s *Service) planLinkRewrites(ctx context.Context, moves map[string]string)
 		if err != nil {
 			return nil, err
 		}
-		moved[id] = n
 		for _, k := range linkKeys(n.Path) {
 			keySet[k] = true
 		}

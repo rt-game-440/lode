@@ -10,7 +10,7 @@ bin="$root/bin/lode$(go env GOEXE)"
 [ -x "$bin" ] || { echo "找不到 $bin，请先运行 scripts/build.sh"; exit 1; }
 data="$root/data-rss"
 rm -rf "$data"
-(cd "$root/server" && go run ./cmd/gennotes -dir "$data/vault" -n "$N")
+(cd "$root/server" && go run ./cmd/gennotes -dir "$data/vault" -n "$N") >&2
 
 export LODE_DATA_DIR="$data" LODE_ADDR="127.0.0.1:$PORT" LODE_LOG_LEVEL=warn
 base="http://127.0.0.1:$PORT"

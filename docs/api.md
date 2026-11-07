@@ -4,8 +4,10 @@
 
 ## 约定
 
-- **鉴权**：除 `/api/health` 和 `/api/auth/*` 外都需要会话 cookie `lode_session`（HttpOnly、SameSite=Lax；HTTPS 或 `X-Forwarded-Proto: https` 时带 Secure）。未登录返回 `401 unauthorized`。
+- **鉴权**：除 `/api/health` 和 `/api/auth/*` 外都需要会话 cookie `lode_session`（HttpOnly、SameSite=Lax；直连 HTTPS，或可信代理转发 `X-Forwarded-Proto: https` 时带 Secure）。未登录返回 `401 unauthorized`。
+- **反向代理**：只有直连方在 `LODE_TRUSTED_PROXIES`（默认 `127.0.0.0/8,::1`）里时，才采用 `X-Forwarded-For` 和 `X-Forwarded-Proto`。
 - **设备标识**（可选）：请求头 `X-Device-Id`（≤64 字符）和 `X-Device-Name`（URL 编码，≤64 字符），写入变更事件的 `device_id` / `device_name`。
+- **符号链接**：vault 内不跟随符号链接和目录联接，经过它们的路径返回 `invalid_path`。
 - **路径**：相对 vault 根目录，用 `/` 分隔，笔记以 `.md` 结尾。`..`、绝对路径或盘符、以 `.` 开头的段、控制字符和 `<>"|?*`、以空格结尾的名称都会被拒绝（`invalid_path`）。
 - **乐观并发**：修改正文必须带 `base_rev`，与服务器当前 `rev` 不一致时返回 `409 conflict` 和 `current_rev`。
 - **请求体上限**：JSON 32 MB；附件 20 MB。
@@ -71,7 +73,7 @@ type Change = {
 | POST | `/api/auth/login` | `{"password":"…"}` | `204` 并写入会话 cookie；`401 wrong_password`；`409 not_initialized`；`429 rate_limited` |
 | POST | `/api/auth/logout` | | `204`，删除会话并清除 cookie |
 
-密码用 argon2id 哈希；会话 30 天有效，每次使用顺延。限流按客户端 IP 计数，锁定期间即使密码正确也返回 429。
+密码用 argon2id 哈希；会话 30 天有效，每次使用顺延。限流按客户端 IP 计数（1 分钟内 5 次错误锁定 60 秒），锁定期间即使密码正确也返回 429。
 
 ## 笔记
 

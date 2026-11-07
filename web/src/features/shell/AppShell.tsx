@@ -5,7 +5,7 @@ import { useEditor } from '../../stores/editor'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import { fadeTransition, springPanel } from '../../styles/tokens/motion'
-import { newNote } from '../actions'
+import { errorMessage, newNote } from '../actions'
 import { EditorPane } from '../editor/EditorPane'
 import { RightPanel } from '../right/RightPanel'
 import { Sidebar } from '../sidebar/Sidebar'
@@ -118,7 +118,15 @@ export function AppShell() {
   const wide = useMedia('(min-width: 1100px)')
 
   useEffect(() => {
-    void load().catch(() => {})
+    const tryLoad = () =>
+      load().catch((err) =>
+        useUI.getState().toast({
+          message: `笔记列表加载失败：${errorMessage(err)}`,
+          tone: 'error',
+          action: { label: '重试', run: () => void tryLoad() },
+        }),
+      )
+    void tryLoad()
   }, [load])
 
   useEffect(() => {

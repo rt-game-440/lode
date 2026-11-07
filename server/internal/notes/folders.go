@@ -258,16 +258,10 @@ func (s *Service) OpenFile(p string) (*os.File, fs.FileInfo, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	abs := s.vault.Abs(p)
 	// 防止通过 vault 内的符号链接读到 vault 之外的文件。
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		root, rerr := filepath.EvalSymlinks(s.vault.Root())
-		if rerr != nil {
-			root = s.vault.Root()
-		}
-		if rel, err := filepath.Rel(root, real); err != nil || !filepath.IsLocal(rel) {
-			return nil, nil, ErrInvalidPath
-		}
+	abs, err := s.vault.Resolve(p)
+	if err != nil {
+		return nil, nil, err
 	}
 	f, err := os.Open(abs)
 	if errors.Is(err, fs.ErrNotExist) {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path"
-	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -14,17 +13,16 @@ import (
 
 // Watch 用 fsnotify 监听 vault 中的外部修改，并增量对账。阻塞直到 ctx 取消。
 // 事件先按 debounce 合并，再对涉及的路径（及其父目录）对账。
-func (s *Service) Watch(ctx context.Context, debounce time.Duration) error {
+// 所有目录加入监听后调用 ready（可为 nil）；调用方应在此之后再做全量对账，避免漏掉中间的修改。
+func (s *Service) Watch(ctx context.Context, debounce time.Duration, ready func()) error {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
 	defer w.Close()
+	// 以下状态只在本 goroutine 中访问
 	watched := map[string]bool{}
-	var wmu sync.Mutex
 	addDirs := func(rel string) {
-		wmu.Lock()
-		defer wmu.Unlock()
 		_ = s.vault.Walk(rel, func(e vault.Entry) error {
 			if e.IsDir && !watched[e.Path] {
 				if err := w.Add(s.vault.Abs(e.Path)); err == nil {
@@ -35,6 +33,9 @@ func (s *Service) Watch(ctx context.Context, debounce time.Duration) error {
 		})
 	}
 	addDirs("")
+	if ready != nil {
+		ready()
+	}
 
 	pending := map[string]bool{}
 	var timer *time.Timer
@@ -66,6 +67,18 @@ func (s *Service) Watch(ctx context.Context, debounce time.Duration) error {
 		if len(scopes) == 0 {
 			return
 		}
+		// 先把新出现的目录加入监听再对账：之后在其中创建的文件会产生事件，之前创建的由对账发现
+		for _, sc := range scopes {
+			if info, err := os.Stat(s.vault.Abs(sc)); err == nil && info.IsDir() {
+				addDirs(sc)
+			}
+		}
+		for d := range watched {
+			if _, err := os.Stat(s.vault.Abs(d)); errors.Is(err, os.ErrNotExist) {
+				_ = w.Remove(s.vault.Abs(d))
+				delete(watched, d)
+			}
+		}
 		st, err := s.Reconcile(context.WithoutCancel(ctx), scopes...)
 		if err != nil {
 			s.log.Warn("增量对账失败", "err", err)
@@ -74,20 +87,6 @@ func (s *Service) Watch(ctx context.Context, debounce time.Duration) error {
 		if st != (ReconcileStats{}) {
 			s.log.Debug("外部修改已同步", "added", st.Added, "updated", st.Updated, "moved", st.Moved, "removed", st.Removed)
 		}
-		// 新出现的目录需要加入监听
-		for _, sc := range scopes {
-			if info, err := os.Stat(s.vault.Abs(sc)); err == nil && info.IsDir() {
-				addDirs(sc)
-			}
-		}
-		wmu.Lock()
-		for d := range watched {
-			if _, err := os.Stat(s.vault.Abs(d)); errors.Is(err, os.ErrNotExist) {
-				_ = w.Remove(s.vault.Abs(d))
-				delete(watched, d)
-			}
-		}
-		wmu.Unlock()
 	}
 
 	for {

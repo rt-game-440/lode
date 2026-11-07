@@ -281,6 +281,10 @@ func (s *Service) deleteLocked(ctx context.Context, n noteRow) (TrashItem, error
 		return recordChange(ctx, tx, &ch)
 	})
 	if err != nil {
+		// 索引没更新成功：把文件放回原处，保持文件与索引一致
+		if rerr := s.vault.MoveIn(filepath.Join(s.trashDir, file), n.Path); rerr != nil {
+			s.log.Error("删除失败且无法放回原文件", "path", n.Path, "trash", file, "err", rerr)
+		}
 		return TrashItem{}, err
 	}
 	s.emit([]Change{ch})

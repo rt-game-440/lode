@@ -39,6 +39,26 @@ func New(root string) (*Vault, error) {
 	return &Vault{root: abs}, nil
 }
 
+// Resolve 返回 rel 的绝对路径，并确认路径上已存在的各段都不是符号链接或 Windows 目录联接。
+// 与 Walk 一致：vault 内不跟随链接，防止经链接读写到 vault 之外。
+func (v *Vault) Resolve(rel string) (string, error) {
+	p := v.root
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == "" {
+			continue
+		}
+		p = filepath.Join(p, seg)
+		info, err := os.Lstat(p)
+		if err != nil {
+			break // 不存在的部分稍后会被创建
+		}
+		if info.Mode()&(fs.ModeSymlink|fs.ModeIrregular) != 0 {
+			return "", fmt.Errorf("%w: 路径经过符号链接", ErrInvalidPath)
+		}
+	}
+	return v.Abs(rel), nil
+}
+
 // Root 返回 vault 根目录的绝对路径。
 func (v *Vault) Root() string { return v.root }
 
@@ -123,7 +143,11 @@ func (v *Vault) Rel(abs string) (string, bool) {
 
 // ReadFile 读取文件内容。
 func (v *Vault) ReadFile(rel string) ([]byte, error) {
-	return os.ReadFile(v.Abs(rel))
+	abs, err := v.Resolve(rel)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(abs)
 }
 
 // Stat 返回文件信息。
@@ -139,12 +163,19 @@ func (v *Vault) Exists(rel string) bool {
 
 // WriteFile 原子写入：先写同目录的临时文件并 fsync，再 rename 覆盖目标。
 func (v *Vault) WriteFile(rel string, data []byte) (fs.FileInfo, error) {
-	return AtomicWrite(v.Abs(rel), data)
+	abs, err := v.Resolve(rel)
+	if err != nil {
+		return nil, err
+	}
+	return AtomicWrite(abs, data)
 }
 
 // CreateFile 原子创建新文件，目标已存在时返回 fs.ErrExist。
 func (v *Vault) CreateFile(rel string, data []byte) (fs.FileInfo, error) {
-	abs := v.Abs(rel)
+	abs, err := v.Resolve(rel)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 		return nil, err
 	}
@@ -194,7 +225,14 @@ func AtomicWrite(abs string, data []byte) (fs.FileInfo, error) {
 // Rename 在 vault 内移动文件或目录，目标已存在时返回 fs.ErrExist。
 // 仅大小写不同的改名（例如 a.md → A.md）是允许的。
 func (v *Vault) Rename(from, to string) error {
-	src, dst := v.Abs(from), v.Abs(to)
+	src, err := v.Resolve(from)
+	if err != nil {
+		return err
+	}
+	dst, err := v.Resolve(to)
+	if err != nil {
+		return err
+	}
 	if !strings.EqualFold(from, to) {
 		if _, err := os.Lstat(dst); err == nil {
 			return fs.ErrExist
@@ -211,12 +249,19 @@ func (v *Vault) MoveOut(rel, dstAbs string) error {
 	if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
 		return err
 	}
-	return moveFile(v.Abs(rel), dstAbs)
+	src, err := v.Resolve(rel)
+	if err != nil {
+		return err
+	}
+	return moveFile(src, dstAbs)
 }
 
 // MoveIn 把 vault 外的文件移到 vault 内（用于从回收站恢复）。目标已存在时返回 fs.ErrExist。
 func (v *Vault) MoveIn(srcAbs, rel string) error {
-	dst := v.Abs(rel)
+	dst, err := v.Resolve(rel)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Lstat(dst); err == nil {
 		return fs.ErrExist
 	}
@@ -228,12 +273,20 @@ func (v *Vault) MoveIn(srcAbs, rel string) error {
 
 // Mkdir 创建目录（含父目录）。
 func (v *Vault) Mkdir(rel string) error {
-	return os.MkdirAll(v.Abs(rel), 0o755)
+	abs, err := v.Resolve(rel)
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(abs, 0o755)
 }
 
 // Remove 删除文件或空目录。
 func (v *Vault) Remove(rel string) error {
-	return os.Remove(v.Abs(rel))
+	abs, err := v.Resolve(rel)
+	if err != nil {
+		return err
+	}
+	return os.Remove(abs)
 }
 
 // IsIgnored 判断相对路径中是否有以 "." 开头的段（隐藏文件、.obsidian、临时文件等）。

@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { api } from '../api/client'
 import type { Change, MoveResult, Note, TagCount } from '../api/types'
 import { deviceId } from '../lib/device'
-import { join } from '../lib/paths'
+import { dirname, join } from '../lib/paths'
+import { useEditor } from './editor'
 
 /**
  * 笔记树与所有写操作的入口。编辑器和文件树都通过这里读写笔记，
@@ -73,7 +74,8 @@ export const useVault = create<VaultState>((set, get) => ({
     const res = await api.moveNote(id, newPath)
     get().upsert(res.note)
     for (const u of res.updated) get().upsert(u)
-    const dir = newPath.includes('/') ? newPath.slice(0, newPath.lastIndexOf('/')) : ''
+    await useEditor.getState().syncServerNotes([res.note, ...res.updated])
+    const dir = dirname(newPath)
     if (dir && !get().folders.includes(dir)) await get().load()
     return res
   },
@@ -97,8 +99,9 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   moveFolder: async (from, to) => {
-    await api.moveFolder(from, to)
+    const res = await api.moveFolder(from, to)
     await get().load()
+    await useEditor.getState().syncServerNotes(res.updated)
   },
 
   deleteFolder: async (path) => {
@@ -115,8 +118,9 @@ export const useVault = create<VaultState>((set, get) => ({
     }
     const me = deviceId()
     const foreign = changes.filter((c) => c.device_id !== me)
-    set({ seq: Math.max(seq, changes[changes.length - 1].seq) })
+    // 先刷新树，成功后再推进 seq；刷新失败时下次轮询会重新拉到这些变更
     if (foreign.length) await get().load()
+    set({ seq: Math.max(get().seq, seq, changes[changes.length - 1].seq) })
     return foreign
   },
 }))

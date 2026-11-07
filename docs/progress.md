@@ -14,6 +14,7 @@
 遗留：
 
 - 前端主包 720KB（gzip 243KB），阶段 3 考虑按需加载 CodeMirror 语言包。
-- Windows 私有内存 52.2MB（WorkingSet 17.9MB 达标），Linux 上的 RSS 待阶段 6 Docker 镜像里复测。
+- Windows 上 RSS（WorkingSet）18.6MB 达标；私有内存（已提交量）52.4MB。Linux 上的 RSS 待阶段 6 在 Docker 镜像里复测。
+- 外部改名跨两个对账批次时 id 不保留（见 MEMORY.md 已知限制）。
 
 下一步：阶段 2（多端即时同步，WebSocket 替换轮询）。

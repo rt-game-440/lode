@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -29,6 +30,9 @@ type Server struct {
 
 	// MaxUploadBytes 是附件大小上限，默认 20MB。
 	MaxUploadBytes int64
+	// TrustedProxies 是可信的反向代理地址。只有直连地址在其中时，才采用
+	// X-Forwarded-For（登录限流按真实客户端计数）和 X-Forwarded-Proto（决定 cookie 是否加 Secure）。
+	TrustedProxies []netip.Prefix
 }
 
 // Handler 构建完整的 HTTP 处理链。
@@ -231,12 +235,56 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 
-func clientIP(r *http.Request) string {
+// remoteAddr 返回 TCP 直连方的地址。
+func remoteAddr(r *http.Request) (netip.Addr, string) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	a, _ := netip.ParseAddr(host)
+	return a.Unmap(), host
+}
+
+func (s *Server) trusted(a netip.Addr) bool {
+	if !a.IsValid() {
+		return false
+	}
+	for _, p := range s.TrustedProxies {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientIP 返回用于限流的客户端地址：直连方是可信代理时，取 X-Forwarded-For 中
+// 从右往左第一个不可信的地址（左侧的值可以被客户端伪造）。
+func (s *Server) clientIP(r *http.Request) string {
+	a, host := remoteAddr(r)
+	if !s.trusted(a) {
+		return host
+	}
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		h := strings.TrimSpace(hops[i])
+		ha, err := netip.ParseAddr(h)
+		if err != nil {
+			break
+		}
+		if !s.trusted(ha.Unmap()) {
+			return ha.Unmap().String()
+		}
 	}
 	return host
+}
+
+// isHTTPS 判断客户端是否通过 HTTPS 访问（直连 TLS，或可信代理转发的 https）。
+func (s *Server) isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	a, _ := remoteAddr(r)
+	return s.trusted(a) && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func truncate(s string, n int) string {

@@ -2,7 +2,7 @@
  * 弹簧参数（Apple 的 damping + response 模型映射到 motion 的 bounce + duration）。
  * - 默认临界阻尼、无过冲；
  * - 只有手势本身带动量（甩、拖拽松手）时才加一点回弹。
- * prefers-reduced-motion 时调用方改用 fade（见 useReducedMotion）。
+ * prefers-reduced-motion 由根部的 <MotionConfig reducedMotion="user"> 统一处理：位移和缩放跳过，透明度保留。
  */
 import type { Transition } from 'motion/react'
 

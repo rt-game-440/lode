@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import { ApiError, api } from '../api/client'
-import type { NoteContent } from '../api/types'
+import { ApiError, api, errorMessage } from '../api/client'
+import type { Note, NoteContent } from '../api/types'
 import type { SaveStatus } from '../lib/autosave'
 import { useVault } from './vault'
 
@@ -36,17 +36,9 @@ interface EditorState {
   reload: () => Promise<void>
   /** 放弃本地修改，载入服务器上的最新版本 */
   forceReload: () => Promise<void>
+  /** 本机的操作（如重命名后改写链接）在服务器上修改了这些笔记；当前打开的笔记在其中时重新载入 */
+  syncServerNotes: (notes: Note[]) => Promise<void>
   setHeadings: (h: Heading[]) => void
-}
-
-export function describeError(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.code === 'conflict') return '笔记已在别处被修改'
-    if (err.status === 0) return '网络不可用'
-    if (err.status === 404) return '笔记已被删除'
-    return err.message
-  }
-  return String(err)
 }
 
 export const useEditor = create<EditorState>((set, get) => ({
@@ -70,7 +62,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       set((s) => ({ doc, loading: false, revs: { ...s.revs, [id]: doc.rev }, docVersion: s.docVersion + 1 }))
     } catch (err) {
       if (get().noteId !== id) return
-      set({ loading: false, doc: null, notFound: err instanceof ApiError && err.status === 404, error: describeError(err) })
+      set({ loading: false, doc: null, notFound: err instanceof ApiError && err.status === 404, error: errorMessage(err) })
     }
   },
 
@@ -86,7 +78,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   setStatus: (status, err) =>
     set({
       status,
-      error: err ? describeError(err) : status === 'error' ? get().error : null,
+      error: err ? errorMessage(err) : status === 'error' ? get().error : null,
       ...(err instanceof ApiError && err.code === 'conflict' ? { stale: true } : {}),
     }),
 
@@ -120,6 +112,12 @@ export const useEditor = create<EditorState>((set, get) => ({
       status: 'idle',
       error: null,
     }))
+  },
+
+  syncServerNotes: async (notes) => {
+    const id = get().noteId
+    const n = id ? notes.find((x) => x.id === id) : undefined
+    if (n && n.rev !== get().revs[n.id]) await get().reload()
   },
 
   setHeadings: (headings) => set({ headings }),

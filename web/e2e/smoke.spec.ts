@@ -124,3 +124,21 @@ test('重命名笔记后更新其他笔记中的链接，反链显示正确', as
   await expect(page.getByTestId('save-status')).toHaveText('已保存')
   expect(readFileSync(join(vault, '链接源.md'), 'utf8')).toBe('指向 [[新目标]] 的笔记 [[新目标]]')
 })
+
+test('重命名正在编辑的笔记时，其中的自链接同步更新且之后的保存不冲突', async () => {
+  const res = await page.request.post('/api/notes', { data: { path: '自链.md', content: '回到 [[自链]] 开头' } })
+  expect(res.ok()).toBe(true)
+  await openSidebarTab('文件')
+  await tree().getByRole('treeitem', { name: '自链', exact: true }).click()
+  const title = page.getByLabel('笔记标题')
+  await expect(title).toHaveValue('自链')
+  await title.fill('自链改名')
+  await title.press('Enter')
+  await expect(editorText()).toContainText('[[自链改名]]')
+
+  await editorText().click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type('。')
+  await expect(page.getByTestId('save-status')).toHaveText('已保存')
+  expect(readFileSync(join(vault, '自链改名.md'), 'utf8')).toBe('回到 [[自链改名]] 开头。')
+})
