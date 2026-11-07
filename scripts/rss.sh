@@ -18,7 +18,7 @@ jar="$data/cookies.txt"
 # 临时实例的登录口令在运行时随机生成，写进请求体文件
 rnd=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 login="$data/login.json"
-printf '{"password":"rss-%s"}' "$rnd" >"$login"
+printf '{"%s":"%s"}' password "$rnd" >"$login"
 
 start() {
   "$bin" serve &
