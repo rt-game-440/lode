@@ -1,4 +1,4 @@
-import { motion, useMotionValue, useTransform } from 'motion/react'
+import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { Drawer } from '../../components/Drawer'
 import { DialogHost, MenuHost, ToastHost } from '../../components/overlays'
@@ -13,14 +13,18 @@ import { Sidebar } from '../sidebar/Sidebar'
 import { QuickSwitcher } from '../switcher/QuickSwitcher'
 import { SettingsView } from '../settings/SettingsView'
 import { HomeView, TagView, TrashView } from '../views/Views'
+import { AgentPanel } from '../agent/AgentPanel'
 import { ShortcutsDialog, isTypingTarget } from './ShortcutsDialog'
 import { MobileStack } from './MobileStack'
 import { SidebarResizer } from './SidebarResizer'
 import { usePanelMotion } from './panelMotion'
+import { springPanel } from '../../styles/tokens/motion'
 import './shell.css'
 
 // 与 tokens 中 --rightbar-width 一致
 const RIGHT_W = 300
+// 右栏显示助手时更宽，与 tokens 中 --rightbar-width-agent 一致
+const AGENT_W = 380
 
 function useMedia(query: string): boolean {
   return useSyncExternalStore(
@@ -73,8 +77,10 @@ function useShortcuts() {
   }, [])
 }
 
-function MainView({ mobile, route }: { mobile: boolean; route: Route }) {
+function MainView({ mobile, route, contextNoteId }: { mobile: boolean; route: Route; contextNoteId: string | null }) {
   switch (route.view) {
+    case 'agent':
+      return <AgentPanel page mobile={mobile} contextNoteId={contextNoteId} />
     case 'note':
       return <EditorPane id={route.id} mobile={mobile} />
     case 'trash':
@@ -93,6 +99,7 @@ export function AppShell() {
   const syncFromLocation = useUI((s) => s.syncFromLocation)
   const route = useUI((s) => s.route)
   const rightOpen = useUI((s) => s.rightOpen)
+  const rightTab = useUI((s) => s.rightTab)
   const toggleRight = useUI((s) => s.toggleRight)
   const mobilePane = useUI((s) => s.mobilePane)
   const mobile = useMedia('(max-width: 767px)')
@@ -132,7 +139,9 @@ export function AppShell() {
   // 右栏收起动画期间继续显示原来那篇笔记的内容
   const lastNoteId = useRef(noteId)
   if (noteId) lastNoteId.current = noteId
-  const showRight = noteId !== null && rightOpen
+  // 助手不依赖打开的笔记；全屏助手页面上不再在右栏重复显示
+  const agentTab = rightTab === 'agent' && !mobile
+  const showRight = rightOpen && (agentTab ? route.view !== 'agent' : noteId !== null)
   const closeRight = () => toggleRight(false)
 
   const overlays = (
@@ -148,9 +157,9 @@ export function AppShell() {
   if (mobile) {
     return (
       <div className="shell is-mobile">
-        <MobileStack list={<Sidebar mobile />} detail={(r) => <MainView mobile route={r} />} />
-        <Drawer open={showRight && mobilePane === 'detail'} onClose={closeRight} label="笔记信息">
-          <RightPanel id={lastNoteId.current} onClose={closeRight} />
+        <MobileStack list={<Sidebar mobile />} detail={(r) => <MainView mobile route={r} contextNoteId={lastNoteId.current} />} />
+        <Drawer open={showRight && mobilePane === 'detail' && route.view === 'note'} onClose={closeRight} label="笔记信息">
+          <RightPanel id={lastNoteId.current} onClose={closeRight} allowAgent={false} />
         </Drawer>
         {overlays}
       </div>
@@ -175,6 +184,7 @@ export function AppShell() {
  * 主区域的宽度只在动画开始或结束时变化一次。
  */
 function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInline: boolean; rightId: string | null }) {
+  const rightTab = useUI((s) => s.rightTab)
   const sidebarOpen = useUI((s) => s.sidebarOpen)
   const storedWidth = useUI((s) => s.sidebarWidth)
   const sbW = useMotionValue(storedWidth)
@@ -183,16 +193,27 @@ function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInli
     if (sidebarOpen) sbW.set(storedWidth)
   }, [sidebarOpen, storedWidth, sbW])
   const left = usePanelMotion(sidebarOpen, sbW)
-  const rW = useMotionValue(RIGHT_W)
+  const rTarget = rightTab === 'agent' ? AGENT_W : RIGHT_W
+  const rW = useMotionValue(rTarget)
+  const reduced = useReducedMotion()
+  // 切换到助手时右栏加宽：宽度用弹簧过渡，主区域随之让出空间
+  useEffect(() => {
+    if (!rightInline || reduced) {
+      rW.set(rTarget)
+      return
+    }
+    const c = animate(rW, rTarget, springPanel)
+    return () => c.stop()
+  }, [rTarget, rightInline, reduced, rW])
   const right = usePanelMotion(rightInline, rW)
 
   const sbX = useTransform(() => left.offset.get() - sbW.get())
   const mainLeft = useTransform(() => left.reserved.get() * sbW.get())
   const mainX = useTransform(() => left.offset.get() - left.reserved.get() * sbW.get())
   const mainWidth = useTransform(
-    () => `calc(100% - ${left.reserved.get() * sbW.get() + right.reserved.get() * RIGHT_W}px)`,
+    () => `calc(100% - ${left.reserved.get() * sbW.get() + right.reserved.get() * rW.get()}px)`,
   )
-  const rightX = useTransform(() => RIGHT_W - right.offset.get())
+  const rightX = useTransform(() => rW.get() - right.offset.get())
   const resizerX = useTransform(() => left.offset.get())
 
   return (
@@ -207,11 +228,11 @@ function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInli
       </motion.div>
       {sidebarOpen && left.visible && <SidebarResizer width={sbW} x={resizerX} />}
       <motion.main className="shell-main" style={{ left: mainLeft, x: mainX, width: mainWidth }}>
-        <MainView mobile={false} route={route} />
+        <MainView mobile={false} route={route} contextNoteId={rightId} />
       </motion.main>
       <motion.div
         className="shell-right"
-        style={{ x: rightX, visibility: right.visible ? 'visible' : 'hidden' }}
+        style={{ x: rightX, width: rW, visibility: right.visible ? 'visible' : 'hidden' }}
         inert={!rightInline}
       >
         {right.visible && <RightPanel id={rightId} />}

@@ -31,6 +31,7 @@ export default defineConfig({
     url: `http://127.0.0.1:${port}/api/health`,
     reuseExistingServer: false,
     timeout: 30_000,
-    env: { LODE_ADDR: `127.0.0.1:${port}`, LODE_DATA_DIR: dataDir, LODE_LOG_LEVEL: 'warn' },
+    // LODE_SECRET_KEY 只用于本地测试实例，让助手能保存模拟供应商的 key
+    env: { LODE_ADDR: `127.0.0.1:${port}`, LODE_DATA_DIR: dataDir, LODE_LOG_LEVEL: 'warn', LODE_SECRET_KEY: 'e2e-only-secret-key' },
   },
 })

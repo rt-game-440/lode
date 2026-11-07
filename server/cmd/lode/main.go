@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/api"
 	"github.com/rt-game-440/lode/server/internal/audit"
 	"github.com/rt-game-440/lode/server/internal/auth"
@@ -21,6 +22,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/db"
 	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
+	"github.com/rt-game-440/lode/server/internal/secret"
 	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
 	"github.com/rt-game-440/lode/server/internal/webui"
@@ -82,8 +84,15 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	auditLog := audit.New(database)
 	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: authSvc, Audit: auditLog, Version: version, Log: log})
 
+	box := secret.New(cfg.SecretKey)
+	if !box.Enabled() {
+		log.Warn("没有设置 LODE_SECRET_KEY：助手不能保存供应商的 API key")
+	}
+	agentSvc := &agent.Service{Store: agent.NewStore(database, box), Tools: tools.New(svc), Notes: svc, Log: log}
+	defer agentSvc.Close() // 在关闭数据库之前停止生成（defer 逆序执行）
+
 	srv := &api.Server{Notes: svc, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
-		Audit: auditLog, MCP: mcpHandler}
+		Audit: auditLog, MCP: mcpHandler, Agent: agentSvc}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),

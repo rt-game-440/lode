@@ -6,9 +6,10 @@ export type Route =
   | { view: 'trash' }
   | { view: 'tag'; tag: string }
   | { view: 'settings' }
+  | { view: 'agent' }
 
 export type Theme = 'system' | 'light' | 'dark'
-export type RightTab = 'backlinks' | 'outline' | 'tags'
+export type RightTab = 'backlinks' | 'outline' | 'tags' | 'agent'
 export type SidebarTab = 'files' | 'search' | 'tags'
 
 export interface Toast {
@@ -25,6 +26,7 @@ function parseRoute(pathname: string): Route {
   if (parts[0] === 'note' && parts[1]) return { view: 'note', id: parts[1] }
   if (parts[0] === 'trash') return { view: 'trash' }
   if (parts[0] === 'settings') return { view: 'settings' }
+  if (parts[0] === 'agent') return { view: 'agent' }
   if (parts[0] === 'tag' && parts[1]) return { view: 'tag', tag: parts.slice(1).join('/') }
   return { view: 'home' }
 }
@@ -37,6 +39,8 @@ export function routePath(r: Route): string {
       return '/trash'
     case 'settings':
       return '/settings'
+    case 'agent':
+      return '/agent'
     case 'tag':
       return `/tag/${r.tag.split('/').map(encodeURIComponent).join('/')}`
     default:
@@ -97,6 +101,8 @@ interface UIState {
   toggleRight: (open?: boolean) => void
   setRightTab: (t: RightTab) => void
   setSidebarTab: (t: SidebarTab) => void
+  /** 打开助手：手机上是全屏页面，其他尺寸是右栏的“助手”标签页 */
+  openAgent: () => void
 
   /** 手机单栏导航栈当前显示的层 */
   mobilePane: 'list' | 'detail'
@@ -159,6 +165,11 @@ export const useUI = create<UIState>((set, get) => {
       persistLayout()
     },
     setSidebarTab: (t) => set({ sidebarTab: t, sidebarOpen: true }),
+    openAgent: () => {
+      if (window.matchMedia('(max-width: 767px)').matches) get().navigate({ view: 'agent' })
+      else if (get().rightOpen && get().rightTab === 'agent') get().toggleRight(false)
+      else get().setRightTab('agent')
+    },
 
     mobilePane: initialRoute.view === 'home' ? 'list' : 'detail',
     setMobilePane: (p) => set({ mobilePane: p }),

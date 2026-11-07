@@ -286,3 +286,245 @@
   font-size: var(--text-subhead);
   color: var(--color-label-secondary);
 }
+
+/* ---- 助手 ---- */
+.settings-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-fill);
+  font-size: var(--text-subhead);
+  line-height: var(--leading-ui);
+  color: var(--color-label);
+}
+.settings-warning svg {
+  flex: none;
+  margin-top: 0.15em;
+  color: var(--color-warning);
+}
+.settings-warning code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--color-code-bg);
+}
+.row-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+.row-stack .settings-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-label);
+  overflow-wrap: anywhere;
+}
+.settings-select {
+  flex: none;
+  max-width: 14rem;
+  height: 2rem;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-fill);
+  font: inherit;
+  font-size: var(--text-subhead);
+  color: var(--color-label);
+}
+.settings-select:disabled {
+  color: var(--color-label-tertiary);
+}
+
+/* 开关：原生 checkbox，外观改成 iOS 风格 */
+.switch {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 2.75rem;
+  height: 1.625rem;
+  margin: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-fill-strong);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1.625rem - 4px);
+  height: calc(1.625rem - 4px);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.switch:checked {
+  background: var(--color-success);
+}
+.switch:checked::before {
+  transform: translateX(calc(2.75rem - 1.625rem));
+}
+.switch:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+/* 触控设备上把命中区扩到 44px */
+@media (pointer: coarse) {
+  .switch::after {
+    content: '';
+    position: absolute;
+    inset: calc((1.625rem - var(--hit-target)) / 2) 0;
+  }
+}
+
+.kind-badge {
+  padding: 0 var(--space-1-5);
+  border-radius: var(--radius-full);
+  background: var(--color-fill);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--color-label-secondary);
+}
+.provider-head {
+  min-height: 3.5rem;
+}
+.provider-meta {
+  overflow-wrap: anywhere;
+}
+.test-result {
+  gap: var(--space-2);
+  font-size: var(--text-footnote);
+  line-height: var(--leading-ui);
+}
+.test-result svg {
+  flex: none;
+}
+.test-result.is-ok {
+  color: var(--color-success);
+}
+.test-result.is-error {
+  color: var(--color-danger);
+}
+.test-result-text {
+  overflow-wrap: anywhere;
+}
+.model-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+}
+.model-import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  max-height: 10rem;
+  overflow-y: auto;
+}
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.75rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  color: var(--color-label);
+}
+.model-chip:hover:not(:disabled) {
+  background: var(--color-fill);
+}
+.model-chip:disabled {
+  color: var(--color-label-tertiary);
+}
+.model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--color-separator);
+}
+.model-row .settings-row-label {
+  font-weight: var(--weight-medium);
+}
+
+/* 供应商与模型表单 */
+.agent-form {
+  width: min(30rem, 100%);
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+}
+.agent-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.agent-form-body .settings-meta {
+  margin-top: calc(-1 * var(--space-2));
+}
+.form-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.check-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+.check-group legend {
+  width: 100%;
+  margin-bottom: var(--space-1);
+  padding: 0;
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: 1.75rem;
+  font-size: var(--text-subhead);
+  color: var(--color-label);
+  cursor: pointer;
+}
+.check-row input {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0.2em 0 0;
+  accent-color: var(--color-accent);
+}
+.check-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+.check-text .settings-meta {
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch,
+  .switch::before {
+    transition: none;
+  }
+}
+@media (pointer: coarse) {
+  .settings-select {
+    height: var(--hit-target);
+  }
+}

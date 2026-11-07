@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -276,4 +278,54 @@ func (s *Service) OpenFile(p string) (*os.File, fs.FileInfo, error) {
 		return nil, nil, ErrNotFound
 	}
 	return f, info, nil
+}
+
+// ImageFile 是 vault 里的一张图片。
+type ImageFile struct {
+	Path  string `json:"path"`
+	Size  int64  `json:"size"`
+	Mtime int64  `json:"mtime"` // 毫秒
+}
+
+var imageExts = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true}
+
+// Images 列出 vault 里的图片（跳过隐藏目录和符号链接），按修改时间从新到旧，最多 limit 张。
+func (s *Service) Images(limit int) ([]ImageFile, error) {
+	root := s.vault.Root()
+	out := []ImageFile{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if p == root {
+				return err
+			}
+			return nil
+		}
+		rel, ok := s.vault.Rel(p)
+		if !ok || rel == "" {
+			return nil
+		}
+		if vault.IsIgnored(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() || d.Type()&fs.ModeSymlink != 0 || !imageExts[strings.ToLower(path.Ext(rel))] {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		out = append(out, ImageFile{Path: rel, Size: info.Size(), Mtime: info.ModTime().UnixMilli()})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(out, func(a, b ImageFile) int { return cmp.Compare(b.Mtime, a.Mtime) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
