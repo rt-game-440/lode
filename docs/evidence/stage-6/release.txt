@@ -1,0 +1,34 @@
+$ SKIP_WEB=1 scripts/release.sh v0.1.0-test
+构建 lode-v0.1.0-test-linux-amd64
+构建 lode-v0.1.0-test-linux-arm64
+构建 lode-v0.1.0-test-linux-armv7
+构建 lode-v0.1.0-test-windows-amd64.exe
+构建 lode-v0.1.0-test-darwin-amd64
+构建 lode-v0.1.0-test-darwin-arm64
+已输出到 /e/文档/project/notevault/dist：
+total 100161
+-rw-r--r-- 1 15575 197609      578 Nov  7 19:37 SHA256SUMS
+-rw-r--r-- 1 15575 197609 17494048 Nov  7 19:37 lode-v0.1.0-test-darwin-amd64
+-rw-r--r-- 1 15575 197609 16634722 Nov  7 19:37 lode-v0.1.0-test-darwin-arm64
+-rw-r--r-- 1 15575 197609 17399968 Nov  7 19:37 lode-v0.1.0-test-linux-amd64
+-rw-r--r-- 1 15575 197609 16515232 Nov  7 19:37 lode-v0.1.0-test-linux-arm64
+-rw-r--r-- 1 15575 197609 16973984 Nov  7 19:37 lode-v0.1.0-test-linux-armv7
+-rwxr-xr-x 1 15575 197609 17524224 Nov  7 19:37 lode-v0.1.0-test-windows-amd64.exe
+
+$ cat dist/SHA256SUMS
+b514a8a94e649c1cfbf0bff8d4ae40d3b84fbdeec8ea8a4304567fa44c73edc0 *lode-v0.1.0-test-darwin-amd64
+ced8ff81bfd594d906e8d03b9104750c6d9517096db830ddf6b09bb4869cbeaf *lode-v0.1.0-test-darwin-arm64
+5e90fe55948c55e99263db037c37f6ffd716677a20868aecc72362f199b2da6a *lode-v0.1.0-test-linux-amd64
+caf64e8c384d9624527010a865b683439cbdc5a24845a8448ca2984057123033 *lode-v0.1.0-test-linux-arm64
+e3655d78b613e31af87dfeba0a5d714b4cd82380c9d488b2cbeb8e7097f22bed *lode-v0.1.0-test-linux-armv7
+c35b4e15dbab05dfd41a04ac5f95cd630209c6f27337d4e0a368ee6b48a595f3 *lode-v0.1.0-test-windows-amd64.exe
+
+$ dist/lode-v0.1.0-test-windows-amd64.exe --version
+lode v0.1.0-test (b0af827)
+$ file dist/*
+dist/lode-v0.1.0-test-darwin-amd64:      Mach-O 64-bit x86_64 executable, flags:<|DYLDLINK|PIE>
+dist/lode-v0.1.0-test-darwin-arm64:      Mach-O 64-bit arm64 executable, flags:<|DYLDLINK|PIE>
+dist/lode-v0.1.0-test-linux-amd64:       ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, Go BuildID=LWyvz-tOQ-bPmpQNc0jd/ndMAYECyxz3B_oTo7Nqx/rDKf3bQA6Nho6RNsdbCN/UDubdWbh3gPvaHQbdupg, BuildID[sha1]=41de9a8c1e35db2cba337f327c12363ddcba95e0, stripped
+dist/lode-v0.1.0-test-linux-arm64:       ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, Go BuildID=cYYgof3_QIypYv6sHlAB/6IM3yN74yoQSouLmuq9z/HrJZKy3eLlo1XOnXQG2I/M6cpj0QAessULyOVFqvU, BuildID[sha1]=81ab546e6f65d36d92ac9fd742e85bdfa3ad5290, stripped
+dist/lode-v0.1.0-test-linux-armv7:       ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked, Go BuildID=P1up4hjfKfd1VPSbR8ke/UU3o7sgOEawdHgNVOK8j/xyCkr-0doETdbMtowzn9/sXSgbx3O7VEoO60ey3AO, BuildID[sha1]=9d60b25338801c0f9dd345bd99239f6cf87b7854, stripped
+dist/lode-v0.1.0-test-windows-amd64.exe: PE32+ executable for MS Windows 10.00 (console), x86-64, 8 sections

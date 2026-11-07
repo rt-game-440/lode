@@ -22,6 +22,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/db"
 	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
+	"github.com/rt-game-440/lode/server/internal/ops"
 	"github.com/rt-game-440/lode/server/internal/secret"
 	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
@@ -35,19 +36,22 @@ var (
 )
 
 func main() {
+	ops.Version = version
+	cmd, args := "serve", []string(nil)
 	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "--version", "-v", "version":
-			fmt.Printf("lode %s (%s)\n", version, commit)
-			return
-		case "serve":
-		case "-h", "--help", "help":
-			fmt.Println("用法: lode [serve | --version]\n\n环境变量: LODE_ADDR, LODE_DATA_DIR, LODE_SECRET_KEY, LODE_LOG_LEVEL, LODE_TRUSTED_PROXIES")
-			return
-		default:
-			fmt.Fprintf(os.Stderr, "未知命令: %s\n", os.Args[1])
-			os.Exit(2)
-		}
+		cmd, args = os.Args[1], os.Args[2:]
+	}
+	switch cmd {
+	case "--version", "-v", "version":
+		fmt.Printf("lode %s (%s)\n", version, commit)
+		return
+	case "-h", "--help", "help":
+		fmt.Println(usage)
+		return
+	case "serve", "backup", "restore", "reset-password", "healthcheck":
+	default:
+		fmt.Fprintf(os.Stderr, "未知命令: %s\n\n%s\n", cmd, usage)
+		os.Exit(2)
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -56,8 +60,24 @@ func main() {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
-	if err := serve(cfg, log); err != nil {
-		log.Error("服务退出", "err", err)
+	switch cmd {
+	case "backup":
+		err = runBackup(cfg, args)
+	case "restore":
+		err = runRestore(cfg, args, os.Stdin)
+	case "reset-password":
+		err = runResetPassword(cfg)
+	case "healthcheck":
+		err = runHealthcheck(cfg)
+	default:
+		if err = serve(cfg, log); err != nil {
+			log.Error("服务退出", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "错误:", err)
 		os.Exit(1)
 	}
 }
@@ -66,9 +86,18 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+	unlock, err := ops.Lock(cfg.DataDir)
+	if errors.Is(err, ops.ErrLocked) {
+		return fmt.Errorf("数据目录 %s 正被另一个 lode 进程使用", cfg.DataDir)
+	}
+	if errors.Is(err, ops.ErrLockUnsupported) {
+		log.Warn("无法锁定数据目录，请确保同一时间只有一个 lode 进程使用它", "err", err)
+		err = nil
+	}
+	if err != nil {
 		return err
 	}
+	defer unlock()
 	database, err := db.Open(ctx, cfg.DBPath())
 	if err != nil {
 		return fmt.Errorf("打开数据库: %w", err)

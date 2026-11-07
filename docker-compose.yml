@@ -1,0 +1,24 @@
+# 单独运行 Lode：docker compose up -d，然后打开 http://127.0.0.1:8787
+# 需要 HTTPS（手机安装 PWA、局域网外访问）时，再叠加 Caddy：
+#   docker compose -f docker-compose.yml -f deploy/compose.caddy.yml up -d
+services:
+  lode:
+    image: ghcr.io/rt-game-440/lode:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      # 默认只监听本机；局域网内直接访问时改成 "8787:8787"
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - lode-data:/data
+    environment:
+      # 加密助手 API key 的主密钥：openssl rand -base64 32 生成后写进 .env 文件，长期保存
+      LODE_SECRET_KEY: ${LODE_SECRET_KEY:-}
+      LODE_LOG_LEVEL: ${LODE_LOG_LEVEL:-info}
+      # Go 运行时的软内存上限，小内存机器上可以调低
+      GOMEMLIMIT: ${GOMEMLIMIT:-100MiB}
+    # 内存硬上限，按机器调整
+    mem_limit: 256m
+
+volumes:
+  lode-data:

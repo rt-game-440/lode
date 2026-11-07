@@ -81,19 +81,20 @@ export const useVault = create<VaultState>((set, get) => ({
     await useEditor.getState().syncServerNotes([res.note, ...res.updated])
     const dir = dirname(newPath)
     if (dir && !get().folders.includes(dir)) await get().load()
+    contentChanged()
     return res
   },
 
   deleteNote: async (id) => {
     await sync.deleteNote(id)
     get().remove(id)
-    void get().refreshTags()
+    contentChanged()
   },
 
   restoreNote: async (id) => {
     const n = await sync.restoreNote(id)
     get().upsert(n)
-    void get().refreshTags()
+    contentChanged()
     return n
   },
 
@@ -132,8 +133,11 @@ sync.isKnown = (c: Change) => {
 }
 
 let changeTimer: ReturnType<typeof setTimeout> | null = null
-/** 笔记内容有变化：稍后刷新标签和依赖内容的派生数据（反链、搜索结果等） */
-const contentChanged = () => {
+/**
+ * 笔记内容有变化：稍后刷新标签和依赖内容的派生数据（反链、搜索结果等）。
+ * 本机的删除、恢复、移动也要调用：它们的 WebSocket 回声会被 isKnown 当成已知而忽略。
+ */
+function contentChanged() {
   if (changeTimer) clearTimeout(changeTimer)
   changeTimer = setTimeout(() => {
     useVault.setState((s) => ({ version: s.version + 1 }))

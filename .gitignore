@@ -14,3 +14,9 @@ node_modules/
 /web/test-results/
 /web/playwright-report/
 /web/.e2e-data/
+
+# 发布产物
+/dist/
+
+# 部署配置（含主密钥）
+.env

@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+bin
+dist
+data
+data-*
+logs
+docs
+web/test-results
+web/playwright-report
+web/.e2e-data
+server/internal/webui/dist/*
+!server/internal/webui/dist/.gitkeep
+*.exe

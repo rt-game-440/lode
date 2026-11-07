@@ -2,7 +2,20 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
-## 2026-11-07 21:40 阶段 5 评审后的修正
+## 2026-11-07 19:46 阶段 6 发布与运维决策
+
+- **备份格式**：`lode backup` 输出 tar.gz，内含清单 `lode-backup.json`（格式版本、程序版本、数据库迁移版本、时间）、`app.db`（`VACUUM INTO` 在线快照）、`vault/`、`trash/`。不含 `backups/` 和 `pre-restore-*`，也不含 `LODE_SECRET_KEY`。
+- **恢复**：先解包到数据目录内的 `.restore-*` 临时目录并 `quick_check`，通过后才把原数据移到 `pre-restore-<时间>/`，不直接删除。放在数据目录内是因为容器里只有 `/data` 可写，且同一文件系统内 rename 才是原子的。
+- **数据目录锁**：`serve` 和 `restore` 对 `dataDir/.lock` 加系统文件锁（unix flock、windows LockFileEx），进程退出自动释放，不会留下陈旧锁。`backup` 不加锁，因为要支持服务运行中备份。
+- **迁移前备份**：`db.Open` = `Connect` + 有待执行迁移时复制到 `backups/app-v<旧版本>-<时间>.db`（保留 5 份）+ `Migrate`。全新数据库不备份。运维子命令用 `Connect`，不触发迁移。
+- **镜像**：distroless static nonroot（uid 65532），`HEALTHCHECK` 调用 `lode healthcheck` 子命令（distroless 没有 curl/wget）。用 `BUILDPLATFORM` 交叉编译，多架构构建不走 QEMU 跑 Go 编译器。
+- **本机没有 Docker**：容器相关验收（compose up、`--memory=256m`、发布二进制在容器里跑）放在 CI 的“容器冒烟”任务里，脚本是 `scripts/docker-smoke.sh`；`web/e2e/container.spec.ts` 只在设置 `LODE_E2E_URL` 时运行，对外部实例跑冒烟。
+- **新增依赖**：`golang.org/x/term`（`reset-password` 从终端读密码不回显）；`golang.org/x/sys/windows` 原本就是间接依赖，现在 `internal/ops` 的 Windows 文件锁和 `cmd/bench` 的内存读取直接使用。
+- **文件锁不可用**：文件系统不支持加锁（部分 NFS、SMB 挂载）时 `ops.Lock` 返回 `ErrLockUnsupported`，`serve` 打警告继续运行，`restore` 也照常执行；只有锁被别的进程持有才拒绝。
+- **本机改动要自己刷新派生数据**：本机删除、恢复、移动笔记后，WebSocket 回声会被 `sync.isKnown` 当成已知而忽略，所以 `stores/vault.ts` 里这些操作要自己调用 `contentChanged()`（递增 `version`，搜索结果、反链等据此刷新）。以前偶尔靠回声先于本地更新到达才刷新，CI 上暴露为 smoke 用例的竞态。
+- **性能基准**：`server/cmd/bench`；Windows 的工作集会被系统修剪，内存以 CI（Linux）的 VmRSS 为准。两个字的中文查询走 LIKE 扫描，是搜索 p95 的主要来源。
+
+## 2026-11-07 19:20 阶段 5 评审后的修正
 
 - **模型摘要**：上下文超出时用当前模型压缩较早的轮次（`internal/agent/summary.go`），摘要和覆盖条数存在 `agent_chats.summary`、`summary_upto`（迁移 0004），之后只增量合并新轮次，避免每次请求都重新总结；`Fit` 保留本地规则摘要作为默认和失败兜底，模型版走 `FitWith`。
 - **断开即取消**：生成中对话没有任何订阅者时开始计时（默认 30 秒，`Service.DisconnectGrace`），到期取消请求上下文；重新订阅停止计时。宽限时间是为了刷新页面、切网络时不丢掉正在进行的生成。

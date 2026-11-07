@@ -1,0 +1,15 @@
+# Caddy 反向代理：自动申请并续期 HTTPS 证书。
+# Docker（deploy/compose.caddy.yml）里通过环境变量传入域名和上游；
+# 直接装在主机上时，把 {$LODE_DOMAIN} 换成你的域名、{$LODE_UPSTREAM} 换成 127.0.0.1:8787。
+{$LODE_DOMAIN} {
+	encode zstd gzip
+	# WebSocket（实时同步）和 SSE（助手事件流）由 Caddy 自动处理，不需要额外配置；
+	# flush_interval -1 让 SSE 事件立即送达，不被缓冲
+	reverse_proxy {$LODE_UPSTREAM} {
+		flush_interval -1
+	}
+	# 请求体上限要大于服务端的上限（附件 20MB、助手消息 32MB），由服务端负责拒绝
+	request_body {
+		max_size 64MB
+	}
+}

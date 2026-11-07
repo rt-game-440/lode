@@ -145,9 +145,17 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	})
 }
 
+// contentSecurityPolicy 是页面的 CSP。脚本、样式表、连接（含同源 WebSocket）只允许同源；
+// 笔记里可以引用外部图片，所以 img-src 放开；内联 style 属性由动画库使用。
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data: blob: https: http:; media-src 'self' data: blob:; font-src 'self' data:; " +
+	"connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; " +
+	"base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy) // 附件接口会换成更严的 sandbox 策略
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("X-Frame-Options", "DENY")

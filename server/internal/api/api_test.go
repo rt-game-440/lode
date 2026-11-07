@@ -348,3 +348,53 @@ func TestCrossSiteWebSocketIsRejected(t *testing.T) {
 		t.Fatalf("跨站 WebSocket 应被拒绝（403），得到 %v", err)
 	}
 }
+
+// 安全响应头：页面带 CSP；经可信反向代理的 HTTPS 请求，会话 cookie 加 Secure。
+func TestSecurityHeadersAndSecureCookie(t *testing.T) {
+	c := newServer(t, func(s *Server) {
+		s.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}
+	})
+	resp, err := c.hc.Get(c.base + "/api/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	csp := resp.Header.Get("Content-Security-Policy")
+	for _, want := range []string{"default-src 'self'", "script-src 'self'", "object-src 'none'", "frame-ancestors 'none'", "base-uri 'self'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP 缺少 %q：%s", want, csp)
+		}
+	}
+	if resp.Header.Get("X-Content-Type-Options") != "nosniff" || resp.Header.Get("Referrer-Policy") == "" {
+		t.Errorf("缺少 nosniff 或 Referrer-Policy：%v", resp.Header)
+	}
+
+	cookieSecure := func(proto string) bool {
+		t.Helper()
+		b, _ := json.Marshal(map[string]string{"password": "correct-horse"})
+		req, _ := http.NewRequest("POST", c.base+"/api/auth/login", bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		if proto != "" {
+			req.Header.Set("X-Forwarded-Proto", proto)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		for _, ck := range resp.Cookies() {
+			if ck.Name == SessionCookie {
+				return ck.Secure
+			}
+		}
+		t.Fatalf("登录响应没有会话 cookie：%d", resp.StatusCode)
+		return false
+	}
+	c.setup()
+	if cookieSecure("") {
+		t.Error("HTTP 下 cookie 不应带 Secure")
+	}
+	if !cookieSecure("https") {
+		t.Error("可信代理转发的 HTTPS 请求，cookie 应带 Secure")
+	}
+}

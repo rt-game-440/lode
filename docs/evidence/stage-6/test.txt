@@ -1,0 +1,50 @@
+== go vet
+== go test
+?   	github.com/rt-game-440/lode/server/cmd/bench	[no test files]
+?   	github.com/rt-game-440/lode/server/cmd/gennotes	[no test files]
+?   	github.com/rt-game-440/lode/server/cmd/lode	[no test files]
+?   	github.com/rt-game-440/lode/server/cmd/wsprobe	[no test files]
+ok  	github.com/rt-game-440/lode/server/internal/agent	3.413s
+ok  	github.com/rt-game-440/lode/server/internal/api	6.199s
+ok  	github.com/rt-game-440/lode/server/internal/audit	1.648s
+ok  	github.com/rt-game-440/lode/server/internal/auth	2.682s
+?   	github.com/rt-game-440/lode/server/internal/config	[no test files]
+ok  	github.com/rt-game-440/lode/server/internal/db	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/llm	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/mcpserver	4.460s
+ok  	github.com/rt-game-440/lode/server/internal/mdparse	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/merge	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/notes	3.712s
+ok  	github.com/rt-game-440/lode/server/internal/ops	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/secret	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/tools	4.888s
+ok  	github.com/rt-game-440/lode/server/internal/vault	(cached)
+?   	github.com/rt-game-440/lode/server/internal/webui	[no test files]
+== typecheck
+$ tsc -p tsconfig.json
+== web test
+ RUN  v5.1.0 E:/文档/project/notevault/web
+
+
+ Test Files  10 passed (10)
+      Tests  72 passed (72)
+   Start at  19:47:43
+   Duration  356ms (import 47%, tests 25%, transform 19%, worker 9%)
+
+== e2e smoke + container(skip)
+$ playwright test smoke container
+
+Running 7 tests using 1 worker
+
+  -  1 [chromium] › e2e\container.spec.ts:21:1 › 健康检查和安全响应头
+  -  2 [chromium] › e2e\container.spec.ts:32:1 › 首启设置密码、新建笔记、保存、刷新、搜索
+  ok 3 [chromium] › e2e\smoke.spec.ts:28:1 › 首启设置密码后进入应用 (612ms)
+  ok 4 [chromium] › e2e\smoke.spec.ts:37:1 › 新建笔记、输入、自动保存、刷新、磁盘一致、搜索、删除与恢复 (2.6s)
+外部新建在 309ms 后出现在文件树
+  ok 5 [chromium] › e2e\smoke.spec.ts:75:1 › 外部修改约 2 秒内反映到文件树和搜索结果 (695ms)
+  ok 6 [chromium] › e2e\smoke.spec.ts:93:1 › 重命名笔记后更新其他笔记中的链接，反链显示正确 (2.4s)
+  ok 7 [chromium] › e2e\smoke.spec.ts:128:1 › 重命名正在编辑的笔记时，其中的自链接同步更新且之后的保存不冲突 (1.9s)
+
+  2 skipped
+  5 passed (9.6s)
+ALL OK

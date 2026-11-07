@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 测试与构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          # 用 1.26 的最新补丁版本：go.mod 写的是最低版本 1.26.0，标准库的安全修复在补丁版本里
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: go vet
+        working-directory: server
+        run: go vet ./...
+      - name: go test
+        working-directory: server
+        run: go test ./...
+      - name: govulncheck
+        working-directory: server
+        # 用最新版：漏洞库和对新 Go 版本的支持都跟着工具更新，固定旧版本反而可能解析不了新语法
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      - name: 前端依赖
+        run: pnpm -C web install --frozen-lockfile
+      - name: 前端类型检查与单测
+        run: |
+          pnpm -C web typecheck
+          pnpm -C web test
+      - name: pnpm audit（high 及以上）
+        run: pnpm -C web audit --audit-level high
+
+      - name: 构建
+        run: scripts/build.sh
+      - name: Playwright 冒烟
+        run: |
+          pnpm -C web exec playwright install --with-deps chromium
+          pnpm -C web e2e smoke
+      - name: 失败时上传 Playwright 结果
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: web/test-results/
+          retention-days: 7
+
+  bench:
+    name: 性能基准
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # 用 1.26 的最新补丁版本：go.mod 写的是最低版本 1.26.0，标准库的安全修复在补丁版本里
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: 构建
+        run: |
+          pnpm -C web install --frozen-lockfile
+          scripts/build.sh
+      - name: 1000 / 10000 篇笔记
+        working-directory: server
+        run: go run ./cmd/bench -bin ../bin/lode -n 1000,10000 | tee -a "$GITHUB_STEP_SUMMARY"
+
+  docker:
+    name: 容器冒烟
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          # 用 1.26 的最新补丁版本：go.mod 写的是最低版本 1.26.0，标准库的安全修复在补丁版本里
+          go-version: '1.26.x'
+          check-latest: true
+          cache-dependency-path: server/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: 前端依赖与 Playwright
+        run: |
+          pnpm -C web install --frozen-lockfile
+          pnpm -C web exec playwright install --with-deps chromium
+      - name: 发布脚本（全部平台）
+        run: scripts/release.sh
+      - name: 容器冒烟（compose、--memory=256m、发布二进制）
+        run: scripts/docker-smoke.sh
+      - name: 失败时上传 Playwright 结果
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-playwright-test-results
+          path: web/test-results/
+          retention-days: 7
