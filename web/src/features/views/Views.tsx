@@ -11,7 +11,7 @@ import { sync } from '../../sync/engine'
 import { errorMessage, newNote, openNote } from '../actions'
 import './views.css'
 
-function ViewBar({ title, mobile }: { title: string; mobile: boolean }) {
+export function ViewBar({ title, mobile }: { title: string; mobile: boolean }) {
   const sidebarOpen = useUI((s) => s.sidebarOpen)
   const toggleSidebar = useUI((s) => s.toggleSidebar)
   const navigate = useUI((s) => s.navigate)

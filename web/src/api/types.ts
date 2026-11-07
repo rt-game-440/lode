@@ -77,3 +77,28 @@ export interface AuthStatus {
   initialized: boolean
   authenticated: boolean
 }
+
+export type TokenScope = 'read' | 'write'
+
+/** API token 的元数据（不含明文）。 */
+export interface ApiToken {
+  id: string
+  name: string
+  scope: TokenScope
+  created_at: number
+  /** 0 表示从未使用 */
+  last_used_at: number
+}
+
+/** 一条 MCP 调用记录。 */
+export interface AuditEntry {
+  id: number
+  at: number
+  token_id: string
+  token_name: string
+  tool: string
+  target: string
+  ok: boolean
+  error?: string
+  duration_ms: number
+}

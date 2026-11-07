@@ -1,5 +1,7 @@
 import { deviceId, deviceName } from '../lib/device'
 import type {
+  ApiToken,
+  AuditEntry,
   AuthStatus,
   Backlink,
   Change,
@@ -8,6 +10,7 @@ import type {
   NoteContent,
   SearchResult,
   TagCount,
+  TokenScope,
   TrashItem,
   Tree,
 } from './types'
@@ -136,6 +139,12 @@ export const api = {
   },
 
   changes: (since: number) => request<{ changes: Change[]; seq: number }>('GET', `/api/changes${q({ since })}`),
+
+  tokens: () => request<{ tokens: ApiToken[] }>('GET', '/api/tokens').then((r) => r.tokens),
+  createToken: (name: string, scope: TokenScope) =>
+    request<{ token: ApiToken; secret: string }>('POST', '/api/tokens', { name, scope }),
+  revokeToken: (id: string) => request<void>('DELETE', `/api/tokens/${encodeURIComponent(id)}`),
+  audit: (limit = 100) => request<{ entries: AuditEntry[] }>('GET', `/api/audit${q({ limit })}`).then((r) => r.entries),
 }
 
 /** vault 内文件的访问 URL。 */
