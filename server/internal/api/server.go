@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/audit"
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/notes"
@@ -41,6 +42,10 @@ type Server struct {
 	TrustedProxies []netip.Prefix
 	// WSPingInterval 是 WebSocket 心跳间隔，默认 30 秒。
 	WSPingInterval time.Duration
+	// Agent 是助手服务；为 nil 时不提供 /api/agent/*。
+	Agent *agent.Service
+	// SSEPingInterval 是助手事件流的心跳间隔，默认 15 秒。
+	SSEPingInterval time.Duration
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -56,6 +61,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.WSPingInterval == 0 {
 		s.WSPingInterval = 30 * time.Second
+	}
+	if s.SSEPingInterval == 0 {
+		s.SSEPingInterval = 15 * time.Second
 	}
 	s.done = make(chan struct{})
 	mux := http.NewServeMux()
@@ -98,6 +106,9 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("POST /api/tokens", s.createToken)
 	p.HandleFunc("DELETE /api/tokens/{id}", s.revokeToken)
 	p.HandleFunc("GET /api/audit", s.listAudit)
+	if s.Agent != nil {
+		s.routeAgent(p)
+	}
 	mux.Handle("/api/", s.requireSession(p))
 
 	if s.Web != nil {

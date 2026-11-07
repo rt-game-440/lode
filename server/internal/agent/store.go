@@ -149,6 +149,9 @@ type Store struct {
 // NewStore 创建 Store。box 用于加解密 API key。
 func NewStore(db *sql.DB, box *secret.Box) *Store { return &Store{db: db, box: box} }
 
+// CanStoreKeys 报告是否设置了主密钥（LODE_SECRET_KEY），没有时不能保存 API key。
+func (s *Store) CanStoreKeys() bool { return s.box.Enabled() }
+
 func newID() string {
 	b := make([]byte, 8)
 	rand.Read(b)

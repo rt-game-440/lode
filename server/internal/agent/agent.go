@@ -647,3 +647,37 @@ func stripDataValue(m Message) Message {
 	m.Parts = parts
 	return m
 }
+
+// ChatView 是打开一个对话时需要的全部内容。
+type ChatView struct {
+	Chat     Chat      `json:"chat"`
+	Messages []Message `json:"messages"`
+	Pending  []Pending `json:"pending"`
+	Running  bool      `json:"running"`
+}
+
+// View 返回对话、消息（去掉附件内容）、待批准操作和是否在生成。
+func (s *Service) View(ctx context.Context, chatID string) (ChatView, error) {
+	chat, err := s.Store.Chat(ctx, chatID)
+	if err != nil {
+		return ChatView{}, err
+	}
+	msgs, err := s.Store.Messages(ctx, chatID)
+	if err != nil {
+		return ChatView{}, err
+	}
+	for i := range msgs {
+		msgs[i] = stripDataValue(msgs[i])
+	}
+	pending, err := s.Store.PendingList(ctx, chatID)
+	if err != nil {
+		return ChatView{}, err
+	}
+	if msgs == nil {
+		msgs = []Message{}
+	}
+	if pending == nil {
+		pending = []Pending{}
+	}
+	return ChatView{Chat: chat, Messages: msgs, Pending: pending, Running: s.Running(chatID)}, nil
+}
