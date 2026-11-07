@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rt-game-440/lode/server/internal/merge"
 	"github.com/rt-game-440/lode/server/internal/vault"
 )
 
@@ -40,6 +41,10 @@ func (s *Service) Create(ctx context.Context, p, content string) (NoteContent, e
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.createLocked(ctx, p, content)
+}
+
+func (s *Service) createLocked(ctx context.Context, p, content string) (NoteContent, error) {
 	if _, err := getByKey(ctx, s.db, p); err == nil {
 		return NoteContent{}, fmt.Errorf("%w: %s", ErrExists, p)
 	}
@@ -76,7 +81,9 @@ func (s *Service) Create(ctx context.Context, p, content string) (NoteContent, e
 	return NoteContent{Note: n.Note, Content: content}, nil
 }
 
-// Update 整篇替换正文。baseRev 与当前 rev 不一致时返回 *ConflictError。
+// Update 整篇替换正文。baseRev 与当前 rev 不一致时，以 baseRev 那一版为共同祖先做三方合并：
+// 改动不重叠时写入合并结果（返回值 Merged 为 true）；重叠或 base 版本已被清理时保留服务器版本，
+// 把 content 另存为冲突副本并返回 *ConflictError。
 func (s *Service) Update(ctx context.Context, id string, baseRev int64, content string) (NoteContent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -85,9 +92,43 @@ func (s *Service) Update(ctx context.Context, id string, baseRev int64, content 
 		return NoteContent{}, err
 	}
 	if baseRev != n.Rev {
-		return NoteContent{}, &ConflictError{CurrentRev: n.Rev}
+		base, ok, err := s.versionContent(ctx, n.ID, baseRev)
+		if err != nil {
+			return NoteContent{}, err
+		}
+		return s.mergeLocked(ctx, n, base, ok, content)
 	}
 	return s.writeContentLocked(ctx, n, content)
+}
+
+// mergeLocked 把客户端基于 base 的版本 theirs 合并进服务器当前版本。
+func (s *Service) mergeLocked(ctx context.Context, n noteRow, base string, haveBase bool, theirs string) (NoteContent, error) {
+	if haveBase {
+		cur, err := s.vault.ReadFile(n.Path)
+		if err != nil {
+			return NoteContent{}, err
+		}
+		if merged, ok := merge.Merge3(base, string(cur), theirs); ok {
+			res, err := s.writeContentLocked(ctx, n, merged)
+			res.Merged = err == nil
+			return res, err
+		}
+	}
+	cp, err := s.createLocked(ctx, s.conflictPathLocked(ctx, n.Path, actorFrom(ctx).DeviceName), theirs)
+	if err != nil {
+		return NoteContent{}, err
+	}
+	return NoteContent{}, &ConflictError{CurrentRev: n.Rev, CopyID: cp.ID, CopyPath: cp.Path}
+}
+
+// conflictPathLocked 返回冲突副本的路径：与原笔记同目录，名为 "名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md"。
+func (s *Service) conflictPathLocked(ctx context.Context, p, device string) string {
+	device = sanitizeFileName(strings.TrimSpace(device))
+	if device == "file" {
+		device = "未知设备"
+	}
+	stem := strings.TrimSuffix(p, path.Ext(p))
+	return s.freePathLocked(ctx, fmt.Sprintf("%s.conflict-%s-%s.md", stem, device, s.now().Format("20060102-150405")))
 }
 
 // Patch 按 edits 依次替换正文片段，每个 old 必须唯一匹配。
@@ -102,7 +143,20 @@ func (s *Service) Patch(ctx context.Context, id string, baseRev int64, edits []E
 		return NoteContent{}, err
 	}
 	if baseRev != n.Rev {
-		return NoteContent{}, &ConflictError{CurrentRev: n.Rev}
+		// 把 edits 应用到 base 版本得到客户端想要的全文，再与当前版本三方合并。
+		// base 版本已被清理时无法还原客户端版本，直接返回冲突（不生成副本），由调用方重新读取后再改。
+		base, ok, err := s.versionContent(ctx, n.ID, baseRev)
+		if err != nil {
+			return NoteContent{}, err
+		}
+		if !ok {
+			return NoteContent{}, &ConflictError{CurrentRev: n.Rev}
+		}
+		theirs, err := ApplyEdits(base, edits)
+		if err != nil {
+			return NoteContent{}, err
+		}
+		return s.mergeLocked(ctx, n, base, true, theirs)
 	}
 	b, err := s.vault.ReadFile(n.Path)
 	if err != nil {

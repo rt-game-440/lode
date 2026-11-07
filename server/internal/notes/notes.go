@@ -31,11 +31,16 @@ var (
 	ErrInvalidPath = vault.ErrInvalidPath
 	// ErrInvalid 表示参数不合法。
 	ErrInvalid = errors.New("invalid argument")
+	// ErrGone 表示请求的变更序号早于已清理的范围（或晚于最新序号），客户端应全量重拉。
+	ErrGone = errors.New("changes gone")
 )
 
-// ConflictError 表示写入时 base_rev 与服务器当前 rev 不一致。
+// ConflictError 表示写入时 base_rev 与服务器当前 rev 不一致且无法自动合并：
+// 服务器版本保持不变，客户端版本另存为冲突副本（CopyID/CopyPath，patch 缺少 base 版本时为空）。
 type ConflictError struct {
 	CurrentRev int64
+	CopyID     string
+	CopyPath   string
 }
 
 func (e *ConflictError) Error() string {
@@ -72,6 +77,8 @@ type Note struct {
 type NoteContent struct {
 	Note
 	Content string `json:"content"`
+	// Merged 表示这次写入基于旧版本，服务器做了三方合并；Content 是合并后的全文。
+	Merged bool `json:"merged,omitempty"`
 }
 
 // Change 是一条变更事件。

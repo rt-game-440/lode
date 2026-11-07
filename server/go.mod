@@ -3,6 +3,7 @@ module github.com/rt-game-440/lode/server
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/fsnotify/fsnotify v1.10.1
 	golang.org/x/crypto v0.58.0
 	modernc.org/sqlite v1.61.1

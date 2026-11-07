@@ -187,9 +187,12 @@ func (s *Service) newChange(ctx context.Context, typ string, n Note) Change {
 	return Change{Type: typ, ID: n.ID, Path: n.Path, Rev: n.Rev, DeviceID: a.DeviceID, DeviceName: a.DeviceName, CreatedAt: s.nowMs()}
 }
 
-// LatestSeq 返回当前最大的变更序号。
+// LatestSeq 返回最近分配的变更序号。读 sqlite_sequence 而不是 MAX(seq)，旧事件被清理后也不会变小。
 func (s *Service) LatestSeq(ctx context.Context) (int64, error) {
-	var seq sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM changes`).Scan(&seq)
-	return seq.Int64, err
+	var seq int64
+	err := s.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = 'changes'`).Scan(&seq)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return seq, err
 }

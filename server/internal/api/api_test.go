@@ -10,10 +10,14 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/db"
 	"github.com/rt-game-440/lode/server/internal/notes"
@@ -255,5 +259,84 @@ func TestAttachmentUploadAndServe(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 200 || string(b) != "\x89PNG fake" || !strings.Contains(resp.Header.Get("Content-Security-Policy"), "sandbox") {
 		t.Fatalf("serve = %d %q %v", resp.StatusCode, b, resp.Header)
+	}
+}
+
+func TestStaleWriteMergesOrReturnsConflictCopy(t *testing.T) {
+	c := newServer(t)
+	c.setup()
+	_, n := c.do("POST", "/api/notes", map[string]any{"path": "a.md", "content": "一\n\n二\n\n三\n"})
+	id := n["id"].(string)
+	c.do("PUT", "/api/notes/"+id, map[string]any{"base_rev": 1, "content": "一 A\n\n二\n\n三\n"})
+	st, body := c.do("PUT", "/api/notes/"+id, map[string]any{"base_rev": 1, "content": "一\n\n二\n\n三 B\n"})
+	if st != 200 || body["merged"] != true || body["content"] != "一 A\n\n二\n\n三 B\n" || body["rev"].(float64) != 3 {
+		t.Fatalf("不重叠的旧版本写入应合并，得到 %d %v", st, body)
+	}
+	st, body = c.doH("PUT", "/api/notes/"+id, map[string]any{"base_rev": 2, "content": "一 A\n\n二\n\n三 C\n"},
+		map[string]string{"X-Device-Id": "d2", "X-Device-Name": url.PathEscape("我的手机")})
+	if st != 409 || body["code"] != "conflict" || body["current_rev"].(float64) != 3 ||
+		!strings.HasPrefix(body["conflict_path"].(string), "a.conflict-我的手机-") || body["conflict_id"] == "" {
+		t.Fatalf("重叠的修改应 409 并返回冲突副本，得到 %d %v", st, body)
+	}
+}
+
+func TestChangesSinceBeyondLatestIsGone(t *testing.T) {
+	c := newServer(t)
+	c.setup()
+	if st, body := c.do("GET", "/api/changes?since=42", nil); st != 410 || body["code"] != "gone" {
+		t.Fatalf("since 超过最新序号应 410 gone，得到 %d %v", st, body)
+	}
+}
+
+func TestWebSocketPushesChangesAndHeartbeats(t *testing.T) {
+	c := newServer(t, func(s *Server) { s.WSPingInterval = 100 * time.Millisecond })
+	wsURL := "ws" + strings.TrimPrefix(c.base, "http") + "/api/ws"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPClient: c.hc}); err == nil || resp == nil || resp.StatusCode != 401 {
+		t.Fatalf("未登录连接应被拒绝（401），得到 %v", err)
+	}
+	c.setup()
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPClient: c.hc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	read := func() map[string]any {
+		t.Helper()
+		var m map[string]any
+		if err := wsjson.Read(ctx, conn, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	if m := read(); m["type"] != "hello" || m["seq"].(float64) != 0 {
+		t.Fatalf("连接后应先收到 hello，得到 %v", m)
+	}
+	_, n := c.doH("POST", "/api/notes", map[string]any{"path": "x.md", "content": "hi"}, map[string]string{"X-Device-Id": "dev-a"})
+	for {
+		m := read()
+		if m["type"] == "ping" {
+			continue
+		}
+		if m["type"] != "upsert" || m["id"] != n["id"] || m["path"] != "x.md" || m["rev"].(float64) != 1 || m["device_id"] != "dev-a" || m["seq"].(float64) != 1 {
+			t.Fatalf("变更事件不对：%v", m)
+		}
+		break
+	}
+	if m := read(); m["type"] != "ping" || m["seq"].(float64) != 1 {
+		t.Fatalf("应定期收到带最新 seq 的心跳，得到 %v", m)
+	}
+}
+
+func TestCrossSiteWebSocketIsRejected(t *testing.T) {
+	c := newServer(t)
+	c.setup()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	hdr := http.Header{"Origin": []string{"https://evil.example"}}
+	_, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(c.base, "http")+"/api/ws", &websocket.DialOptions{HTTPClient: c.hc, HTTPHeader: hdr})
+	if err == nil || resp == nil || resp.StatusCode != 403 {
+		t.Fatalf("跨站 WebSocket 应被拒绝（403），得到 %v", err)
 	}
 }

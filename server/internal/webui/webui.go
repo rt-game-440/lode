@@ -4,6 +4,7 @@ package webui
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -11,6 +12,11 @@ import (
 
 //go:embed all:dist
 var distFS embed.FS
+
+func init() {
+	// PWA manifest 需要正确的类型；Go 的内置表里没有 .webmanifest
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // Handler 返回静态文件处理器：存在的文件直接返回，其余路径回退到 index.html。
 // /assets/ 下的文件名带哈希，可长期缓存；index.html 不缓存。
