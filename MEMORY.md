@@ -2,6 +2,18 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-07 18:03 阶段 3 设计与动效决策
+
+- **面板动画**：桌面侧栏展开收起时各栏绝对定位，动画期间只改 transform，稳定后主区域再一次性让出布局（`features/shell/panelMotion.ts`）。静止时 transform 必须归零，否则 CodeMirror 的 fixed 定位提示框会错位。
+- **减弱动态效果**：`<MotionConfig reducedMotion="user">` 只跳过动画过程，`initial` 里的缩放和位移仍会在第一帧生效。弹出类组件用 `components/usePop.ts`，减弱时只做透明度变化。
+- **touch-action 只算到最近的滚动容器**：抽屉里有滚动区时，滚动区内的横向拖拽会被浏览器接管。所以 `.drawer, .drawer *` 都写 `touch-action: pan-y`。
+- **材质变量**：`--material-blur-*` 本身就是完整的 `blur(...) saturate(...)`，直接写 `backdrop-filter: var(--material-blur-thick)`；外面再套 `blur()` 是无效值，毛玻璃会静默失效。
+- **colors.css 的覆盖优先级**：高对比度、减弱透明度等覆盖规则要用 `:root, :root[data-theme], :root:not([data-theme='light'])` 这组选择器，否则在暗色主题块面前优先级不够，暗色下不生效。
+- **虚拟滚动的键盘导航**：滚动后要 `flushSync` 重新计算渲染范围，再同步聚焦目标行。放到 rAF 里聚焦，连续按键时下一次会从旧行出发，焦点卡住。
+- **e2e 规格文件顺序**：Playwright 1 个 worker，按文件名字母序：screenshots < smoke < sync < tokens < touch < visual。visual 的最后一个用例写入 2500 篇笔记，必须保持最后；新规格文件命名时注意这个顺序。
+- **触摸测试**：用 CDP `Input.dispatchTouchEvent` 派发真实触摸序列（`e2e/touch.spec.ts`），Playwright 的 `tap()` 只适合点按。
+- **格式化**：项目没有配置 prettier，不要运行 `npx prettier`，会把代码改成双引号加分号。
+
 ## 2026-11-07 17:21 阶段 4 MCP 决策
 
 - **SDK**：官方 `github.com/modelcontextprotocol/go-sdk` v1.8.0（配套 `github.com/google/jsonschema-go` v0.4.3）。支持的协议版本是 2026-07-28（最新）、2025-11-25、2025-06-18、2025-03-26、2024-11-05。

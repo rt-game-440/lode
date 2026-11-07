@@ -1,10 +1,26 @@
 import { ChevronRight, FilePlus, FileText, Folder, FolderPlus, Pencil, Trash } from 'lucide-react'
-import { type DragEvent, type KeyboardEvent, type MouseEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  type RefObject,
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type { Note } from '../../api/types'
 import { type MenuEntry, openMenu } from '../../components/overlays'
 import { EmptyState } from '../../components/ui'
 import { dirname } from '../../lib/paths'
 import { type TreeNode, type VisibleRow, buildTree, visibleRows } from '../../lib/tree'
+import { flushSync } from 'react-dom'
+import { type VirtualWindow, scrollToShow, virtualWindow } from '../../lib/virtual'
+import { ListItem, ListPresence } from '../../components/AnimatedList'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import {
@@ -76,11 +92,17 @@ export function FileTree() {
     })
   }, [])
 
+  const virtual = useVirtualRows(listRef, rows.length, rows.length > VIRTUAL_THRESHOLD)
+
   const focusRow = (path: string) => {
     setFocusPath(path)
-    requestAnimationFrame(() => {
-      listRef.current?.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)?.focus()
-    })
+    // 虚拟滚动时目标行可能还没渲染：先滚过去并同步渲染，再立即聚焦。
+    // 不能等下一帧：连按方向键时，下一次按键会从旧的焦点行出发。
+    virtual.ensureVisible(rows.findIndex((r) => r.node.path === path))
+    const find = () => listRef.current?.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`)
+    const el = find()
+    if (el) el.focus()
+    else requestAnimationFrame(() => find()?.focus())
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -165,7 +187,26 @@ export function FileTree() {
     )
   }
 
-  const tabStop = focusPath && rows.some((r) => r.node.path === focusPath) ? focusPath : (activePath ?? rows[0].node.path)
+  const win = virtual.window ?? { start: 0, end: rows.length, padTop: 0, padBottom: 0 }
+  const shown = rows.slice(win.start, win.end)
+  let tabStop = focusPath && rows.some((r) => r.node.path === focusPath) ? focusPath : (activePath ?? rows[0].node.path)
+  // Tab 进入树时必须有一行可聚焦：首选行不在渲染范围内就退到第一条渲染的行
+  if (!shown.some((r) => r.node.path === tabStop)) tabStop = shown[0]?.node.path ?? tabStop
+  // 行数不多时增删带动画（展开文件夹时子项淡入、下方各行平移）；行很多时布局测量太贵，直接切换
+  const animateList = rows.length <= LIST_ANIMATE_MAX
+  const renderRow = (r: VisibleRow) => (
+    <Row
+      row={r}
+      expanded={r.node.kind === 'folder' && expanded.has(r.node.path)}
+      active={r.node.kind === 'note' && r.node.note.id === activeId}
+      tabbable={r.node.path === tabStop}
+      dropping={r.node.kind === 'folder' && dropTarget === r.node.path}
+      onToggle={toggle}
+      onFocusPath={setFocusPath}
+      onDragOverFolder={allowDrop}
+      onDropFolder={drop}
+    />
+  )
 
   return (
     <div
@@ -188,22 +229,101 @@ export function FileTree() {
         ])
       }}
     >
-      {rows.map((r) => (
-        <Row
-          key={r.node.path}
-          row={r}
-          expanded={r.node.kind === 'folder' && expanded.has(r.node.path)}
-          active={r.node.kind === 'note' && r.node.note.id === activeId}
-          tabbable={r.node.path === tabStop}
-          dropping={r.node.kind === 'folder' && dropTarget === r.node.path}
-          onToggle={toggle}
-          onFocusPath={setFocusPath}
-          onDragOverFolder={allowDrop}
-          onDropFolder={drop}
-        />
-      ))}
+      {win.padTop > 0 && <div aria-hidden="true" style={{ height: win.padTop }} />}
+      {animateList ? (
+        <ListPresence>
+          {shown.map((r) => (
+            <ListItem as="div" role="none" key={r.node.path}>
+              {renderRow(r)}
+            </ListItem>
+          ))}
+        </ListPresence>
+      ) : (
+        shown.map((r) => <Fragment key={r.node.path}>{renderRow(r)}</Fragment>)
+      )}
+      {win.padBottom > 0 && <div aria-hidden="true" style={{ height: win.padBottom }} />}
     </div>
   )
+}
+
+/** 超过这个行数时启用虚拟滚动 */
+const VIRTUAL_THRESHOLD = 2000
+const OVERSCAN = 12
+/** 不超过这个行数时启用增删动画 */
+const LIST_ANIMATE_MAX = 300
+
+/**
+ * 文件树的虚拟滚动：滚动容器是树的父元素（.sidebar-body），行高取自 --row-height（各行等高）。
+ * 未启用时 window 为 null，渲染全部行。
+ */
+function useVirtualRows(listRef: RefObject<HTMLDivElement | null>, count: number, enabled: boolean) {
+  const [win, setWin] = useState<VirtualWindow | null>(null)
+  const measure = useRef<() => void>(() => {})
+  const rowHeight = useRef(0)
+
+  useLayoutEffect(() => {
+    const tree = listRef.current
+    const scroller = tree?.parentElement
+    if (!enabled || !tree || !scroller) {
+      setWin(null)
+      measure.current = () => {}
+      return
+    }
+    rowHeight.current = rowHeightOf(tree)
+    const update = () => {
+      const top = treeTop(tree, scroller)
+      const next = virtualWindow({
+        count,
+        rowHeight: rowHeight.current,
+        scrollTop: scroller.scrollTop - top,
+        viewport: scroller.clientHeight,
+        overscan: OVERSCAN,
+      })
+      setWin((prev) => (prev && prev.start === next.start && prev.end === next.end && prev.padBottom === next.padBottom ? prev : next))
+    }
+    measure.current = update
+    let frame = 0
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(() => ((frame = 0), update()))
+    }
+    update()
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    // 尺寸变化（含 pointer: coarse 下行高改变、字号缩放）时重新读取行高
+    const ro = new ResizeObserver(() => {
+      rowHeight.current = rowHeightOf(tree)
+      onScroll()
+    })
+    ro.observe(scroller)
+    return () => {
+      cancelAnimationFrame(frame)
+      scroller.removeEventListener('scroll', onScroll)
+      ro.disconnect()
+    }
+  }, [listRef, count, enabled])
+
+  const ensureVisible = (index: number) => {
+    const tree = listRef.current
+    const scroller = tree?.parentElement
+    if (!enabled || index < 0 || !tree || !scroller) return
+    const top = treeTop(tree, scroller)
+    const to = scrollToShow({ index, rowHeight: rowHeight.current, scrollTop: scroller.scrollTop - top, viewport: scroller.clientHeight })
+    if (to === null) return
+    scroller.scrollTop = to + top
+    flushSync(() => measure.current())
+  }
+
+  return { window: win, ensureVisible }
+}
+
+/** 树顶部在滚动内容中的偏移（树上方还有其他内容时不为 0） */
+function treeTop(tree: HTMLElement, scroller: HTMLElement): number {
+  return tree.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+}
+
+function rowHeightOf(el: HTMLElement): number {
+  const v = getComputedStyle(el).getPropertyValue('--row-height').trim()
+  const px = v.endsWith('rem') ? parseFloat(v) * parseFloat(getComputedStyle(document.documentElement).fontSize) : parseFloat(v)
+  return px > 0 ? px : 30
 }
 
 interface RowProps {
@@ -262,6 +382,8 @@ const Row = memo(function Row({
     <div
       role="treeitem"
       aria-level={depth + 1}
+      aria-posinset={row.posInSet}
+      aria-setsize={row.setSize}
       aria-expanded={isFolder ? expanded : undefined}
       aria-selected={active}
       aria-current={active ? 'page' : undefined}

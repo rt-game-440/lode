@@ -1,6 +1,7 @@
 import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { ArrowLeft, Ellipsis, FileText, PanelLeft, PanelRight, Pencil, Trash } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { openMenu } from '../../components/overlays'
 import { EmptyState, IconButton, Spinner } from '../../components/ui'
@@ -10,12 +11,14 @@ import { LinkResolver, linkTextFor } from '../../lib/wikilink'
 import { editorBridge, extractHeadings, useEditor } from '../../stores/editor'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { fadeTransition, springDefault } from '../../styles/tokens/motion'
 import { deleteNote, errorMessage, openWikiLink, renameNote } from '../actions'
 import { refreshPreview } from './cm/livePreview'
 import { sync } from '../../sync/engine'
 import { diffChangeSet, rebase } from '../../sync/textdiff'
 import { type EditorEnv, editorExtensions, remoteSync } from './cm/setup'
 import { editorRef, takeTitleFocus } from './editorRef'
+import { MobileToolbar } from './MobileToolbar'
 import './editor.css'
 
 const SAVE_DELAY = 500
@@ -47,6 +50,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
 
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
+  /** 同一个编辑器实例，作为 state 供工具栏订阅 */
+  const [view, setView] = useState<EditorView | null>(null)
   const saverRef = useRef<Autosaver | null>(null)
   const loadedFor = useRef<{ id: string; version: number } | null>(null)
   const headingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -83,10 +88,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
           .filter((n) => n.path !== pathRef.current)
           .map((n) => ({ path: n.path, title: n.title, linkText: linkTextFor(n.path, paths) }))
       },
-      upload: async (file) => {
-        const res = await sync.uploadAttachment(file, file.name && file.name !== 'image.png' ? file.name : undefined)
-        return res.path
-      },
+      upload: uploadImage,
       onUploadError: (err) => toast({ message: `图片上传失败：${errorMessage(err)}`, tone: 'error' }),
       onDocChange: (content) => {
         saverRef.current?.change(content)
@@ -98,6 +100,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
     const extensions = editorExtensions(env)
     const view = new EditorView({ parent: host.current!, state: EditorState.create({ doc: '', extensions }) })
     viewRef.current = view
+    setView(view)
     editorRef.view = view
     editorRef.extensions = extensions
 
@@ -270,8 +273,20 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
           </EmptyState>
         )}
       </div>
+      {mobile && (
+        <MobileToolbar
+          view={view}
+          upload={uploadImage}
+          onUploadError={(err) => toast({ message: `图片上传失败：${errorMessage(err)}`, tone: 'error' })}
+        />
+      )}
     </section>
   )
+}
+
+async function uploadImage(file: File): Promise<string> {
+  const res = await sync.uploadAttachment(file, file.name && file.name !== 'image.png' ? file.name : undefined)
+  return res.path
 }
 
 /**
@@ -289,19 +304,33 @@ function applyRemoteTo(view: EditorView, base: string | null, next: string): boo
   return from !== cur
 }
 
+/**
+ * 保存状态：状态切换时旧文字向上淡出、新文字自下淡入（弹簧）；reduced motion 时只淡入淡出。
+ * aria-live 放在不变的外层上，读屏只播报新状态。
+ */
 function SaveIndicator({ status, error, onRetry }: { status: keyof typeof STATUS_TEXT; error: string | null; onRetry: () => void }) {
-  if (status === 'idle') return <span className="save-status" aria-live="polite" />
-  if (status === 'error') {
-    return (
-      <button className="save-status is-error" onClick={onRetry} title={error ?? undefined} aria-live="polite">
-        {STATUS_TEXT.error}
-        {error ? `：${error}` : ''} · 重试
-      </button>
-    )
+  const reduced = useReducedMotion()
+  const dy = reduced ? 0 : 6
+  const motionProps = {
+    initial: { opacity: 0, y: dy },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -dy },
+    transition: { ...springDefault, opacity: fadeTransition },
   }
   return (
-    <span className={`save-status is-${status}`} aria-live="polite" data-testid="save-status">
-      {STATUS_TEXT[status]}
+    <span className="save-slot" aria-live="polite" data-testid="save-status">
+      <AnimatePresence initial={false} mode="popLayout">
+        {status === 'error' ? (
+          <motion.button key="error" className="save-status is-error" onClick={onRetry} title={error ?? undefined} {...motionProps}>
+            {STATUS_TEXT.error}
+            {error ? `：${error}` : ''} · 重试
+          </motion.button>
+        ) : status !== 'idle' ? (
+          <motion.span key={status} className={`save-status is-${status}`} {...motionProps}>
+            {STATUS_TEXT[status]}
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
     </span>
   )
 }

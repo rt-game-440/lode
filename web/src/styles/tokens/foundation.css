@@ -47,6 +47,7 @@
   --space-1: 0.25rem;
   --space-1-5: 0.375rem;
   --space-2: 0.5rem;
+  --space-2-5: 0.625rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.25rem;
@@ -80,6 +81,9 @@
   --duration-fast: 160ms; /* hover、颜色变化 */
   --duration-base: 240ms; /* 淡入淡出 */
   --duration-slow: 360ms;
+  --duration-spin: 0.8s; /* 加载指示器转一圈 */
+  --duration-spin-reduced: 2.4s; /* 减弱动态效果时放慢 */
+  --duration-pulse: 1.2s; /* 同步中的呼吸灯 */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --press-scale: 0.97;
@@ -90,6 +94,9 @@
   --bar-height: 2.75rem; /* 44 */
   --row-height: 1.875rem; /* 30：桌面列表行 */
   --hit-target: 2.75rem; /* 44：触控最小可点区域 */
+  --resizer-hit: 8px; /* 侧栏调宽手柄的命中宽度 */
+  --edge-swipe-width: 16px; /* 手机左缘返回手势的感应宽度 */
+  --toolbar-height: 2.75rem; /* 手机编辑工具栏 */
   --editor-max-width: 46rem;
   --z-bar: 10;
   --z-popover: 40;

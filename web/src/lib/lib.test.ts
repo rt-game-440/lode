@@ -45,6 +45,7 @@ describe('tree', () => {
     expect(root.children.map((c) => c.name)).toEqual(['空', 'b', 'a'])
     const rows = visibleRows(root, new Set(['b']))
     expect(rows.map((r) => `${r.depth}:${r.node.name}`)).toEqual(['0:空', '0:b', '1:c', '1:2', '1:10', '0:a'])
+    expect(rows.map((r) => `${r.posInSet}/${r.setSize}`)).toEqual(['1/3', '2/3', '1/3', '2/3', '3/3', '3/3'])
   })
 })
 
@@ -144,5 +145,24 @@ describe('Autosaver', () => {
     await a.flush()
     expect(saved).toEqual(['中'])
     expect(statuses.at(-1)).toBe('saved')
+  })
+})
+
+describe('viewportMetrics', () => {
+  it('没有键盘时可视区域等于布局视口', async () => {
+    const { viewportMetrics } = await import('./viewport')
+    expect(viewportMetrics(800, 800, 0)).toEqual({ height: 800, top: 0, keyboard: 0 })
+  })
+  it('键盘弹出：可视区域变矮，键盘高度为被遮住的部分', async () => {
+    const { viewportMetrics } = await import('./viewport')
+    expect(viewportMetrics(800, 470, 0)).toEqual({ height: 470, top: 0, keyboard: 330 })
+  })
+  it('iOS 聚焦时页面被平移：扣除偏移量', async () => {
+    const { viewportMetrics } = await import('./viewport')
+    expect(viewportMetrics(800, 470, 120)).toEqual({ height: 470, top: 120, keyboard: 210 })
+  })
+  it('地址栏伸缩这类小变化不算键盘', async () => {
+    const { viewportMetrics } = await import('./viewport')
+    expect(viewportMetrics(800, 744, 0).keyboard).toBe(0)
   })
 })

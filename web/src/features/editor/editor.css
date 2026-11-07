@@ -16,8 +16,8 @@
   box-sizing: content-box;
   flex: none;
   background: var(--color-bg-bar);
-  -webkit-backdrop-filter: blur(var(--material-blur-regular)) saturate(180%);
-  backdrop-filter: blur(var(--material-blur-regular)) saturate(180%);
+  -webkit-backdrop-filter: var(--material-blur-regular);
+  backdrop-filter: var(--material-blur-regular);
   position: relative;
   z-index: var(--z-bar);
 }
@@ -111,5 +111,56 @@
   .editor-host .cm-content {
     padding-left: var(--space-4) !important;
     padding-right: var(--space-4) !important;
+  }
+}
+
+/* 手机编辑工具栏：位于编辑区下方，外壳已贴合可视区域，所以键盘弹出时它就在键盘上方 */
+.mobile-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: var(--toolbar-height);
+  padding: 0 var(--space-2);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: content-box;
+  border-top: 1px solid var(--color-separator);
+  background: var(--color-bg-bar);
+  -webkit-backdrop-filter: var(--material-blur-regular);
+  backdrop-filter: var(--material-blur-regular);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mobile-toolbar-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--hit-target);
+  height: var(--hit-target);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-label);
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-toolbar-btn:active {
+  background: var(--color-fill);
+  transform: scale(var(--press-scale));
+  transition: transform var(--duration-instant) var(--ease-out);
+}
+
+/* 保存状态的容器：切换时新旧文字叠在同一位置（popLayout） */
+.save-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* 正文里的任务复选框属于行内控件（WCAG 2.5.8 的行内例外），触控设备上适当放大，但不扩到 44px，避免盖住相邻行 */
+@media (pointer: coarse) {
+  .cm-editor .cm-content .cm-task-checkbox {
+    width: 1.3em;
+    height: 1.3em;
   }
 }

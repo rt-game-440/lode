@@ -50,7 +50,9 @@ Lode：自托管、单用户的 Markdown 笔记 PWA，多端即时同步，自�
 - 测试：`scripts/test.sh` 跑 Go 单测和前端单测；`scripts/test.sh --e2e` 再构建并跑 Playwright。
   - 单独跑：`cd server && go test ./...`、`pnpm -C web test`、`pnpm -C web typecheck`、`pnpm -C web e2e`（需要先构建 `bin/lode`）。
   - Playwright 启动的测试实例在 18787 端口，数据在 `web/.e2e-data/`，每次运行前清空。
-- 截图：`LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e screenshots`，输出到 `docs/screenshots/stage-<N>/`。同步相关截图（离线、冲突）用 `LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e sync`。设了这个变量时不要跑全量 e2e：screenshots.spec 会先完成密码设置，导致 smoke 的首启用例失败。
+  - 规格文件按文件名字母序串行执行（1 个 worker）。`visual.spec`（axe、reduced motion、三种宽度布局、2500 篇笔记虚拟滚动）会写入大量笔记，必须排在最后；`touch.spec` 用 CDP 派发触摸手势。
+  - `pnpm -C web test` 里的 `tokens.lint.test.ts` 检查组件没有硬编码颜色和动画时长，规则见 [docs/design.md](docs/design.md)。
+- 截图：`LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e screenshots`，输出到 `docs/screenshots/stage-<N>/`。同步相关截图（离线、冲突）用 `LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e sync`。手势录屏加上 touch：`LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e screenshots touch`，录屏输出到 `video/`（webm，需要时用 ffmpeg 转 mp4）。设了这个变量时不要跑全量 e2e：screenshots.spec 会先完成密码设置，导致 smoke 的首启用例失败。
 - PWA 图标：`node web/scripts/gen-icons.mjs` 从 SVG 重新生成 `web/public/` 下的图标。
 - 手机测试（局域网 HTTPS）：见 [docs/dev-https.md](docs/dev-https.md)。
 - 内存：`scripts/rss.sh`（需先构建），生成 1000 篇笔记、重启对账后用 `server/cmd/wsprobe` 保持 2 个 WebSocket 连接（`WS=` / `-WebSockets` 可改），再测量空闲 RSS 并打印结果；PowerShell 版加 `-Out docs/evidence/stage-<N>/rss.txt` 直接写证据文件。

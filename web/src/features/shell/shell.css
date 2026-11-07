@@ -1,54 +1,82 @@
+/* ---- 桌面三栏：各栏绝对定位，展开收起只改 transform（见 panelMotion.ts） ---- */
 .shell {
-  display: flex;
+  position: relative;
   height: 100%;
   overflow: hidden;
   background: var(--color-bg);
 }
+.shell-sidebar,
+.shell-main,
+.shell-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
 .shell-sidebar {
-  flex: none;
-  height: 100%;
-  overflow: hidden;
+  left: 0;
+  z-index: 2;
   border-right: 1px solid var(--color-separator);
 }
-.shell-sidebar-inner {
-  width: var(--sidebar-width);
-  height: 100%;
-}
 .shell-main {
-  flex: 1;
+  z-index: 1;
   min-width: 0;
-  height: 100%;
 }
 .shell-right {
-  flex: none;
-  height: 100%;
-  overflow: hidden;
-  border-left: 1px solid var(--color-separator);
-}
-.shell-right-inner {
-  width: var(--rightbar-width);
-  height: 100%;
-}
-
-.sheet-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  background: var(--color-scrim);
-}
-.right-sheet {
-  position: fixed;
-  top: 0;
   right: 0;
-  bottom: 0;
-  z-index: var(--z-modal);
-  width: min(var(--rightbar-width), 88vw);
-  box-shadow: var(--shadow-lg);
+  z-index: 2;
+  width: var(--rightbar-width);
+  border-left: 1px solid var(--color-separator);
+  background: var(--color-bg);
 }
 
+/* 调宽手柄：比分隔线宽的透明命中区，悬停或拖动时显示强调色细线 */
+.shell-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--resizer-hit) / 2);
+  z-index: 3;
+  width: var(--resizer-hit);
+  cursor: col-resize;
+  touch-action: none;
+}
+.shell-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--color-accent);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.shell-resizer:hover::after,
+.shell-resizer.is-dragging::after,
+.shell-resizer:focus-visible::after {
+  opacity: 1;
+}
+.shell-resizer:focus-visible {
+  outline: none;
+}
+.shell-resizer.is-dragging {
+  cursor: col-resize;
+}
+
+/* ---- 手机单栏导航栈 ---- */
 .shell.is-mobile {
-  position: relative;
-  display: block;
+  /* 键盘弹出时跟随可视区域（--vv-* 由 lib/viewport.ts 设置），编辑器和工具栏不被遮挡 */
+  position: fixed;
+  inset: auto 0 auto 0;
+  top: 0;
+  height: var(--vv-height, 100%);
+  transform: translateY(var(--vv-top, 0px));
+}
+.mobile-stack {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 .mobile-layer {
   position: absolute;
@@ -63,14 +91,100 @@
 .mobile-layer.is-detail {
   box-shadow: var(--shadow-lg);
 }
+.mobile-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--color-scrim);
+  pointer-events: none;
+}
+/* 左缘返回手势的感应区（在顶栏下方，不挡返回按钮） */
+.edge-swipe {
+  position: absolute;
+  top: calc(var(--bar-height) + env(safe-area-inset-top));
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-bar);
+  width: calc(var(--edge-swipe-width) + env(safe-area-inset-left));
+  touch-action: none;
+}
+
+/* ---- 模态面板（快捷键一览等） ---- */
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(36rem, 100%);
+  max-height: min(40rem, calc(100% - var(--space-8)));
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+  overflow: hidden;
+}
+.shortcuts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-4) var(--space-2) var(--space-5);
+}
+.shortcuts-body {
+  overflow-y: auto;
+  padding: 0 var(--space-5) var(--space-5);
+  display: grid;
+  gap: var(--space-5);
+}
+.shortcuts-group-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-footnote);
+  font-weight: var(--weight-semibold);
+  color: var(--color-label-secondary);
+}
+.shortcuts-list {
+  margin: 0;
+}
+.shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 2rem;
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--color-separator);
+  font-size: var(--text-subhead);
+}
+.shortcuts-row:last-child {
+  border-bottom: 0;
+}
+.shortcuts-row dt {
+  color: var(--color-label);
+}
+.shortcuts-row dd {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  margin: 0;
+}
+kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 var(--space-1-5);
+  border-radius: var(--radius-xs);
+  background: var(--color-fill);
+  box-shadow: inset 0 -1px 0 var(--color-separator-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--color-label-secondary);
+}
+
+/* 减弱透明度：材质背景已由 colors.css 换成实色，这里再去掉模糊 */
 @media (prefers-reduced-transparency: reduce) {
-  .sidebar {
-    background: var(--color-bg-sidebar-solid) !important;
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
-  .editor-bar {
-    background: var(--color-bg-bar-solid) !important;
+  .sidebar,
+  .editor-bar,
+  .mobile-toolbar,
+  .menu,
+  .switcher {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }

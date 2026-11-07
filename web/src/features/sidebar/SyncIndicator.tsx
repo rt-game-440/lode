@@ -43,7 +43,7 @@ export function SyncIndicator() {
 
   return (
     <button
-      className={`sync-status is-${status}`}
+      className={`sync-status hit-expand is-${status}`}
       data-testid="sync-status"
       aria-live="polite"
       title="同步状态"

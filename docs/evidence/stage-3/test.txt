@@ -1,0 +1,210 @@
+?   	github.com/rt-game-440/lode/server/cmd/gennotes	[no test files]
+?   	github.com/rt-game-440/lode/server/cmd/lode	[no test files]
+?   	github.com/rt-game-440/lode/server/cmd/wsprobe	[no test files]
+ok  	github.com/rt-game-440/lode/server/internal/api	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/audit	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/auth	(cached)
+?   	github.com/rt-game-440/lode/server/internal/config	[no test files]
+ok  	github.com/rt-game-440/lode/server/internal/db	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/mcpserver	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/mdparse	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/merge	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/notes	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/tools	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/vault	(cached)
+?   	github.com/rt-game-440/lode/server/internal/webui	[no test files]
+$ vitest run
+
+ RUN  v5.1.0 E:/文档/project/notevault/web
+
+
+ Test Files  8 passed (8)
+      Tests  58 passed (58)
+   Start at  18:11:58
+   Duration  340ms (import 45%, tests 24%, transform 21%, worker 10%)
+
+✓ Lockfile passes supply-chain policies (verified 42m ago)
+Lockfile is up to date, resolution step is skipped
+Done in 32ms using pnpm v12.14.0
+$ tsc -p tsconfig.json && vite build
+[36mvite v8.3.6 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 2693 modules transformed.
+rendering chunks...
+computing gzip size...
+../server/internal/webui/dist/manifest.webmanifest                          0.45 kB
+../server/internal/webui/dist/index.html                                    1.32 kB │ gzip:   0.64 kB
+../server/internal/webui/dist/assets/index-DPKYc2sF.css                    42.22 kB │ gzip:   7.81 kB
+../server/internal/webui/dist/assets/diff-ChtP43wD.js                       0.30 kB │ gzip:   0.23 kB
+../server/internal/webui/dist/assets/brainfuck-D5EjA2JK.js                  0.59 kB │ gzip:   0.32 kB
+../server/internal/webui/dist/assets/properties-C357ku5U.js                 0.66 kB │ gzip:   0.34 kB
+../server/internal/webui/dist/assets/cmake-84nbDH0I.js                      0.75 kB │ gzip:   0.45 kB
+../server/internal/webui/dist/assets/asciiarmor-C_eisQCp.js                 0.77 kB │ gzip:   0.40 kB
+../server/internal/webui/dist/assets/protobuf-D1ij_kNL.js                   0.80 kB │ gzip:   0.51 kB
+../server/internal/webui/dist/assets/http-CLVgA2GD.js                       0.84 kB │ gzip:   0.42 kB
+../server/internal/webui/dist/assets/solr-B78wSQJQ.js                       0.86 kB │ gzip:   0.45 kB
+../server/internal/webui/dist/assets/troff-C2dAgh7P.js                      0.95 kB │ gzip:   0.43 kB
+../server/internal/webui/dist/assets/toml-BPTmHmyx.js                       1.04 kB │ gzip:   0.53 kB
+../server/internal/webui/dist/assets/spreadsheet-CTIncYxj.js                1.13 kB │ gzip:   0.53 kB
+../server/internal/webui/dist/assets/mbox-BEMVcqjs.js                       1.38 kB │ gzip:   0.65 kB
+../server/internal/webui/dist/assets/rpm-gpDK5sbt.js                        1.59 kB │ gzip:   0.81 kB
+../server/internal/webui/dist/assets/sieve-tLWDfEkZ.js                      1.61 kB │ gzip:   0.76 kB
+../server/internal/webui/dist/assets/factor-LKH5gN8L.js                     1.66 kB │ gzip:   0.60 kB
+../server/internal/webui/dist/assets/eiffel-BEjRio4Q.js                     1.69 kB │ gzip:   0.90 kB
+../server/internal/webui/dist/assets/z80-Co3PbHdE.js                        1.75 kB │ gzip:   0.79 kB
+../server/internal/webui/dist/assets/mumps-BSzj6Xyz.js                      1.82 kB │ gzip:   0.95 kB
+../server/internal/webui/dist/assets/elm-Cshzl8qu.js                        1.86 kB │ gzip:   0.81 kB
+../server/internal/webui/dist/assets/mathematica-u8YMmbU0.js                1.89 kB │ gzip:   0.80 kB
+../server/internal/webui/dist/assets/dockerfile-DJkHQgkl.js                 1.90 kB │ gzip:   0.65 kB
+../server/internal/webui/dist/assets/turtle-Cx3rYX2g.js                     1.95 kB │ gzip:   0.89 kB
+../server/internal/webui/dist/assets/dist-D7K_JCe4.js                       1.95 kB │ gzip:   1.25 kB
+../server/internal/webui/dist/assets/ebnf-D4c0_ac3.js                       1.97 kB │ gzip:   0.80 kB
+../server/internal/webui/dist/assets/smalltalk-BLp5-jwC.js                  1.99 kB │ gzip:   0.85 kB
+../server/internal/webui/dist/assets/fcl-ClOhbFR7.js                        2.02 kB │ gzip:   0.95 kB
+../server/internal/webui/dist/assets/ntriples-CzMBulkp.js                   2.05 kB │ gzip:   0.72 kB
+../server/internal/webui/dist/assets/dtd-DTF72YNO.js                        2.09 kB │ gzip:   0.87 kB
+../server/internal/webui/dist/assets/octave-D2Q8cUp1.js                     2.10 kB │ gzip:   1.07 kB
+../server/internal/webui/dist/assets/yacas-CXXgtw0p.js                      2.14 kB │ gzip:   1.08 kB
+../server/internal/webui/dist/assets/pascal-Dp_KdFgX.js                     2.25 kB │ gzip:   1.17 kB
+../server/internal/webui/dist/assets/simple-mode-DXiLM1-G.js                2.27 kB │ gzip:   1.09 kB
+../server/internal/webui/dist/assets/apl-gfMMiTNf.js                        2.29 kB │ gzip:   1.22 kB
+../server/internal/webui/dist/assets/commonlisp-DgAKBe0r.js                 2.31 kB │ gzip:   1.09 kB
+../server/internal/webui/dist/assets/tcl-BGfruO1u.js                        2.35 kB │ gzip:   1.22 kB
+../server/internal/webui/dist/assets/shell-DwuoZtxw.js                      2.43 kB │ gzip:   1.20 kB
+../server/internal/webui/dist/assets/webidl-D5jiJvOU.js                     2.44 kB │ gzip:   1.24 kB
+../server/internal/webui/dist/assets/pig-AF4Hwhju.js                        2.51 kB │ gzip:   1.37 kB
+../server/internal/webui/dist/assets/puppet-BZyAS7I4.js                     2.51 kB │ gzip:   1.19 kB
+../server/internal/webui/dist/assets/forth-D6RzAl64.js                      2.53 kB │ gzip:   1.32 kB
+../server/internal/webui/dist/assets/dist-BLgYn2Pz.js                       2.57 kB │ gzip:   1.48 kB
+../server/internal/webui/dist/assets/velocity-CqftRsjg.js                   2.70 kB │ gzip:   1.11 kB
+../server/internal/webui/dist/assets/tiddlywiki-VlUiK86J.js                 2.76 kB │ gzip:   1.07 kB
+../server/internal/webui/dist/assets/modelica-CqHI_q-D.js                   2.79 kB │ gzip:   1.28 kB
+../server/internal/webui/dist/assets/oz-BwTct_5T.js                         2.88 kB │ gzip:   1.27 kB
+../server/internal/webui/dist/assets/r-CxDmU1I4.js                          2.92 kB │ gzip:   1.33 kB
+../server/internal/webui/dist/assets/stex-DNzd62Q_.js                       3.09 kB │ gzip:   1.17 kB
+../server/internal/webui/dist/assets/lua-DPCEkfD_.js                        3.12 kB │ gzip:   1.40 kB
+../server/internal/webui/dist/assets/cypher-p9eYesGn.js                     3.18 kB │ gzip:   1.49 kB
+../server/internal/webui/dist/assets/tiki-CvUEFusT.js                       3.21 kB │ gzip:   1.25 kB
+../server/internal/webui/dist/assets/dist-CUf8y7I-.js                       3.26 kB │ gzip:   1.67 kB
+../server/internal/webui/dist/assets/vhdl-kS471soi.js                       3.31 kB │ gzip:   1.49 kB
+../server/internal/webui/dist/assets/sparql-Dz-mlCAC.js                     3.33 kB │ gzip:   1.59 kB
+../server/internal/webui/dist/assets/mscgen-qgSLujhx.js                     3.49 kB │ gzip:   0.97 kB
+../server/internal/webui/dist/assets/vb-BthdM_4N.js                         3.65 kB │ gzip:   1.81 kB
+../server/internal/webui/dist/assets/d-DWkQyNnU.js                          3.69 kB │ gzip:   1.67 kB
+../server/internal/webui/dist/assets/q-B9NhS7L_.js                          3.69 kB │ gzip:   1.69 kB
+../server/internal/webui/dist/assets/swift-DKB6_1j6.js                      3.76 kB │ gzip:   1.81 kB
+../server/internal/webui/dist/assets/coffeescript-De_zI4J0.js               3.84 kB │ gzip:   1.69 kB
+../server/internal/webui/dist/assets/fortran-Bt6PBEDR.js                    3.86 kB │ gzip:   1.93 kB
+../server/internal/webui/dist/assets/asn1-DCl_8MCW.js                       3.97 kB │ gzip:   1.95 kB
+../server/internal/webui/dist/assets/dylan-S7ucR4pR.js                      4.03 kB │ gzip:   1.62 kB
+../server/internal/webui/dist/assets/asterisk-BEn0Cwpx.js                   4.05 kB │ gzip:   1.73 kB
+../server/internal/webui/dist/assets/livescript-BXxG0Yva.js                 4.08 kB │ gzip:   1.62 kB
+../server/internal/webui/dist/assets/ttcn-cfg-2b4Gb5sE.js                   4.09 kB │ gzip:   1.72 kB
+../server/internal/webui/dist/assets/groovy-CUrWKPia.js                     4.11 kB │ gzip:   1.74 kB
+../server/internal/webui/dist/assets/haskell-BRsoo5mP.js                    4.15 kB │ gzip:   1.91 kB
+../server/internal/webui/dist/assets/gas-BHEdbvp9.js                        4.55 kB │ gzip:   1.27 kB
+../server/internal/webui/dist/assets/mllike-B45xgp2S.js                     4.82 kB │ gzip:   1.57 kB
+../server/internal/webui/dist/assets/ttcn-PPSTk1ow.js                       4.84 kB │ gzip:   2.14 kB
+../server/internal/webui/dist/assets/dist-BvBQNAd7.js                       4.86 kB │ gzip:   2.32 kB
+../server/internal/webui/dist/assets/crystal-Bl6YKCG_.js                    5.01 kB │ gzip:   2.10 kB
+../server/internal/webui/dist/assets/ruby-ChfNwlCY.js                       5.07 kB │ gzip:   2.15 kB
+../server/internal/webui/dist/assets/ecl-BVIeWmwY.js                        5.11 kB │ gzip:   2.30 kB
+../server/internal/webui/dist/assets/julia-CQfgDRfP.js                      5.26 kB │ gzip:   2.16 kB
+../server/internal/webui/dist/assets/vbscript-D9f6rSsU.js                   5.43 kB │ gzip:   2.56 kB
+../server/internal/webui/dist/assets/workbox-window.prod.es5-Bd17z0YL.js    5.65 kB │ gzip:   2.20 kB
+../server/internal/webui/dist/assets/mirc-C9zpzAZU.js                       5.91 kB │ gzip:   2.70 kB
+../server/internal/webui/dist/assets/xquery-BKJx4mf9.js                     6.15 kB │ gzip:   2.57 kB
+../server/internal/webui/dist/assets/cobol-DHLQUbN7.js                      6.19 kB │ gzip:   2.98 kB
+../server/internal/webui/dist/assets/python-B_1Jd8HM.js                     6.27 kB │ gzip:   2.67 kB
+../server/internal/webui/dist/assets/scheme-D9qYN0V5.js                     6.35 kB │ gzip:   2.37 kB
+../server/internal/webui/dist/assets/pug-BqCHZ5xT.js                        6.61 kB │ gzip:   1.98 kB
+../server/internal/webui/dist/assets/textile-C4jVoHG1.js                    6.74 kB │ gzip:   2.44 kB
+../server/internal/webui/dist/assets/nsis-viPvXFiq.js                       7.06 kB │ gzip:   3.08 kB
+../server/internal/webui/dist/assets/nginx-C-ORUuei.js                      7.40 kB │ gzip:   2.73 kB
+../server/internal/webui/dist/assets/powershell-D8WpQPaX.js                 7.68 kB │ gzip:   3.28 kB
+../server/internal/webui/dist/assets/erlang-BV0c4Hdn.js                     7.84 kB │ gzip:   2.90 kB
+../server/internal/webui/dist/assets/haxe-DjVOVvNP.js                       7.86 kB │ gzip:   2.94 kB
+../server/internal/webui/dist/assets/verilog-CjI9Y6RI.js                    8.18 kB │ gzip:   3.47 kB
+../server/internal/webui/dist/assets/sas-C2OyD2Y6.js                        9.33 kB │ gzip:   4.11 kB
+../server/internal/webui/dist/assets/clojure-BflJGmDX.js                    9.40 kB │ gzip:   4.02 kB
+../server/internal/webui/dist/assets/perl-BkSkiI9m.js                       9.73 kB │ gzip:   3.50 kB
+../server/internal/webui/dist/assets/idl-BUZw3wgd.js                        9.82 kB │ gzip:   4.40 kB
+../server/internal/webui/dist/assets/gherkin-oBAE_ms0.js                   10.15 kB │ gzip:   5.09 kB
+../server/internal/webui/dist/assets/dist-DY_LnjGy.js                      11.52 kB │ gzip:   5.16 kB
+../server/internal/webui/dist/assets/dist-uRW9FvtO.js                      14.26 kB │ gzip:   5.76 kB
+../server/internal/webui/dist/assets/dist-D6thIMOo.js                      16.20 kB │ gzip:   7.46 kB
+../server/internal/webui/dist/assets/javascript-lS2r2ifg.js                16.96 kB │ gzip:   5.71 kB
+../server/internal/webui/dist/assets/dist-DQ-nVTcv.js                      20.65 kB │ gzip:   9.32 kB
+../server/internal/webui/dist/assets/dist-B5EIkJM6.js                      21.67 kB │ gzip:  10.09 kB
+../server/internal/webui/dist/assets/clike-xvONpD0Z.js                     22.04 kB │ gzip:   7.75 kB
+../server/internal/webui/dist/assets/dist-Bz9ujbvC.js                      22.92 kB │ gzip:  10.41 kB
+../server/internal/webui/dist/assets/stylus-BOVgKnng.js                    23.51 kB │ gzip:   8.55 kB
+../server/internal/webui/dist/assets/css-CnaYoQib.js                       24.66 kB │ gzip:   8.25 kB
+../server/internal/webui/dist/assets/dist-C19UxZvy.js                      30.68 kB │ gzip:  12.73 kB
+../server/internal/webui/dist/assets/dist-C-u1NXRU.js                      32.11 kB │ gzip:  13.00 kB
+../server/internal/webui/dist/assets/sql-DuQMFDvy.js                       36.83 kB │ gzip:  10.90 kB
+../server/internal/webui/dist/assets/dist-_nY2mgah.js                      44.54 kB │ gzip:  19.32 kB
+../server/internal/webui/dist/assets/dist-DkVy26kC.js                      47.69 kB │ gzip:  19.52 kB
+../server/internal/webui/dist/assets/dist-BaO3FnrR.js                      83.65 kB │ gzip:  30.64 kB
+../server/internal/webui/dist/assets/dist-BiyuCK5W.js                      98.10 kB │ gzip:  28.76 kB
+../server/internal/webui/dist/assets/dist-C8H77PEy.js                     103.86 kB │ gzip:  34.73 kB
+../server/internal/webui/dist/assets/dist-DemMCrzt.js                     314.66 kB │ gzip: 101.70 kB
+../server/internal/webui/dist/assets/index-De8uHgK1.js                    792.50 kB │ gzip: 267.15 kB
+
+[32m✓ built in 430ms[39m
+
+PWA v2.0.0
+mode      generateSW
+precache  128 entries (2138.18 KiB)
+files generated
+  ../server/internal/webui/dist/sw.js
+  ../server/internal/webui/dist/workbox-2fbc6a65.js
+已构建 /e/文档/project/notevault/bin/lode.exe
+$ playwright test
+
+Running 38 tests using 1 worker
+
+  -   1 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 desktop light
+  -   2 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 mobile light
+  -   3 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 desktop dark
+  -   4 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 mobile dark
+  -   5 [chromium] › e2e\screenshots.spec.ts:140:1 › 录屏 desktop
+  ok  6 [chromium] › e2e\smoke.spec.ts:28:1 › 首启设置密码后进入应用 (611ms)
+  ok  7 [chromium] › e2e\smoke.spec.ts:37:1 › 新建笔记、输入、自动保存、刷新、磁盘一致、搜索、删除与恢复 (2.7s)
+外部新建在 310ms 后出现在文件树
+  ok  8 [chromium] › e2e\smoke.spec.ts:75:1 › 外部修改约 2 秒内反映到文件树和搜索结果 (713ms)
+  ok  9 [chromium] › e2e\smoke.spec.ts:93:1 › 重命名笔记后更新其他笔记中的链接，反链显示正确 (2.4s)
+  ok 10 [chromium] › e2e\smoke.spec.ts:128:1 › 重命名正在编辑的笔记时，其中的自链接同步更新且之后的保存不冲突 (1.9s)
+B 在 A 停止输入后 609ms 看到修改
+  ok 11 [chromium] › e2e\sync.spec.ts:87:1 › A 修改后，B 不刷新、2 秒内看到 (1.1s)
+  ok 12 [chromium] › e2e\sync.spec.ts:99:1 › B 离线编辑两篇显示“离线（2 项待同步）”，联网后同步到服务器，A 也看到 (1.3s)
+  ok 13 [chromium] › e2e\sync.spec.ts:124:1 › A、B 改同一行生成冲突副本，两端都有提示 (2.9s)
+  ok 14 [chromium] › e2e\sync.spec.ts:161:1 › A 改第 1 段、B 改第 3 段自动合并，不产生副本，两端最终一致 (2.5s)
+  ok 15 [chromium] › e2e\sync.spec.ts:183:1 › B 正在用输入法组字时推迟套用 A 的修改，组字结束后合并且不打断输入 (4.2s)
+  ok 16 [chromium] › e2e\sync.spec.ts:215:1 › PWA：manifest 齐全、service worker 激活，断网后刷新仍能看到笔记树并编辑缓存的笔记 (2.7s)
+  ok 17 [chromium] › e2e\tokens.spec.ts:61:1 › 设置页创建读写 token：明文只显示一次，可以复制 (581ms)
+  ok 18 [chromium] › e2e\tokens.spec.ts:95:1 › MCP 追加一行：打开的笔记无需刷新即可看到，调用记录里有这次调用 (371ms)
+  ok 19 [chromium] › e2e\tokens.spec.ts:145:1 › 吊销 token 后 MCP 请求返回 401 (459ms)
+  ok 20 [chromium] › e2e\touch.spec.ts:73:1 › 左缘右滑：详情页跟手移动，快速滑过一半松手后返回列表 (1.1s)
+  ok 21 [chromium] › e2e\touch.spec.ts:85:1 › 左缘右滑：慢慢拖一小段后松手，弹回笔记页 (1.8s)
+  ok 22 [chromium] › e2e\touch.spec.ts:93:1 › 右栏抽屉：跟手拖拽，向右甩出关闭；拖一小段松手弹回 (3.0s)
+  ok 23 [chromium] › e2e\touch.spec.ts:120:1 › 手机编辑工具栏：聚焦编辑器时出现，插入任务和笔记链接不收起键盘，收起键盘后隐藏 (2.1s)
+  ok 24 [chromium] › e2e\visual.spec.ts:78:5 › axe：setup light 没有 serious / critical 问题 (1.1s)
+  ok 25 [chromium] › e2e\visual.spec.ts:78:5 › axe：login light 没有 serious / critical 问题 (1.1s)
+  ok 26 [chromium] › e2e\visual.spec.ts:78:5 › axe：main light 没有 serious / critical 问题 (1.4s)
+  ok 27 [chromium] › e2e\visual.spec.ts:78:5 › axe：settings light 没有 serious / critical 问题 (1.3s)
+  ok 28 [chromium] › e2e\visual.spec.ts:78:5 › axe：setup dark 没有 serious / critical 问题 (1.1s)
+  ok 29 [chromium] › e2e\visual.spec.ts:78:5 › axe：login dark 没有 serious / critical 问题 (1.1s)
+  ok 30 [chromium] › e2e\visual.spec.ts:78:5 › axe：main dark 没有 serious / critical 问题 (1.4s)
+  ok 31 [chromium] › e2e\visual.spec.ts:78:5 › axe：settings dark 没有 serious / critical 问题 (1.3s)
+  ok 32 [chromium] › e2e\visual.spec.ts:116:3 › 正常情况下侧栏和快速切换器有位移动画 (2.1s)
+  ok 33 [chromium] › e2e\visual.spec.ts:116:3 › 减弱动态效果时侧栏和快速切换器没有位移动画 (2.1s)
+  ok 34 [chromium] › e2e\visual.spec.ts:199:3 › 宽度 375：各页面没有横向滚动、可交互元素不重叠 (4.1s)
+  ok 35 [chromium] › e2e\visual.spec.ts:199:3 › 宽度 768：各页面没有横向滚动、可交互元素不重叠 (4.2s)
+  ok 36 [chromium] › e2e\visual.spec.ts:199:3 › 宽度 1440：各页面没有横向滚动、可交互元素不重叠 (4.2s)
+  ok 37 [chromium] › e2e\visual.spec.ts:278:1 › 手机上可点区域不小于 44×44 (1.2s)
+  ok 38 [chromium] › e2e\visual.spec.ts:306:1 › 文件树超过 2000 项时虚拟滚动，键盘导航能走到未渲染的行 (2.6s)
+
+  5 skipped
+  33 passed (1.1m)
+exit=0

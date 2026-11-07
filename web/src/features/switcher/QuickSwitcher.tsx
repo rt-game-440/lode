@@ -1,5 +1,6 @@
 import { FilePlus, FileText, Search } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
+import { usePop } from '../../components/usePop'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Note } from '../../api/types'
 import { dirname, invalidNameReason } from '../../lib/paths'
@@ -36,6 +37,7 @@ export function QuickSwitcher() {
 
 function SwitcherBody({ onClose }: { onClose: () => void }) {
   const notes = useVault((s) => s.notes)
+  const pop = usePop({ scale: 0.97, y: -8 }, { scale: 0.98, y: -4 })
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -80,9 +82,7 @@ function SwitcherBody({ onClose }: { onClose: () => void }) {
       role="dialog"
       aria-modal="true"
       aria-label="快速切换"
-      initial={{ opacity: 0, scale: 0.97, y: -8 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.98, y: -4 }}
+      {...pop}
       transition={springSnappy}
     >
       <div className="switcher-input-row">

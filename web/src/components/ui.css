@@ -23,7 +23,7 @@
 }
 .btn-sm {
   height: 1.75rem;
-  padding: 0 var(--space-2-5, 0.625rem);
+  padding: 0 var(--space-2-5);
   font-size: var(--text-footnote);
   border-radius: var(--radius-sm);
 }
@@ -64,7 +64,7 @@
 }
 .btn-danger {
   background: var(--color-danger);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 
 .icon-btn {
@@ -94,7 +94,7 @@
   color: var(--color-label);
 }
 .icon-btn:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(var(--press-scale));
   background: var(--color-fill-strong);
 }
 .icon-btn.is-active {
@@ -107,6 +107,27 @@
   .icon-btn-md {
     width: var(--hit-target);
     height: var(--hit-target);
+  }
+}
+
+/*
+ * 触控设备上，视觉上较小的按钮用透明伪元素把可点区域扩到 44×44（--hit-target），
+ * 按钮外观和布局不变。本身已经够大的方向上 inset 为 0，不会缩小可点区域。
+ */
+@media (pointer: coarse) {
+  .btn,
+  .icon-btn,
+  .segment,
+  .hit-expand {
+    position: relative;
+  }
+  .btn::after,
+  .icon-btn::after,
+  .segment::after,
+  .hit-expand::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((100% - var(--hit-target)) / 2));
   }
 }
 
@@ -132,6 +153,11 @@
   transition:
     box-shadow var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out);
+}
+@media (pointer: coarse) {
+  .field-box {
+    height: var(--hit-target);
+  }
 }
 .field-box:focus-within {
   background: var(--color-bg);
@@ -171,7 +197,7 @@
   border-radius: 50%;
   border: 2px solid var(--color-fill-strong);
   border-top-color: var(--color-label-secondary);
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--duration-spin) linear infinite;
 }
 @keyframes spin {
   to {
@@ -180,7 +206,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .spinner {
-    animation-duration: 2.4s;
+    animation-duration: var(--duration-spin-reduced);
   }
 }
 
@@ -208,6 +234,9 @@
 }
 
 /* 对话框 */
+.scrim > [role="dialog"]:focus {
+  outline: none;
+}
 .scrim {
   position: fixed;
   inset: 0;
@@ -252,7 +281,9 @@
   min-width: 12rem;
   max-width: 18rem;
   padding: var(--space-1);
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-popover);
+  -webkit-backdrop-filter: var(--material-blur-thick);
+  backdrop-filter: var(--material-blur-thick);
   border: 1px solid var(--color-separator);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
@@ -293,11 +324,11 @@
 .menu-item.is-danger:hover,
 .menu-item.is-danger:focus-visible {
   background: var(--color-danger);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 .menu-item.is-danger:hover svg,
 .menu-item.is-danger:focus-visible svg {
-  color: #fff;
+  color: var(--color-on-danger);
 }
 .menu-sep {
   height: 1px;
@@ -339,7 +370,7 @@
 }
 .toast.is-error {
   background: var(--color-danger);
-  color: #fff;
+  color: var(--color-on-danger);
 }
 .toast-msg {
   flex: 1;

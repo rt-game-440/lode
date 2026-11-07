@@ -1,11 +1,11 @@
-import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useSyncExternalStore } from 'react'
+import { motion, useMotionValue, useTransform } from 'motion/react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { Drawer } from '../../components/Drawer'
 import { DialogHost, MenuHost, ToastHost } from '../../components/overlays'
 import { useEditor } from '../../stores/editor'
-import { useUI } from '../../stores/ui'
+import { type Route, useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import { sync } from '../../sync/engine'
-import { fadeTransition, springPanel } from '../../styles/tokens/motion'
 import { errorMessage, newNote } from '../actions'
 import { EditorPane } from '../editor/EditorPane'
 import { RightPanel } from '../right/RightPanel'
@@ -13,10 +13,13 @@ import { Sidebar } from '../sidebar/Sidebar'
 import { QuickSwitcher } from '../switcher/QuickSwitcher'
 import { SettingsView } from '../settings/SettingsView'
 import { HomeView, TagView, TrashView } from '../views/Views'
+import { ShortcutsDialog, isTypingTarget } from './ShortcutsDialog'
+import { MobileStack } from './MobileStack'
+import { SidebarResizer } from './SidebarResizer'
+import { usePanelMotion } from './panelMotion'
 import './shell.css'
 
-// 与 tokens 中 --sidebar-width / --rightbar-width 一致
-const SIDEBAR_W = 264
+// 与 tokens 中 --rightbar-width 一致
 const RIGHT_W = 300
 
 function useMedia(query: string): boolean {
@@ -41,9 +44,14 @@ function useRealtimeSync() {
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const ui = useUI.getState()
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !isTypingTarget(e.target)) {
+        e.preventDefault()
+        ui.setShortcutsOpen(!ui.shortcutsOpen)
+        return
+      }
       const mod = e.ctrlKey || e.metaKey
       if (!mod) return
-      const ui = useUI.getState()
       const key = e.key.toLowerCase()
       if (key === 'k' || (key === 'o' && !e.shiftKey)) {
         e.preventDefault()
@@ -65,8 +73,7 @@ function useShortcuts() {
   }, [])
 }
 
-function MainView({ mobile }: { mobile: boolean }) {
-  const route = useUI((s) => s.route)
+function MainView({ mobile, route }: { mobile: boolean; route: Route }) {
   switch (route.view) {
     case 'note':
       return <EditorPane id={route.id} mobile={mobile} />
@@ -85,7 +92,6 @@ export function AppShell() {
   const load = useVault((s) => s.load)
   const syncFromLocation = useUI((s) => s.syncFromLocation)
   const route = useUI((s) => s.route)
-  const sidebarOpen = useUI((s) => s.sidebarOpen)
   const rightOpen = useUI((s) => s.rightOpen)
   const toggleRight = useUI((s) => s.toggleRight)
   const mobilePane = useUI((s) => s.mobilePane)
@@ -109,25 +115,30 @@ export function AppShell() {
     return () => window.removeEventListener('popstate', syncFromLocation)
   }, [syncFromLocation])
 
-  // 窄屏下右栏以浮层显示，默认收起（不写入布局偏好）
+  // 窄屏下右栏以抽屉显示，默认收起（不写入布局偏好）
   useEffect(() => {
     if (!wide) useUI.setState({ rightOpen: false })
   }, [wide])
 
-  // 离开笔记时关闭编辑器状态
+  // 离开笔记时关闭编辑器状态（手机上等详情页滑出后再关，见 MobileStack）
   useEffect(() => {
-    if (route.view !== 'note') useEditor.getState().close()
-  }, [route])
+    if (route.view !== 'note' && !mobile) useEditor.getState().close()
+  }, [route, mobile])
 
   useRealtimeSync()
   useShortcuts()
 
   const noteId = route.view === 'note' ? route.id : null
+  // 右栏收起动画期间继续显示原来那篇笔记的内容
+  const lastNoteId = useRef(noteId)
+  if (noteId) lastNoteId.current = noteId
   const showRight = noteId !== null && rightOpen
+  const closeRight = () => toggleRight(false)
 
   const overlays = (
     <>
       <QuickSwitcher />
+      <ShortcutsDialog />
       <DialogHost />
       <MenuHost />
       <ToastHost />
@@ -137,113 +148,74 @@ export function AppShell() {
   if (mobile) {
     return (
       <div className="shell is-mobile">
-        <AnimatePresence initial={false} mode="popLayout">
-          {mobilePane === 'list' ? (
-            <motion.div
-              key="list"
-              className="mobile-layer"
-              initial={{ x: '-30%', opacity: 0.6 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: '-30%', opacity: 0.6 }}
-              transition={springPanel}
-            >
-              <Sidebar mobile />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="detail"
-              className="mobile-layer is-detail"
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={springPanel}
-            >
-              <MainView mobile />
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {showRight && mobilePane === 'detail' && (
-            <RightSheet onClose={() => toggleRight(false)} id={noteId} />
-          )}
-        </AnimatePresence>
+        <MobileStack list={<Sidebar mobile />} detail={(r) => <MainView mobile route={r} />} />
+        <Drawer open={showRight && mobilePane === 'detail'} onClose={closeRight} label="笔记信息">
+          <RightPanel id={lastNoteId.current} onClose={closeRight} />
+        </Drawer>
         {overlays}
       </div>
     )
   }
 
   return (
-    <div className="shell">
-      <AnimatePresence initial={false}>
-        {sidebarOpen && (
-          <motion.div
-            key="sidebar"
-            className="shell-sidebar"
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: SIDEBAR_W, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={springPanel}
-          >
-            <div className="shell-sidebar-inner">
-              <Sidebar />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <main className="shell-main">
-        <MainView mobile={false} />
-      </main>
-      {wide ? (
-        <AnimatePresence initial={false}>
-          {showRight && (
-            <motion.div
-              key="right"
-              className="shell-right"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: RIGHT_W, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={springPanel}
-            >
-              <div className="shell-right-inner">
-                <RightPanel id={noteId} />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      ) : (
-        <AnimatePresence>{showRight && <RightSheet onClose={() => toggleRight(false)} id={noteId} />}</AnimatePresence>
+    <>
+      <DesktopShell route={route} rightInline={wide && showRight} rightId={lastNoteId.current} />
+      {!wide && (
+        <Drawer open={showRight} onClose={closeRight} label="笔记信息">
+          <RightPanel id={lastNoteId.current} onClose={closeRight} />
+        </Drawer>
       )}
       {overlays}
-    </div>
+    </>
   )
 }
 
-/** 窄屏下的右栏浮层：从右侧滑入，点击空白处关闭。 */
-function RightSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
+/**
+ * 桌面三栏：侧栏、主区域、右栏。展开收起和调宽只改 transform（见 usePanelMotion），
+ * 主区域的宽度只在动画开始或结束时变化一次。
+ */
+function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInline: boolean; rightId: string | null }) {
+  const sidebarOpen = useUI((s) => s.sidebarOpen)
+  const storedWidth = useUI((s) => s.sidebarWidth)
+  const sbW = useMotionValue(storedWidth)
+  // 先于 usePanelMotion 同步宽度：展开时按保存的宽度动画
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+    if (sidebarOpen) sbW.set(storedWidth)
+  }, [sidebarOpen, storedWidth, sbW])
+  const left = usePanelMotion(sidebarOpen, sbW)
+  const rW = useMotionValue(RIGHT_W)
+  const right = usePanelMotion(rightInline, rW)
+
+  const sbX = useTransform(() => left.offset.get() - sbW.get())
+  const mainLeft = useTransform(() => left.reserved.get() * sbW.get())
+  const mainX = useTransform(() => left.offset.get() - left.reserved.get() * sbW.get())
+  const mainWidth = useTransform(
+    () => `calc(100% - ${left.reserved.get() * sbW.get() + right.reserved.get() * RIGHT_W}px)`,
+  )
+  const rightX = useTransform(() => RIGHT_W - right.offset.get())
+  const resizerX = useTransform(() => left.offset.get())
+
   return (
-    <>
+    <div className="shell">
       <motion.div
-        className="sheet-scrim"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={fadeTransition}
-        onClick={onClose}
-      />
-      <motion.div
-        className="right-sheet"
-        initial={{ x: '100%' }}
-        animate={{ x: 0 }}
-        exit={{ x: '100%' }}
-        transition={springPanel}
+        className="shell-sidebar"
+        style={{ x: sbX, width: sbW, visibility: left.visible ? 'visible' : 'hidden' }}
+        inert={!sidebarOpen}
+        data-testid="shell-sidebar"
       >
-        <RightPanel id={id} onClose={onClose} />
+        <Sidebar />
       </motion.div>
-    </>
+      {sidebarOpen && left.visible && <SidebarResizer width={sbW} x={resizerX} />}
+      <motion.main className="shell-main" style={{ left: mainLeft, x: mainX, width: mainWidth }}>
+        <MainView mobile={false} route={route} />
+      </motion.main>
+      <motion.div
+        className="shell-right"
+        style={{ x: rightX, visibility: right.visible ? 'visible' : 'hidden' }}
+        inert={!rightInline}
+      >
+        {right.visible && <RightPanel id={rightId} />}
+      </motion.div>
+    </div>
   )
 }

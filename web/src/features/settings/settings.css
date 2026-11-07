@@ -125,6 +125,7 @@
 
 /* token 列表 */
 .token-list {
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -230,7 +231,7 @@
   color: var(--color-label-secondary);
 }
 .is-spinning {
-  animation: spin 0.8s linear infinite;
+  animation: spin var(--duration-spin) linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .is-spinning {
@@ -277,4 +278,11 @@
     grid-column: 1 / -1;
     max-width: none;
   }
+}
+
+.settings-row-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-subhead);
+  color: var(--color-label-secondary);
 }
