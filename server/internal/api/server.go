@@ -97,7 +97,7 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("GET /api/tokens", s.listTokens)
 	p.HandleFunc("POST /api/tokens", s.createToken)
 	p.HandleFunc("DELETE /api/tokens/{id}", s.revokeToken)
-	p.HandleFunc("GET /api/audit", s.auditLog)
+	p.HandleFunc("GET /api/audit", s.listAudit)
 	mux.Handle("/api/", s.requireSession(p))
 
 	if s.Web != nil {

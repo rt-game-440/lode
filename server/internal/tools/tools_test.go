@@ -105,3 +105,14 @@ func TestReadOnlyCallerCannotSeeOrCallWriteTools(t *testing.T) {
 		t.Fatalf("只读调用写工具应被拒：%v", err)
 	}
 }
+
+func TestInternalErrorsHideDetails(t *testing.T) {
+	cause := errors.New(`sqlite: database is locked (E:\secret\app.db)`)
+	err := explain(cause, "a.md")
+	if strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "sqlite") {
+		t.Fatalf("对外说明泄露了内部细节：%q", err.Error())
+	}
+	if !errors.Is(err, ErrInternal) || !errors.Is(err, cause) {
+		t.Fatalf("应能用 errors.Is 识别 ErrInternal 并取到原始错误：%v", err)
+	}
+}

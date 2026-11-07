@@ -21,6 +21,8 @@ var (
 	ErrReadOnly = errors.New("read-only")
 	// ErrBadArguments 表示参数不符合工具的 JSON Schema。
 	ErrBadArguments = errors.New("bad arguments")
+	// ErrInternal 表示服务器内部错误。对外只给通用说明，原始错误通过 Unwrap 取得，由调用方写日志。
+	ErrInternal = errors.New("internal error")
 )
 
 // Tool 是一个可供模型调用的工具。
@@ -171,7 +173,8 @@ func explain(err error, target string) *Error {
 	case errors.Is(err, notes.ErrInvalid):
 		msg = "参数不合法：" + detail(err) + "。"
 	default:
-		msg = "服务器内部错误：" + err.Error()
+		return &Error{Msg: "服务器内部错误，这次操作没有完成。可以稍后重试；反复出现时请让用户查看服务器日志。",
+			Err: fmt.Errorf("%w: %w", ErrInternal, err)}
 	}
 	return &Error{Msg: msg, Err: err}
 }

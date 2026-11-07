@@ -101,6 +101,7 @@ func (a *Auth) VerifyToken(ctx context.Context, secret string) (APIToken, error)
 		return APIToken{}, err
 	}
 	now := a.now().UnixMilli()
+	// 最后使用时间只是参考信息：写库失败不影响鉴权，下次调用再试
 	if now-t.LastUsedAt >= time.Minute.Milliseconds() {
 		if _, err := a.db.ExecContext(ctx, `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, now, t.ID); err == nil {
 			t.LastUsedAt = now

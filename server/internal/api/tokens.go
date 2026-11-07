@@ -56,14 +56,16 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// auditLog 返回最近的 MCP 调用记录，limit 默认 100，最大 1000。
-func (s *Server) auditLog(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	switch {
-	case limit <= 0:
-		limit = 100
-	case limit > 1000:
-		limit = 1000
+// listAudit 返回最近的 MCP 调用记录，limit 默认 100，超过 1000 按 1000 处理。
+func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if q := r.URL.Query().Get("limit"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "limit 必须是正整数", nil)
+			return
+		}
+		limit = min(n, 1000)
 	}
 	entries, err := s.Audit.List(r.Context(), limit)
 	if err != nil {

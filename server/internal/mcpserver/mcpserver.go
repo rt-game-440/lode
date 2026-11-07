@@ -103,6 +103,9 @@ func handle(o Options, name string) mcp.ToolHandler {
 			DurationMs: time.Since(start).Milliseconds()}
 		out := &mcp.CallToolResult{}
 		if err != nil {
+			if errors.Is(err, tools.ErrInternal) {
+				o.Log.Error("MCP 工具调用失败", "tool", name, "target", res.Target, "err", errors.Unwrap(err))
+			}
 			entry.Error = err.Error()
 			out.SetError(err)
 		} else {

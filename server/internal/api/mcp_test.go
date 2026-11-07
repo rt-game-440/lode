@@ -57,6 +57,11 @@ func TestTokenEndpointsAndMCPMount(t *testing.T) {
 	if st != 200 || len(entries) != 1 || entries[0].(map[string]any)["tool"] != "list_notes" || entries[0].(map[string]any)["token_name"] != "Claude Code" {
 		t.Fatalf("审计日志：%d %v", st, body)
 	}
+	for _, q := range []string{"abc", "-1", "1.5"} {
+		if st, body := c.do("GET", "/api/audit?limit="+q, nil); st != 400 || body["code"] != "bad_request" {
+			t.Fatalf("limit=%s 应 400 bad_request，得到 %d %v", q, st, body)
+		}
+	}
 
 	if st, _ := c.do("DELETE", "/api/tokens/"+tok["id"].(string), nil); st != 204 {
 		t.Fatalf("吊销 = %d", st)

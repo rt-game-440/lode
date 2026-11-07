@@ -180,7 +180,7 @@ PATCH 的 `edits` 按顺序应用，每处 `old` 必须在当时的正文里恰�
 | GET | `/api/tokens` | | `200 {"tokens":ApiToken[]}`，按创建时间倒序（吊销即删除，不再出现在列表里） |
 | POST | `/api/tokens` | `{"name":"…","scope":"read"\|"write"}` | `201 {"token":ApiToken,"secret":"lode_…"}`；名称为空、超过 64 个字符或权限不合法时 `400 bad_request` |
 | DELETE | `/api/tokens/{id}` | | `204`；`404 not_found` |
-| GET | `/api/audit?limit=` | `limit` 默认 100，最大 1000 | `200 {"entries":AuditEntry[]}`，按时间倒序 |
+| GET | `/api/audit?limit=` | `limit` 默认 100，超过 1000 按 1000 处理；不是正整数时 `400 bad_request` | `200 {"entries":AuditEntry[]}`，按时间倒序 |
 | POST | `/mcp` | MCP JSON-RPC（Streamable HTTP） | 见 [docs/mcp.md](mcp.md) |
 
 ```ts
