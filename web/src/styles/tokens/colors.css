@@ -16,6 +16,7 @@
   --color-bg-sidebar: rgba(242, 242, 247, 0.78); /* 半透明材质 */
   --color-bg-sidebar-solid: #f2f2f7; /* 不支持 backdrop-filter 时 */
   --color-bg-bar: rgba(255, 255, 255, 0.72);
+  --color-bg-popover: rgba(255, 255, 255, 0.82); /* 菜单、快速切换器的毛玻璃 */
   --color-bg-bar-solid: #ffffff;
 
   /* 文字 */
@@ -36,6 +37,7 @@
   --color-accent-fill: #0071e3; /* 按钮底色（白字 4.6:1） */
   --color-accent-fill-pressed: #0062c4;
   --color-on-accent: #ffffff;
+  --color-on-danger: #ffffff;
   --color-focus-ring: rgba(0, 113, 227, 0.55);
   --color-text-selection: rgba(0, 113, 227, 0.2);
 
@@ -75,6 +77,7 @@
     --color-bg-sidebar: rgba(36, 36, 38, 0.78);
     --color-bg-sidebar-solid: #242426;
     --color-bg-bar: rgba(28, 28, 30, 0.72);
+    --color-bg-popover: rgba(44, 44, 46, 0.84);
     --color-bg-bar-solid: #1c1c1e;
     --color-label: #f5f5f7;
     --color-label-secondary: rgba(235, 235, 245, 0.74);
@@ -89,6 +92,7 @@
     --color-accent-fill: #0071e3;
     --color-accent-fill-pressed: #0062c4;
     --color-on-accent: #ffffff;
+    --color-on-danger: #ffffff;
     --color-focus-ring: rgba(77, 163, 255, 0.6);
     --color-text-selection: rgba(77, 163, 255, 0.3);
     --color-danger: #ff6961;
@@ -122,6 +126,7 @@
   --color-bg-sidebar: rgba(36, 36, 38, 0.78);
   --color-bg-sidebar-solid: #242426;
   --color-bg-bar: rgba(28, 28, 30, 0.72);
+  --color-bg-popover: rgba(44, 44, 46, 0.84);
   --color-bg-bar-solid: #1c1c1e;
   --color-label: #f5f5f7;
   --color-label-secondary: rgba(235, 235, 245, 0.74);
@@ -136,6 +141,7 @@
   --color-accent-fill: #0071e3;
   --color-accent-fill-pressed: #0062c4;
   --color-on-accent: #ffffff;
+  --color-on-danger: #ffffff;
   --color-focus-ring: rgba(77, 163, 255, 0.6);
   --color-text-selection: rgba(77, 163, 255, 0.3);
   --color-danger: #ff6961;
@@ -158,13 +164,39 @@
   --color-md-quote-bar: rgba(235, 235, 245, 0.25);
 }
 
+/*
+ * 以下覆盖规则的选择器与主题选择器同等优先级（最高 0,2,0），写在后面才能在暗色下也生效。
+ */
 /* 提高对比度 */
 @media (prefers-contrast: more) {
-  :root {
+  :root,
+  :root[data-theme],
+  :root:not([data-theme='light']) {
     --color-label-secondary: var(--color-label);
     --color-label-tertiary: var(--color-label);
     --color-separator: var(--color-separator-strong);
     --color-bg-sidebar: var(--color-bg-sidebar-solid);
     --color-bg-bar: var(--color-bg-bar-solid);
+    --color-bg-popover: var(--color-bg-elevated);
+  }
+}
+
+/* 减弱透明度或不支持 backdrop-filter：材质改为实色 */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  :root[data-theme],
+  :root:not([data-theme='light']) {
+    --color-bg-sidebar: var(--color-bg-sidebar-solid);
+    --color-bg-bar: var(--color-bg-bar-solid);
+    --color-bg-popover: var(--color-bg-elevated);
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root,
+  :root[data-theme],
+  :root:not([data-theme='light']) {
+    --color-bg-sidebar: var(--color-bg-sidebar-solid);
+    --color-bg-bar: var(--color-bg-bar-solid);
+    --color-bg-popover: var(--color-bg-elevated);
   }
 }

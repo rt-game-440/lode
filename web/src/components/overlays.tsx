@@ -3,8 +3,10 @@ import { X } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useUI } from '../stores/ui'
-import { fadeTransition, springDefault, springSnappy } from '../styles/tokens/motion'
+import { fadeOutQuick, fadeTransition, springDefault, springSnappy } from '../styles/tokens/motion'
 import { Button, TextField } from './ui'
+import { useFocusTrap } from './Modal'
+import { usePop } from './usePop'
 
 /* ---------- 对话框：prompt / confirm ---------- */
 
@@ -160,6 +162,9 @@ function cancel(req: DialogRequest) {
 
 export function DialogHost() {
   const req = useDialogStore((s) => s.current)
+  const panel = useRef<HTMLDivElement>(null)
+  useFocusTrap(panel, !!req)
+  const pop = usePop({ scale: 0.96, y: 8 }, { scale: 0.98, y: 4 })
   useEffect(() => {
     if (!req) return
     const onKey = (e: KeyboardEvent) => {
@@ -187,12 +192,12 @@ export function DialogHost() {
           }}
         >
           <motion.div
+            ref={panel}
             role="dialog"
             aria-modal="true"
             aria-labelledby="dialog-title"
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: 4 }}
+            tabIndex={-1}
+            {...pop}
             transition={springDefault}
             style={{ width: 'min(26rem, 100%)' }}
           >
@@ -244,6 +249,7 @@ export function closeMenu() {
 }
 
 export function MenuHost() {
+  const menuPop = usePop({ scale: 0.96 }, { scale: 0.98 }, { transition: fadeOutQuick })
   const open = useMenuStore((s) => s.open)
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ left: number; top: number; origin: string } | null>(null)
@@ -303,9 +309,7 @@ export function MenuHost() {
           className="menu"
           key={`${open.x},${open.y}`}
           style={{ left: pos?.left ?? open.x, top: pos?.top ?? open.y, transformOrigin: pos?.origin ?? '0 0', visibility: pos ? 'visible' : 'hidden' }}
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.12 } }}
+          {...menuPop}
           transition={springSnappy}
           onContextMenu={(e) => e.preventDefault()}
         >
@@ -336,6 +340,7 @@ export function MenuHost() {
 /* ---------- 提示条 ---------- */
 
 export function ToastHost() {
+  const toastPop = usePop({ y: 16, scale: 0.96 }, { y: 8, scale: 0.98 })
   const toasts = useUI((s) => s.toasts)
   const dismiss = useUI((s) => s.dismissToast)
   return (
@@ -346,9 +351,7 @@ export function ToastHost() {
             key={t.id}
             layout
             className={`toast${t.tone === 'error' ? ' is-error' : ''}`}
-            initial={{ opacity: 0, y: 16, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            {...toastPop}
             transition={springDefault}
           >
             <span className="toast-msg">{t.message}</span>

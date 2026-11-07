@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../../api/client'
 import type { Note, TrashItem } from '../../api/types'
 import { confirmDialog } from '../../components/overlays'
+import { ListItem, ListPresence } from '../../components/AnimatedList'
 import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
 import { dirname } from '../../lib/paths'
 import { useUI } from '../../stores/ui'
@@ -202,23 +203,25 @@ export function TrashView({ mobile }: { mobile: boolean }) {
               </Button>
             </div>
             <ul className="note-list" aria-label="回收站">
-              {items.map((it) => (
-                <li key={it.id} className="trash-row">
-                  <FileText size={16} aria-hidden="true" />
-                  <div className="trash-info">
-                    <span className="note-row-title">{it.title}</span>
-                    <span className="note-row-meta">
-                      {it.path} · 删除于 {timeFmt.format(it.deleted_at)}
-                    </span>
-                  </div>
-                  <Button size="sm" variant="secondary" icon={<RotateCcw size={14} />} onClick={() => void restore(it)}>
-                    恢复
-                  </Button>
-                  <IconButton label={`彻底删除“${it.title}”`} size="sm" onClick={() => void purge(it)}>
-                    <X size={15} />
-                  </IconButton>
-                </li>
-              ))}
+              <ListPresence>
+                {items.map((it) => (
+                  <ListItem key={it.id} className="trash-row">
+                    <FileText size={16} aria-hidden="true" />
+                    <div className="trash-info">
+                      <span className="note-row-title">{it.title}</span>
+                      <span className="note-row-meta">
+                        {it.path} · 删除于 {timeFmt.format(it.deleted_at)}
+                      </span>
+                    </div>
+                    <Button size="sm" variant="secondary" icon={<RotateCcw size={14} />} onClick={() => void restore(it)}>
+                      恢复
+                    </Button>
+                    <IconButton label={`彻底删除“${it.title}”`} size="sm" onClick={() => void purge(it)}>
+                      <X size={15} />
+                    </IconButton>
+                  </ListItem>
+                ))}
+              </ListPresence>
             </ul>
           </>
         )}

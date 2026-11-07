@@ -78,3 +78,27 @@
 - MCP 的 OAuth、stdio 桥接、resources 和 prompts 不在本阶段范围内。
 
 下一步：阶段 3。
+
+## 阶段 3：Apple 风格与移动端打磨（issue #3）
+
+**状态**：已完成，等待人工验收（`docs/checklist/stage-3.md`）。
+
+已完成：
+
+- 设计规范：`docs/design.md`。tokens（`web/src/styles/tokens/`）是颜色和动画时长的唯一来源，`src/styles/tokens.lint.test.ts` 扫描组件，发现字面量即失败。
+- 材质：侧栏、顶栏、手机工具栏、菜单、快速切换器使用毛玻璃；不支持 `backdrop-filter`、减弱透明度、提高对比度时自动换成实色。
+- 动效：统一弹簧（`motion.ts`），用于面板切换、侧栏展开收起（`panelMotion.ts`，只动 transform，可中途反向）、列表增删（`AnimatedList`）、快速切换器、对话框、菜单、toast、保存状态。减弱动态效果时用 `usePop` 和 `useReducedMotion` 改为淡入淡出。
+- 手机：导航栈 `MobileStack`（左缘右滑返回，跟手、按速度投射落点）；右栏抽屉 `Drawer`（跟手拖拽、橡皮筋、快甩关闭）；编辑工具栏 `MobileToolbar`（标题、列表、任务、链接、`[[`、图片、收起键盘）；`visualViewport` 跟随软键盘；安全区；`pointer: coarse` 时行高 44px。
+- 桌面与平板：侧栏拖拽调宽（200–420，记住宽度）、可收起；`?` 打开快捷键一览，设置页也有入口；文件树超过 2000 行时虚拟滚动。
+- 无障碍：对话框、抽屉、快捷键一览有焦点陷阱；缺失链接和代码语言标签的对比度修正到 AA。
+- 测试：
+  - 单测：`format.test.ts`（Markdown 插入）、`gesture.test.ts`、`virtual.test.ts`、`tokens.lint.test.ts`。
+  - Playwright：`e2e/visual.spec.ts`（axe 亮/暗 8 项、reduced motion 对照、375/768/1440 无横向滚动和重叠、2500 篇笔记虚拟滚动与键盘导航）；`e2e/touch.spec.ts`（CDP 触摸：左缘返回、弹回、抽屉、手机工具栏）。
+- 证据：`docs/evidence/stage-3/test.txt`、`docs/screenshots/stage-3/`（30 张截图、`video/` 下两段录屏，已用 frame-inspect 自查）。
+
+遗留：
+
+- 真机上的手势与系统手势（iOS Safari 边缘后退）的冲突、软键盘遮挡，待人工验收。
+- 前端主包体积未处理（阶段 1 遗留）。
+
+下一步：阶段 5（Agent 助手）。

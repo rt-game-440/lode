@@ -20,3 +20,6 @@ export const fadeTransition: Transition = { duration: 0.18, ease: 'easeOut' }
 
 /** 侧栏展开收起 */
 export const springPanel: Transition = { type: 'spring', bounce: 0, duration: 0.4 }
+
+/** 菜单等小弹层关闭：用户已经做完选择，快速淡出不拖泥带水 */
+export const fadeOutQuick: Transition = { duration: 0.12, ease: 'easeOut' }

@@ -102,28 +102,42 @@ function decodeURIComponentSafe(s: string): string {
   }
 }
 
+/**
+ * 上传图片并依次插入 ![[路径]]：pos 为 null 时替换当前选区，否则插在 pos 处（拖入）。
+ * 粘贴、拖入和手机工具栏的“图片”按钮共用。
+ */
+export async function insertImages(
+  view: EditorView,
+  files: File[],
+  upload: (file: File) => Promise<string>,
+  onError: (err: unknown) => void,
+  pos: number | null = null,
+) {
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) continue
+    try {
+      const path = await upload(f)
+      const sel = view.state.selection.main
+      const at = pos ?? sel.from
+      const text = `![[${path}]]`
+      view.dispatch({
+        changes: { from: at, to: pos === null ? sel.to : at, insert: text },
+        selection: { anchor: at + text.length },
+        scrollIntoView: true,
+        userEvent: 'input.paste',
+      })
+      pos = null
+    } catch (err) {
+      onError(err)
+    }
+  }
+}
+
 /** 粘贴或拖入图片：上传到 attachments/ 并插入 ![[路径]]。 */
 export function imagePaste(upload: (file: File) => Promise<string>, onError: (err: unknown) => void) {
   const handle = (view: EditorView, files: File[], pos: number | null) => {
-    const images = files.filter((f) => f.type.startsWith('image/'))
-    if (!images.length) return false
-    void (async () => {
-      for (const f of images) {
-        try {
-          const path = await upload(f)
-          const at = pos ?? view.state.selection.main.head
-          const text = `![[${path}]]`
-          view.dispatch({
-            changes: { from: at, to: pos === null ? view.state.selection.main.to : at, insert: text },
-            selection: { anchor: at + text.length },
-            userEvent: 'input.paste',
-          })
-          pos = null
-        } catch (err) {
-          onError(err)
-        }
-      }
-    })()
+    if (!files.some((f) => f.type.startsWith('image/'))) return false
+    void insertImages(view, files, upload, onError, pos)
     return true
   }
   return EditorView.domEventHandlers({

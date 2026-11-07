@@ -1,8 +1,9 @@
-import { Check, Copy, KeyRound, RefreshCw, X } from 'lucide-react'
+import { Check, Copy, KeyRound, Keyboard, RefreshCw, X } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useId, useState } from 'react'
 import { api } from '../../api/client'
 import type { ApiToken, AuditEntry, TokenScope } from '../../api/types'
 import { confirmDialog } from '../../components/overlays'
+import { ListItem, ListPresence } from '../../components/AnimatedList'
 import { Button, EmptyState, IconButton, Spinner, TextField } from '../../components/ui'
 import { copyText } from '../../lib/clipboard'
 import { useUI } from '../../stores/ui'
@@ -58,6 +59,26 @@ export function SettingsView({ mobile }: { mobile: boolean }) {
         <McpSection />
         <TokenSection version={version} />
         <AuditSection version={version} onRefresh={refresh} />
+        <KeyboardSection />
+      </div>
+    </section>
+  )
+}
+
+function KeyboardSection() {
+  const setShortcutsOpen = useUI((s) => s.setShortcutsOpen)
+  return (
+    <section className="settings-group" aria-labelledby="settings-keyboard">
+      <h2 id="settings-keyboard" className="settings-heading">
+        键盘
+      </h2>
+      <div className="settings-card">
+        <div className="settings-row">
+          <span className="settings-row-text">所有功能都可以只用键盘完成；不在输入时按 ? 随时查看。</span>
+          <Button size="sm" variant="secondary" icon={<Keyboard size={14} />} onClick={() => setShortcutsOpen(true)}>
+            键盘快捷键
+          </Button>
+        </div>
       </div>
     </section>
   )
@@ -146,22 +167,24 @@ function TokenSection({ version }: { version: number }) {
           <EmptyState icon={<KeyRound size={28} strokeWidth={1.5} />} title="还没有 token" />
         ) : (
           <ul className="token-list" aria-label="API token 列表">
-            {tokens.map((t) => (
-              <li key={t.id} className="settings-row token-row">
-                <div className="token-info">
-                  <span className="token-name">
-                    {t.name}
-                    <span className={`scope-badge scope-${t.scope}`}>{SCOPE_LABEL[t.scope]}</span>
-                  </span>
-                  <span className="settings-meta">
-                    创建于 {dateFmt.format(t.created_at)} · {t.last_used_at ? `最后使用 ${dateFmt.format(t.last_used_at)}` : '从未使用'}
-                  </span>
-                </div>
-                <Button size="sm" variant="secondary" className="btn-destructive" onClick={() => void revoke(t)}>
-                  吊销
-                </Button>
-              </li>
-            ))}
+            <ListPresence>
+              {tokens.map((t) => (
+                <ListItem key={t.id} className="settings-row token-row">
+                  <div className="token-info">
+                    <span className="token-name">
+                      {t.name}
+                      <span className={`scope-badge scope-${t.scope}`}>{SCOPE_LABEL[t.scope]}</span>
+                    </span>
+                    <span className="settings-meta">
+                      创建于 {dateFmt.format(t.created_at)} · {t.last_used_at ? `最后使用 ${dateFmt.format(t.last_used_at)}` : '从未使用'}
+                    </span>
+                  </div>
+                  <Button size="sm" variant="secondary" className="btn-destructive" onClick={() => void revoke(t)}>
+                    吊销
+                  </Button>
+                </ListItem>
+              ))}
+            </ListPresence>
           </ul>
         )}
       </div>

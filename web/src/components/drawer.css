@@ -1,0 +1,32 @@
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--color-scrim);
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: var(--z-modal);
+  width: min(var(--rightbar-width), 88vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+}
+/* 横向拖拽交给脚本，纵向仍可滚动。touch-action 只算到最近的滚动容器为止，
+   面板里的滚动区也要写上，否则在滚动区里横拖会被浏览器接管（pointercancel）。 */
+.drawer,
+.drawer * {
+  touch-action: pan-y;
+}
+.drawer-right {
+  right: 0;
+  padding-right: env(safe-area-inset-right);
+}
+.drawer-left {
+  left: 0;
+  padding-left: env(safe-area-inset-left);
+}

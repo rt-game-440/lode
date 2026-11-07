@@ -82,12 +82,96 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.mouse.click(5, 5)
       await page.waitForTimeout(400)
       await page.screenshot({ path: resolve(outDir, `${size}-${scheme}.png`) })
+      const snap = async (name: string) => {
+        await page.waitForTimeout(500)
+        await page.screenshot({ path: resolve(outDir, `${size}-${scheme}-${name}.png`) })
+      }
       if (size === 'mobile') {
+        // 编辑时的底部工具栏
+        await page.locator('.cm-line').last().tap()
+        await snap('toolbar')
+        await page.getByRole('button', { name: '收起键盘' }).tap()
+        // 右栏抽屉
+        await page.getByRole('button', { name: '显示右栏' }).tap()
+        await snap('drawer')
+        await page.keyboard.press('Escape')
+        await page.waitForTimeout(400)
         await page.getByRole('button', { name: '返回' }).click()
         await page.waitForTimeout(500)
         await page.screenshot({ path: resolve(outDir, `${size}-${scheme}-list.png`) })
+      } else {
+        await page.keyboard.press('Control+k')
+        await snap('switcher')
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('?')
+        await snap('shortcuts')
+        await page.keyboard.press('Escape')
       }
+      await page.goto('/settings')
+      await expect(page.getByRole('heading', { name: 'API token' })).toBeVisible()
+      await snap('settings')
+      await page.goto('/trash')
+      await snap('trash')
+      // 登录页与首启页（不带 cookie 的新 context）
+      const anon = await browser.newContext({
+        colorScheme: scheme,
+        locale: 'zh-CN',
+        ...(size === 'desktop'
+          ? { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 }
+          : { viewport: { width: 375, height: 812 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true }),
+      })
+      const ap = await anon.newPage()
+      await ap.goto('/')
+      await expect(ap.getByRole('heading', { name: '登录 Lode' })).toBeVisible()
+      await ap.waitForTimeout(400)
+      await ap.screenshot({ path: resolve(outDir, `${size}-${scheme}-login.png`) })
+      await ap.route('**/api/auth/status', (r) => r.fulfill({ json: { initialized: false, authenticated: false } }))
+      await ap.reload()
+      await expect(ap.getByRole('heading', { name: '欢迎使用 Lode' })).toBeVisible()
+      await ap.waitForTimeout(400)
+      await ap.screenshot({ path: resolve(outDir, `${size}-${scheme}-setup.png`) })
+      await anon.close()
       await ctx.close()
     })
   }
 }
+
+// 录屏：侧栏展开收起、快速切换器、保存反馈（手势录屏在 touch.spec）
+test('录屏 desktop', async ({ browser }) => {
+  test.setTimeout(90_000)
+  const videoDir = resolve(outDir, 'video')
+  mkdirSync(videoDir, { recursive: true })
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, recordVideo: { dir: videoDir, size: { width: 1280, height: 800 } } })
+  const page = await ctx.newPage()
+  await seed(page)
+  const tree = await (await page.request.get('/api/tree')).json()
+  const demo = tree.notes.find((n: { path: string }) => n.path === '欢迎使用 Lode.md')
+  await page.goto(`/note/${demo.id}`)
+  await expect(page.locator('.cm-content')).toContainText('今日任务')
+  await page.waitForTimeout(800)
+  // 焦点离开编辑器，快捷键走全局处理
+  await page.locator('.cm-content').evaluate((el) => (el as HTMLElement).blur())
+  // 侧栏：收起、展开，再在动画中途反向（可中断）
+  await page.keyboard.press('Control+Backslash')
+  await page.waitForTimeout(900)
+  await page.keyboard.press('Control+Backslash')
+  await page.waitForTimeout(900)
+  await page.keyboard.press('Control+Backslash')
+  await page.waitForTimeout(150)
+  await page.keyboard.press('Control+Backslash')
+  await page.waitForTimeout(900)
+  // 快速切换器
+  await page.keyboard.press('Control+k')
+  await page.waitForTimeout(500)
+  await page.keyboard.type('阶段', { delay: 80 })
+  await page.waitForTimeout(600)
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(700)
+  // 保存反馈：编辑中 → 保存中 → 已保存
+  await page.locator('.cm-line').first().click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type(' 录屏测试', { delay: 60 })
+  await expect(page.getByTestId('save-status')).toHaveText('已保存')
+  await page.waitForTimeout(1000)
+  await ctx.close()
+})

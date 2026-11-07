@@ -56,7 +56,7 @@ export function AuthPage({ mode }: { mode: 'setup' | 'login' }) {
         <div className="auth-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" width="40" height="40">
             <rect x="3" y="3" width="26" height="26" rx="8" fill="var(--color-accent-fill)" />
-            <path d="M11 9.5v13h10" stroke="#fff" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M11 9.5v13h10" stroke="var(--color-on-accent)" strokeWidth="2.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
         <h1 className="auth-title">{mode === 'setup' ? '欢迎使用 Lode' : '登录 Lode'}</h1>

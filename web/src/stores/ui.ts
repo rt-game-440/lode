@@ -47,12 +47,32 @@ export function routePath(r: Route): string {
 const THEME_KEY = 'lode.theme'
 const LAYOUT_KEY = 'lode.layout'
 
-function loadLayout(): { sidebarOpen: boolean; rightOpen: boolean; rightTab: RightTab } {
+/** 侧栏宽度范围（px），与 tokens 中的 --sidebar-width 默认值一致。 */
+export const SIDEBAR_WIDTH = { min: 200, max: 420, default: 264 } as const
+
+export function clampSidebarWidth(w: number): number {
+  if (!Number.isFinite(w)) return SIDEBAR_WIDTH.default
+  return Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, w)))
+}
+
+interface Layout {
+  sidebarOpen: boolean
+  sidebarWidth: number
+  rightOpen: boolean
+  rightTab: RightTab
+}
+
+function loadLayout(): Layout {
   try {
     const v = JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? '{}')
-    return { sidebarOpen: v.sidebarOpen ?? true, rightOpen: v.rightOpen ?? true, rightTab: v.rightTab ?? 'backlinks' }
+    return {
+      sidebarOpen: v.sidebarOpen ?? true,
+      sidebarWidth: clampSidebarWidth(v.sidebarWidth ?? SIDEBAR_WIDTH.default),
+      rightOpen: v.rightOpen ?? true,
+      rightTab: v.rightTab ?? 'backlinks',
+    }
   } catch {
-    return { sidebarOpen: true, rightOpen: true, rightTab: 'backlinks' }
+    return { sidebarOpen: true, sidebarWidth: SIDEBAR_WIDTH.default, rightOpen: true, rightTab: 'backlinks' }
   }
 }
 
@@ -68,6 +88,8 @@ interface UIState {
   syncFromLocation: () => void
 
   sidebarOpen: boolean
+  sidebarWidth: number
+  setSidebarWidth: (w: number) => void
   rightOpen: boolean
   rightTab: RightTab
   sidebarTab: SidebarTab
@@ -83,6 +105,9 @@ interface UIState {
   switcherOpen: boolean
   setSwitcherOpen: (open: boolean) => void
 
+  shortcutsOpen: boolean
+  setShortcutsOpen: (open: boolean) => void
+
   theme: Theme
   setTheme: (t: Theme) => void
 
@@ -95,8 +120,8 @@ let toastSeq = 0
 
 export const useUI = create<UIState>((set, get) => {
   const persistLayout = () => {
-    const { sidebarOpen, rightOpen, rightTab } = get()
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarOpen, rightOpen, rightTab }))
+    const { sidebarOpen, sidebarWidth, rightOpen, rightTab } = get()
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarOpen, sidebarWidth, rightOpen, rightTab } satisfies Layout))
   }
   const layout = loadLayout()
   const initialRoute = parseRoute(location.pathname)
@@ -121,6 +146,10 @@ export const useUI = create<UIState>((set, get) => {
       set((s) => ({ sidebarOpen: open ?? !s.sidebarOpen }))
       persistLayout()
     },
+    setSidebarWidth: (w) => {
+      set({ sidebarWidth: clampSidebarWidth(w) })
+      persistLayout()
+    },
     toggleRight: (open) => {
       set((s) => ({ rightOpen: open ?? !s.rightOpen }))
       persistLayout()
@@ -136,6 +165,9 @@ export const useUI = create<UIState>((set, get) => {
 
     switcherOpen: false,
     setSwitcherOpen: (open) => set({ switcherOpen: open }),
+
+    shortcutsOpen: false,
+    setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
     theme: (localStorage.getItem(THEME_KEY) as Theme) || 'system',
     setTheme: (t) => {

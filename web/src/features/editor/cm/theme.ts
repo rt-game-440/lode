@@ -46,7 +46,13 @@ export const editorTheme = EditorView.theme({
     borderRadius: '3px',
   },
   '.cm-wikilink:hover, .cm-md-link:hover': { textDecoration: 'underline', textUnderlineOffset: '3px' },
-  '.cm-wikilink-missing': { opacity: '0.62', textDecoration: 'underline dashed', textUnderlineOffset: '3px' },
+  // 指向不存在的笔记：降为次级文字色 + 虚线下划线（不用透明度，保证对比度达到 AA）
+  '.cm-wikilink-missing': {
+    color: 'var(--color-label-secondary)',
+    textDecoration: 'underline dashed',
+    textDecorationColor: 'var(--color-accent)',
+    textUnderlineOffset: '3px',
+  },
 
   // 代码
   '.cm-inline-code': {
@@ -93,7 +99,7 @@ export const editorTheme = EditorView.theme({
     fontSize: '0.92em',
     cursor: 'pointer',
   },
-  '.cm-code-lang': { color: 'var(--color-label-tertiary)', fontSize: '0.85em', fontFamily: 'var(--font-sans)' },
+  '.cm-code-lang': { color: 'var(--color-label-secondary)', fontSize: '0.85em', fontFamily: 'var(--font-sans)' },
 
   // 引用
   '.cm-quote': {
