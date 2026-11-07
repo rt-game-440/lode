@@ -77,6 +77,59 @@ func (s *Service) List(ctx context.Context, prefix string, recursive bool) ([]No
 	return out, nil
 }
 
+// Listing 是一个文件夹下的子文件夹和笔记。
+type Listing struct {
+	Folders []string `json:"folders"`
+	Notes   []Note   `json:"notes"`
+}
+
+// ListFolder 列出文件夹 prefix（空串为根目录）下的子文件夹和笔记；recursive 为 false 时只列直接子项。
+// 文件夹不存在时返回 ErrNotFound。
+func (s *Service) ListFolder(ctx context.Context, prefix string, recursive bool) (Listing, error) {
+	prefix, err := vault.Clean(prefix, true)
+	if err != nil {
+		return Listing{}, err
+	}
+	notes, err := s.List(ctx, prefix, recursive)
+	if err != nil {
+		return Listing{}, err
+	}
+	out := Listing{Folders: []string{}, Notes: notes}
+	rows, err := s.db.QueryContext(ctx, `SELECT path FROM folders ORDER BY path`)
+	if err != nil {
+		return Listing{}, err
+	}
+	defer rows.Close()
+	exists := prefix == ""
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return Listing{}, err
+		}
+		rest := p
+		if prefix != "" {
+			if strings.EqualFold(p, prefix) {
+				exists = true
+				continue
+			}
+			if len(p) <= len(prefix) || !strings.EqualFold(p[:len(prefix)+1], prefix+"/") {
+				continue
+			}
+			rest = p[len(prefix)+1:]
+		}
+		if recursive || !strings.Contains(rest, "/") {
+			out.Folders = append(out.Folders, p)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return Listing{}, err
+	}
+	if !exists {
+		return Listing{}, fmt.Errorf("%w: 文件夹 %s", ErrNotFound, prefix)
+	}
+	return out, nil
+}
+
 // Get 返回笔记元数据。
 func (s *Service) Get(ctx context.Context, id string) (Note, error) {
 	n, err := getByID(ctx, s.db, id)

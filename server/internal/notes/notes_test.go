@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -410,5 +411,37 @@ func TestSearchTitleOnlyHitStillHasSnippet(t *testing.T) {
 		if !strings.Contains(res[0].Snippet, "第一行正文") {
 			t.Errorf("%q 只命中标题时应返回正文开头作为摘要，得到 %q", q, res[0].Snippet)
 		}
+	}
+}
+
+func TestListFolderReturnsSubfoldersAndNotes(t *testing.T) {
+	f := newFixture(t)
+	f.create(t, "根.md", "")
+	f.create(t, "项目/计划.md", "")
+	f.create(t, "项目/2026/周报.md", "")
+	if _, err := f.svc.CreateFolder(f.ctx, "项目/空"); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := f.svc.ListFolder(f.ctx, "项目", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.Folders, []string{"项目/2026", "项目/空"}) || len(got.Notes) != 1 || got.Notes[0].Path != "项目/计划.md" {
+		t.Fatalf("非递归只列直接子项：%+v", got)
+	}
+	got, err = f.svc.ListFolder(f.ctx, "项目/", true)
+	if err != nil || !slices.Equal(got.Folders, []string{"项目/2026", "项目/空"}) || len(got.Notes) != 2 {
+		t.Fatalf("递归列出全部：%+v, %v", got, err)
+	}
+	got, err = f.svc.ListFolder(f.ctx, "", false)
+	if err != nil || !slices.Equal(got.Folders, []string{"项目"}) || len(got.Notes) != 1 {
+		t.Fatalf("根目录：%+v, %v", got, err)
+	}
+	if _, err := f.svc.ListFolder(f.ctx, "不存在", false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("不存在的文件夹：%v", err)
+	}
+	if _, err := f.svc.ListFolder(f.ctx, "../外面", false); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("目录穿越：%v", err)
 	}
 }

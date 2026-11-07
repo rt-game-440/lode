@@ -1,6 +1,6 @@
 # Lode HTTP API
 
-REST 接口（阶段 1）和实时同步接口（阶段 2）。所有请求和响应体都是 UTF-8 JSON（附件上传和文件下载除外），时间字段都是 unix 毫秒。
+REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP（阶段 4）。所有请求和响应体都是 UTF-8 JSON（附件上传和文件下载除外），时间字段都是 unix 毫秒。
 
 ## 约定
 
@@ -172,3 +172,42 @@ PATCH 的 `edits` 按顺序应用，每处 `old` 必须在当时的正文里恰�
 - 超过 75 秒没有收到任何消息视为断线，按 1 秒起、最长 30 秒的指数退避重连；重连成功后先补齐再重放写队列。
 - 服务器关闭时以 `1001 going away` 关闭连接。
 
+
+## API token 与 MCP（阶段 4）
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| GET | `/api/tokens` | | `200 {"tokens":ApiToken[]}`，按创建时间倒序（吊销即删除，不再出现在列表里） |
+| POST | `/api/tokens` | `{"name":"…","scope":"read"\|"write"}` | `201 {"token":ApiToken,"secret":"lode_…"}`；名称为空、超过 64 个字符或权限不合法时 `400 bad_request` |
+| DELETE | `/api/tokens/{id}` | | `204`；`404 not_found` |
+| GET | `/api/audit?limit=` | `limit` 默认 100，超过 1000 按 1000 处理；不是正整数时 `400 bad_request` | `200 {"entries":AuditEntry[]}`，按时间倒序 |
+| POST | `/mcp` | MCP JSON-RPC（Streamable HTTP） | 见 [docs/mcp.md](mcp.md) |
+
+```ts
+type ApiToken = {
+  id: string
+  name: string
+  scope: 'read' | 'write'
+  created_at: number
+  last_used_at: number   // 0 表示从未使用
+}
+type AuditEntry = {
+  id: number
+  at: number
+  token_id: string
+  token_name: string
+  tool: string
+  target: string         // 工具涉及的路径或搜索词，可能为空
+  ok: boolean
+  error?: string         // 失败时给模型看的中文说明
+  duration_ms: number
+}
+```
+
+- `/api/tokens` 和 `/api/audit` 与其他 REST 接口一样只认会话 cookie，不接受 Bearer token。
+- `secret` 只在创建响应里出现一次，服务器只保存它的 SHA-256。token 格式为 `lode_` 加 43 个 base64url 字符（32 字节随机数）。
+- `/mcp` 不使用会话 cookie，也不做 CSRF 校验，只认 `Authorization: Bearer <token>`。缺少、错误或已吊销的 token 返回 `401`。
+  - 服务是无状态的：不发 `Mcp-Session-Id`，`GET /mcp` 返回 `405`，响应都是 JSON，不使用 SSE。
+  - 只读 token 的 `tools/list` 里没有写工具；调用写工具时返回 JSON-RPC 错误 “unknown tool”。
+- 每次工具调用记一条审计，保留最近 1000 条，同时更新 token 的 `last_used_at`。
+- MCP 写入产生的变更事件中，`device_id` 为 `mcp:<token id>`，`device_name` 为 token 名称。

@@ -11,6 +11,7 @@ import { EditorPane } from '../editor/EditorPane'
 import { RightPanel } from '../right/RightPanel'
 import { Sidebar } from '../sidebar/Sidebar'
 import { QuickSwitcher } from '../switcher/QuickSwitcher'
+import { SettingsView } from '../settings/SettingsView'
 import { HomeView, TagView, TrashView } from '../views/Views'
 import './shell.css'
 
@@ -73,6 +74,8 @@ function MainView({ mobile }: { mobile: boolean }) {
       return <TrashView mobile={mobile} />
     case 'tag':
       return <TagView tag={route.tag} mobile={mobile} />
+    case 'settings':
+      return <SettingsView mobile={mobile} />
     default:
       return <HomeView />
   }

@@ -1,0 +1,17 @@
+# 2026-11-07 17:23 scripts/test.sh --e2e（exit 0）
+ok  	github.com/rt-game-440/lode/server/internal/api	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/audit	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/auth	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/db	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/mcpserver	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/mdparse	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/merge	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/notes	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/tools	(cached)
+ok  	github.com/rt-game-440/lode/server/internal/vault	(cached)
+ Test Files  4 passed (4)
+      Tests  30 passed (30)
+✓ Lockfile passes supply-chain policies (verified 49m ago)
+✓ 2679 modules transformed.
+[32m✓ built in 371ms[39m
+  14 passed (25.4s)

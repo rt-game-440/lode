@@ -1,0 +1,9 @@
+# 2026-11-07T09:20:08Z docs/mcp.md 的 curl 示例实测（只读 token）
+
+$ curl -s "$LODE_URL" -H "Authorization: Bearer $LODE_TOKEN" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 300
+{"jsonrpc":"2.0","id":1,"result":{"ttlMs":0,"cacheScope":"public","tools":[{"annotations":{"idempotentHint":false,"openWorldHint":false,"readOnlyHint":true},"description":"列出链接到这篇笔记的其他笔记（反向链接），每条含 path、title 以及引用所在行的行号和内容。
+$ curl -s "$LODE_URL" -H "Authorization: Bearer $LODE_TOKEN" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_notes","arguments":{"query":"MCP"}}}'
+{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\"results\":[{\"path\":\"收件箱.md\",\"title\":\"收件箱\",\"snippet\":\"…\\n\\n- 试用 Lode 的 **MCP**\\n\",\"modified\":\"2026-11-07T17:20:08+08:00\"}]}"}]}}
+$ curl -s -o /dev/null -w "%{http_code}\n" "$LODE_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":3,"method":"tools/list"}'
+401
+

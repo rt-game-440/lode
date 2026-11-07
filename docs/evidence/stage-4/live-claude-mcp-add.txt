@@ -1,0 +1,10 @@
+$ claude mcp add --transport http lode http://127.0.0.1:18788/mcp --header "Authorization: Bearer <token>"
+Added HTTP MCP server lode with URL: http://127.0.0.1:18788/mcp to local config
+Headers: {
+  "Authorization": "[REDACTED]"
+}
+File modified: E:\文档\project\notevault\data-live4\claude-config\.claude.json [project: E:/文档/project/notevault]
+$ claude mcp list
+Checking MCP server health…
+
+lode: http://127.0.0.1:18788/mcp (HTTP) - ✔ Connected

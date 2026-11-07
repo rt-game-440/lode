@@ -2,6 +2,26 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-07 17:21 阶段 4 MCP 决策
+
+- **SDK**：官方 `github.com/modelcontextprotocol/go-sdk` v1.8.0（配套 `github.com/google/jsonschema-go` v0.4.3）。支持的协议版本是 2026-07-28（最新）、2025-11-25、2025-06-18、2025-03-26、2024-11-05。
+- **传输**：`mcp.NewStreamableHTTPHandler`，选项 `Stateless: true, JSONResponse: true`。工具调用都是一问一答，不需要会话和服务器推送；`GET /mcp` 由 SDK 返回 405。
+- **`DisableLocalhostProtection: true`**：SDK 默认拒绝“经回环地址到达、Host 却不是 localhost”的请求，经 Caddy 等反向代理访问时正好是这种情况。每个请求都必须带 Bearer token，DNS rebinding 拿不到 token，所以关掉是安全的。
+- **鉴权**：`sdkauth.RequireBearerToken`，verifier 返回的错误必须包装 `sdkauth.ErrInvalidToken`，否则 SDK 返回 500 而不是 401。没有配置 resource metadata，所以 401 不带 `WWW-Authenticate`。
+- **权限**：只读、读写各建一个 `mcp.Server`，`getServer` 按 token 的 scope 选择。只读服务器上根本没有写工具，调用时 SDK 直接返回 “unknown tool”。
+- **工具 schema**：用 `jsonschema.For[T]` 从输入结构体生成。
+  - 不带 omitempty 的字段是必填；对象默认 `additionalProperties: false`。
+  - `jsonschema:"…"` 标签是描述，不能以 `WORD=` 开头，否则会被当作旧语法报错。
+  - 指针和切片默认推断成 `["null", T]`，已改为单一类型，部分客户端不认类型数组。
+- **挂载**：`/mcp` 直接挂在根 mux 上，不经过 csrf、withActor 和会话检查。REST `/api/*` 暂不接受 Bearer token。
+- **actor**：MCP 写入的设备为 `mcp:<token id>`，设备名为 token 名称，复用阶段 2 的变更流，网页端无需刷新就能看到。
+- **append**：总是追加到最新版本，不会冲突，`base_rev` 只作记录；需要时补换行，原文用 CRLF 时沿用 CRLF。
+- **审计**：`internal/audit` 每次调用记一条，保留最近 1000 条；写审计用 `context.WithoutCancel`，客户端断开也要记下。
+- **实测方法**：
+  - Claude Code：设置临时 `CLAUDE_CONFIG_DIR` 并用 `--mcp-config … --strict-mcp-config`，不碰用户自己的配置；在 Claude Code 会话里嵌套运行时要删掉环境变量 `CLAUDECODE`。脚本见 `web/scripts/mcp-live-check.mjs`。
+  - MCP Inspector：用 `npx @modelcontextprotocol/inspector` 运行外部包被权限策略拒绝，不要再尝试。
+  - Windows Git Bash 的 curl 会把 `-d` 参数里的中文按本地代码页转码，请求体含中文时用 `--data-binary @-`。
+
 ## 2026-11-07 16:58 阶段 2 服务端同步决策
 
 - **三方合并**：`internal/merge` 自己实现按行的 diff3，不引入依赖。前端的 `web/src/sync/textdiff.ts` 也自己实现了按行 LCS，只用来生成 CodeMirror 的 ChangeSet，不参与冲突判定。

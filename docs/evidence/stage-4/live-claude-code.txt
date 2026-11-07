@@ -1,0 +1,25 @@
+# 2026-11-07T09:17:02.745Z Claude Code（haiku）经 MCP 搜索 → 读取 → 追加
+
+## claude -p 输出
+{
+  "is_error": false,
+  "num_turns": 5,
+  "duration_ms": 11361,
+  "result": "已完成：在「实测/收件箱.md」末尾追加了「- 来自 Claude Code 的一行」，笔记的 rev 从 1 变为 2。"
+}
+
+## 调用记录（/api/audit）
+2026-11-07T09:16:55.640Z  Claude Code  search_notes  收件箱  成功
+2026-11-07T09:16:56.609Z  Claude Code  read_note  实测/收件箱.md  成功
+2026-11-07T09:16:58.636Z  Claude Code  update_note  实测/收件箱.md  成功
+
+## 变更事件（/api/changes）
+seq 1  upsert  实测/收件箱.md  rev 1  设备：
+seq 2  upsert  实测/收件箱.md  rev 2  设备：Claude Code
+
+## 笔记最终内容
+# 收件箱
+
+- 买牛奶
+- 回复邮件
+- 来自 Claude Code 的一行

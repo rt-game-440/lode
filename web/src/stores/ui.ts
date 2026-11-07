@@ -5,6 +5,7 @@ export type Route =
   | { view: 'note'; id: string }
   | { view: 'trash' }
   | { view: 'tag'; tag: string }
+  | { view: 'settings' }
 
 export type Theme = 'system' | 'light' | 'dark'
 export type RightTab = 'backlinks' | 'outline' | 'tags'
@@ -23,6 +24,7 @@ function parseRoute(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean).map(decodeURIComponent)
   if (parts[0] === 'note' && parts[1]) return { view: 'note', id: parts[1] }
   if (parts[0] === 'trash') return { view: 'trash' }
+  if (parts[0] === 'settings') return { view: 'settings' }
   if (parts[0] === 'tag' && parts[1]) return { view: 'tag', tag: parts.slice(1).join('/') }
   return { view: 'home' }
 }
@@ -33,6 +35,8 @@ export function routePath(r: Route): string {
       return `/note/${encodeURIComponent(r.id)}`
     case 'trash':
       return '/trash'
+    case 'settings':
+      return '/settings'
     case 'tag':
       return `/tag/${r.tag.split('/').map(encodeURIComponent).join('/')}`
     default:

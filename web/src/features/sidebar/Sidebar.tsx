@@ -1,4 +1,4 @@
-import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, PanelLeft, Search, Sun, Trash } from 'lucide-react'
+import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, PanelLeft, Search, Settings, Sun, Trash } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { EmptyState, IconButton } from '../../components/ui'
 import { useSession } from '../../stores/session'
@@ -121,6 +121,14 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
           回收站
         </button>
         <span className="spacer" />
+        <IconButton
+          label="设置"
+          className={route.view === 'settings' ? 'is-active' : undefined}
+          aria-current={route.view === 'settings' ? 'page' : undefined}
+          onClick={() => navigate({ view: 'settings' })}
+        >
+          <Settings size={17} />
+        </IconButton>
         <IconButton label={`主题：${THEME_LABEL[theme]}（点击切换）`} onClick={() => setTheme(THEME_NEXT[theme])}>
           {THEME_ICON[theme]}
         </IconButton>
