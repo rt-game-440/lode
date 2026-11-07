@@ -153,4 +153,9 @@
 - 本机没有 Docker，容器验收只在 CI 上跑；本机运行 govulncheck 被拒绝，同样由 CI 执行。
 - `pnpm audit` 有 1 个 low、2 个 moderate，都在 vite-plugin-pwa → workbox-build 的构建期依赖里，不进入产物（`docs/evidence/stage-6/pnpm-audit.txt`）。
 
-下一步：人工验收 `docs/checklist/stage-1.md` 至 `stage-6.md`；确认后打 `v0.1.0` tag 发版。
+## 发布前
+
+- 修复：手机经局域网 HTTP 访问时一直显示“无法连接”（`crypto.randomUUID` 只在安全上下文可用，改用 `getRandomValues`，#14）。
+- 人工验收：阶段 1 通过（2026-11-07）；阶段 2–6 待验收。
+
+下一步：人工验收 `docs/checklist/stage-2.md` 至 `stage-6.md`；全部通过后打 `v0.1.0` tag 发版。
