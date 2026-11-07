@@ -8,7 +8,7 @@
 
 ### 构建与 CI
 
-- `scripts/release`（ps1 和 sh）交叉编译 linux amd64 / arm64 / armv7、windows amd64、darwin amd64 / arm64；用 `-ldflags` 注入版本号和 commit，`notevault --version` 能输出。
+- `scripts/release`（ps1 和 sh）交叉编译 linux amd64 / arm64 / armv7、windows amd64、darwin amd64 / arm64；用 `-ldflags` 注入版本号和 commit，`lode --version` 能输出。
 - GitHub Actions：
   - CI：PR 和 push 到 main 时跑 `go test`、`go vet`、前端测试与构建、Playwright 冒烟；
   - Release：推送 `v*` tag 时构建全平台二进制和 SHA256 校验文件并上传到 GitHub Release，构建多架构 Docker 镜像推送到 `ghcr.io`。
@@ -22,11 +22,11 @@
 
 ### 运维子命令
 
-- `notevault backup <输出文件>`：用 SQLite 在线备份加 vault 打包成一个 tar.gz，服务运行中也能执行。
-- `notevault restore <备份文件>`：服务停止时恢复，写清风险提示。
-- `notevault reset-password`：在服务器上重置登录密码。
+- `lode backup <输出文件>`：用 SQLite 在线备份加 vault 打包成一个 tar.gz，服务运行中也能执行。
+- `lode restore <备份文件>`：服务停止时恢复，写清风险提示。
+- `lode reset-password`：在服务器上重置登录密码。
 - 启动时自动执行数据库迁移；迁移前自动备份数据库文件。
-- 日志级别用环境变量 `NOTEVAULT_LOG_LEVEL` 配置。
+- 日志级别用环境变量 `LODE_LOG_LEVEL` 配置。
 
 ### 性能基准
 

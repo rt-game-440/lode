@@ -1,4 +1,4 @@
-# notevault
+# Lode
 
 自托管、单用户、跨平台的 Web Markdown 笔记应用：可安装为 PWA，多端即时同步，自带 Agent 助手并对外提供 MCP。定位是"自托管、同步更方便、自带 agent 的 Obsidian"。
 
