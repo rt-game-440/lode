@@ -1,6 +1,6 @@
 import { ArrowUp, AtSign, FileText, Image, Paperclip, Square, X } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Attachment, Effort, Modality } from '../../api/agent'
+import { type Attachment, EFFORT_LABEL, type Effort, type Modality } from '../../api/agent'
 import type { Note } from '../../api/types'
 import { Modal } from '../../components/Modal'
 import { openMenu } from '../../components/overlays'
@@ -11,7 +11,6 @@ import { findByPath, useVault } from '../../stores/vault'
 import { VaultImagePicker } from './VaultImagePicker'
 import { fileToAttachment } from './attachments'
 
-const EFFORT_LABEL: Record<Effort, string> = { off: '关闭', low: '低', medium: '中', high: '高' }
 const MAX_ATTACH = 20 << 20
 
 const MODALITY_ACCEPT: Record<Exclude<Modality, 'text'>, string> = {

@@ -137,6 +137,7 @@ PATCH 的 `edits` 按顺序应用，每处 `old` 必须在当时的正文里恰�
 | --- | --- | --- | --- |
 | POST | `/api/attachments` | `multipart/form-data`，字段 `file` | `201 {"path":"attachments/x.png","url":"/api/files/attachments/x.png"}` |
 | GET | `/api/files/{path...}` | | 文件内容，支持 Range；带沙箱 CSP，防止上传的 SVG/HTML 执行脚本 |
+| GET | `/api/images` | | `200 {"images":[{"path","size","mtime"}]}`：笔记库里的 png/jpg/jpeg/gif/webp，按修改时间倒序，最多 500 个（阶段 5，助手选图用） |
 
 粘贴的图片没有有意义的文件名时命名为 `pasted-YYYYMMDD-HHMMSS.<ext>`；同名文件自动加序号。
 
@@ -211,3 +212,82 @@ type AuditEntry = {
   - 只读 token 的 `tools/list` 里没有写工具；调用写工具时返回 JSON-RPC 错误 “unknown tool”。
 - 每次工具调用记一条审计，保留最近 1000 条，同时更新 token 的 `last_used_at`。
 - MCP 写入产生的变更事件中，`device_id` 为 `mcp:<token id>`，`device_name` 为 token 名称。
+
+## 助手（阶段 5）
+
+需要会话 cookie。API key 用 `LODE_SECRET_KEY` 派生的密钥（HKDF-SHA256 → AES-256-GCM）加密后存进 SQLite，任何响应里都不会出现明文 key，只返回 `has_key` 和末 4 位 `key_last4`。没有设置 `LODE_SECRET_KEY` 时，带 key 的保存请求返回 `400`。
+
+错误码：对象不存在 `404 not_found`；参数不合法 `400 bad_request`（`message` 是中文说明）；对话正在运行时删除对话、或重复发送 `409 conflict`。
+
+### 供应商、模型与设置
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| GET | `/api/agent/config` | | `200 {"secret_key_set":bool,"settings":Settings,"providers":Provider[]}` |
+| POST | `/api/agent/providers` | ProviderInput | `201 Provider` |
+| PUT | `/api/agent/providers/{id}` | ProviderInput；省略 `api_key` 表示不修改，`""` 表示清除 | `200 Provider` |
+| DELETE | `/api/agent/providers/{id}` | | `204`，连同它的模型一起删除 |
+| POST | `/api/agent/providers/{id}/test` | | `200 {"ok":bool,"kind"?:string,"message":string,"models":ModelInfo[]}`：用保存的 key 调一次模型列表接口（20 秒超时）；失败也返回 200，`kind` 为 `auth`、`network`、`rate_limit` 等 |
+| POST | `/api/agent/providers/{id}/models` | ModelInput | `201 Model`；这是第一个模型且还没有默认模型时，自动设为默认 |
+| PUT | `/api/agent/models/{id}` | ModelInput | `200 Model` |
+| DELETE | `/api/agent/models/{id}` | | `204` |
+| PUT | `/api/agent/settings` | Settings | `200 Settings` |
+
+```ts
+type ProviderInput = { name: string; kind: 'openai' | 'anthropic' | 'gemini'; base_url: string; api_key?: string }
+type Provider = { id; name; kind; base_url; has_key: boolean; key_last4: string; created_at: number; models: Model[] }
+type ModelInput = {
+  model: string              // 供应商那边的模型 ID
+  name: string               // 显示名，可空
+  enabled: boolean
+  context_window: number     // ≥ 1024
+  max_output: number         // 0 < max_output < context_window
+  reasoning: boolean         // 是否支持推理
+  effort: 'off' | 'low' | 'medium' | 'high'  // 默认推理强度
+  modalities: ('text' | 'image' | 'pdf' | 'audio')[]  // 总会包含 text
+  tools: boolean             // 是否给模型工具
+  temperature: number | null // 0–2，null 表示不发送
+}
+type Model = ModelInput & { id: string; provider_id: string }
+type ModelInfo = { id: string; name?: string; context_window?: number; max_output?: number }
+type Settings = { default_model: string; auto_approve: boolean }
+```
+
+`base_url` 为空时用官方地址：OpenAI `https://api.openai.com/v1`、Anthropic `https://api.anthropic.com`、Gemini `https://generativelanguage.googleapis.com`。OpenRouter、DeepSeek、Ollama 等兼容服务选 `openai` 并填自己的地址。
+
+### 对话
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| GET | `/api/agent/chats` | | `200 {"chats":Chat[]}`，按更新时间倒序 |
+| POST | `/api/agent/chats` | `{"model_id":""}`，空表示默认模型 | `201 Chat` |
+| GET | `/api/agent/chats/{id}` | | `200 {"chat":Chat,"messages":Message[],"pending":Pending[],"running":bool}`；附件只返回 mime 和文件名，不返回数据 |
+| PATCH | `/api/agent/chats/{id}` | `{"title"?,"model_id"?,"effort"?}`；`effort` 为 `""` 表示用模型的默认值 | `200 Chat` |
+| DELETE | `/api/agent/chats/{id}` | | `204`；运行中 `409` |
+| POST | `/api/agent/chats/{id}/messages` | `{"text":"…","mentions":["路径.md"],"attachments":[{"name","mime","data":"base64"}]}` | `202 {"message":Message}`，随后在事件流里推送回复 |
+| POST | `/api/agent/chats/{id}/stop` | | `204`，停止生成；已生成的部分保留并标记 `stopped` |
+| POST | `/api/agent/chats/{id}/approvals/{callId}` | `{"approve":bool}` | `204`；批准后执行写操作，拒绝后把“用户拒绝了”作为工具结果交给模型 |
+| GET | `/api/agent/chats/{id}/stream` | | `text/event-stream`，见下 |
+
+- 第一条消息的前 40 个字作为对话标题。
+- `mentions` 里的笔记全文附在消息里（每篇最多 6 万字）；附件合计不超过 20MB，模型的 `modalities` 不支持的类型返回 `400`。
+- 写工具（新建、修改、移动、删除笔记）默认先停下等待批准，`Pending.preview` 带有动作、路径和逐行差异；`auto_approve` 打开后直接执行。助手写入的变更事件中 `device_name` 为“助手”，打开着的编辑器会实时更新。
+- 一次请求最多调用 20 次工具。
+
+### 事件流
+
+`GET /api/agent/chats/{id}/stream` 先发 `retry: 2000`，再发一条 `state` 快照，之后每个事件是一行 `data: <json>`，空闲时发 `: ping` 注释。客户端处理不过来时服务器断开连接，`EventSource` 会自动重连；客户端在每次（重新）连接收到 `state` 后应重新 `GET` 一次对话，补上断线期间的消息。
+
+```ts
+type AgentEvent =
+  | { type: 'state'; running: boolean; draft?: Draft }         // 连接时的快照，draft 是正在生成的内容
+  | { type: 'text' | 'thinking'; text: string }                  // 正文或思考的增量
+  | { type: 'tool_call'; call: { id; name; args } }              // 模型发起的一次工具调用
+  | { type: 'message'; message: Message }                         // 保存好的完整消息（用户、助手或工具结果）
+  | { type: 'approval'; pending: Pending }                        // 等待批准的写操作
+  | { type: 'chat'; chat: Chat }                                  // 标题、用量变化
+  | { type: 'done'; stop: 'stop' | 'tool_calls' | 'max_tokens' | 'refusal' | 'stopped' | 'awaiting_approval' }
+  | { type: 'error'; kind: string; text: string }                // auth、rate_limit、context_length、network 等
+```
+
+`Chat` 里的 `context_tokens` 是最近一次请求的输入 token（当前占用的上下文），`input_tokens`、`output_tokens` 是本对话累计用量。

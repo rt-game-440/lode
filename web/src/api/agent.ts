@@ -5,6 +5,9 @@ export type ProviderKind = 'openai' | 'anthropic' | 'gemini'
 export type Effort = 'off' | 'low' | 'medium' | 'high'
 export type Modality = 'text' | 'image' | 'pdf' | 'audio'
 
+export const EFFORT_LABEL: Record<Effort, string> = { off: '关闭', low: '低', medium: '中', high: '高' }
+export const KIND_LABEL: Record<ProviderKind, string> = { openai: 'OpenAI 兼容', anthropic: 'Anthropic', gemini: 'Gemini' }
+
 export interface AgentModel {
   id: string
   provider_id: string

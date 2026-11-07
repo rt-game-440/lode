@@ -2,6 +2,17 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-07 19:15 阶段 5 助手决策
+
+- **不用 LLM SDK**：三家都是直接 HTTP + 手写 SSE 解析（`internal/llm`），依赖少、二进制小，流式事件和错误分类统一。入口是 `llm.Stream` 和 `llm.ListModels`，按 `Config.Kind` 分派；新增一种接口时在这两处加分支和对应的适配器文件。
+- **API key 加密**：`LODE_SECRET_KEY` → HKDF-SHA256 → AES-256-GCM，密文前缀 `v1:`，AAD 为供应商 id（防止密文被挪到别的记录）。没设主密钥时可以添加不带 key 的供应商（Ollama 等），带 key 的保存返回 400。日志、响应、证据里都不能出现明文 key，API 测试会检查。
+- **对话懒创建**：“新对话”只是清空前端状态，第一次发送（或改模型、推理强度）时才在服务端创建，避免产生空对话。
+- **事件流断线重连**：SSE 第一条是 `state` 快照。前端每次（重新）连接收到它后重新拉取整个对话，期间到达的事件先缓存、拉取完成后按顺序补上；事件按 rAF 合并，一帧最多渲染一次（`stores/agent.ts`）。服务端订阅通道满了直接断开，让客户端重连补齐，不在服务端排队。
+- **Markdown 渲染**：复用编辑器的 `@lezer/markdown` 解析器（GFM + wikilink）把语法树转成 React 元素，原始 HTML 当文本显示，链接只放行 http/https/mailto，图片只显示笔记库内的。流式时每次整段重解析，未闭合的代码块也能正常显示。
+- **右栏宽度**：助手标签页时右栏 380px（`--rightbar-width-agent`），宽度用 motion 值弹簧过渡，主区域随之让出空间；手机上助手是 `/agent` 页面，抽屉里不显示助手标签。
+- **e2e 命名**：助手用例叫 `talk-to-agent.spec.ts`，字母序在 sync 之后、tokens 之前；不能叫 `agent.spec.ts`（会排在 smoke 前面，破坏首次设置用例）。测试实例的 `LODE_SECRET_KEY` 写在 `playwright.config.ts`。
+- **编辑器断言**：实时预览把 `- [x]` 渲染成复选框，e2e 要检查 `.cm-task-checkbox` 的勾选状态，不能找 `[x]` 文本。
+
 ## 2026-11-07 18:03 阶段 3 设计与动效决策
 
 - **面板动画**：桌面侧栏展开收起时各栏绝对定位，动画期间只改 transform，稳定后主区域再一次性让出布局（`features/shell/panelMotion.ts`）。静止时 transform 必须归零，否则 CodeMirror 的 fixed 定位提示框会错位。

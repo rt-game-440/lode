@@ -1,0 +1,13 @@
+=== RUN   TestLiveProviders
+=== RUN   TestLiveProviders/openai
+    list_test.go:59: 未设置 LODE_TEST_OPENAI_KEY，跳过真实 openai 冒烟
+=== RUN   TestLiveProviders/anthropic
+    list_test.go:59: 未设置 LODE_TEST_ANTHROPIC_KEY，跳过真实 anthropic 冒烟
+=== RUN   TestLiveProviders/gemini
+    list_test.go:59: 未设置 LODE_TEST_GEMINI_KEY，跳过真实 gemini 冒烟
+--- PASS: TestLiveProviders (0.00s)
+    --- SKIP: TestLiveProviders/openai (0.00s)
+    --- SKIP: TestLiveProviders/anthropic (0.00s)
+    --- SKIP: TestLiveProviders/gemini (0.00s)
+PASS
+ok  	github.com/rt-game-440/lode/server/internal/llm	0.039s

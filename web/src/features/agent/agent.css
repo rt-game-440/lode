@@ -353,6 +353,7 @@ button.mention-chip:not(:disabled):hover {
 
 /* 写操作审批 */
 .approval {
+  animation: agent-rise var(--duration-base) var(--ease-out);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -361,6 +362,12 @@ button.mention-chip:not(:disabled):hover {
   border-radius: var(--radius-lg);
   background: var(--color-bg);
   box-shadow: var(--shadow-sm);
+}
+@keyframes agent-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 .approval-head {
   display: flex;
@@ -770,7 +777,8 @@ button.mention-chip:not(:disabled):hover {
 
 @media (prefers-reduced-motion: reduce) {
   .typing i,
-  .thinking-live {
+  .thinking-live,
+  .approval {
     animation: none;
   }
   .tool-chevron {
