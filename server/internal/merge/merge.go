@@ -1,7 +1,10 @@
 // Package merge 实现按行的三方合并（diff3），用于多端同时编辑同一篇笔记。
 package merge
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // maxCells 是 LCS 表的单元格上限（uint16，约 4MB）。去掉公共前后缀后中间部分仍超过上限时，
 // 整段当作一处改动：只会让冲突判定更保守，不会丢内容。
@@ -190,5 +193,61 @@ func diff(a, b []string) []hunk {
 	if cur != nil {
 		out = append(out, *cur)
 	}
+	return out
+}
+
+// DiffLine 是按行 diff 的一行：Op 为 " "（不变）、"-"（删除）、"+"（新增），
+// 或 "…"（省略了 Text 行不变的内容）。Text 不含行尾。
+type DiffLine struct {
+	Op   string `json:"op"`
+	Text string `json:"text"`
+}
+
+// Lines 返回把 a 改成 b 的按行 diff，每处改动前后保留 context 行不变的内容，其余折叠成 "…"。
+func Lines(a, b string, context int) []DiffLine {
+	al, bl := splitLines(a), splitLines(b)
+	hs := diff(al, bl)
+	if len(hs) == 0 {
+		return nil
+	}
+	trim := func(s string) string { return strings.TrimRight(s, "\r\n") }
+	var out []DiffLine
+	same := func(from, to int, first, last bool) {
+		n := to - from
+		keepHead, keepTail := context, context
+		if first {
+			keepHead = 0
+		}
+		if last {
+			keepTail = 0
+		}
+		if n <= keepHead+keepTail {
+			for i := from; i < to; i++ {
+				out = append(out, DiffLine{" ", trim(al[i])})
+			}
+			return
+		}
+		for i := from; i < from+keepHead; i++ {
+			out = append(out, DiffLine{" ", trim(al[i])})
+		}
+		out = append(out, DiffLine{"…", strconv.Itoa(n - keepHead - keepTail)})
+		for i := to - keepTail; i < to; i++ {
+			out = append(out, DiffLine{" ", trim(al[i])})
+		}
+	}
+	pos := 0
+	for k, h := range hs {
+		if h.start > pos || k == 0 {
+			same(pos, h.start, k == 0, false)
+		}
+		for i := h.start; i < h.end; i++ {
+			out = append(out, DiffLine{"-", trim(al[i])})
+		}
+		for _, l := range h.lines {
+			out = append(out, DiffLine{"+", trim(l)})
+		}
+		pos = h.end
+	}
+	same(pos, len(al), false, true)
 	return out
 }
