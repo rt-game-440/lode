@@ -7,6 +7,7 @@ import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
 import { dirname } from '../../lib/paths'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { sync } from '../../sync/engine'
 import { errorMessage, newNote, openNote } from '../actions'
 import './views.css'
 
@@ -86,7 +87,7 @@ export function HomeView() {
 
 /** 某个标签下的笔记（包含子标签）。 */
 export function TagView({ tag, mobile }: { tag: string; mobile: boolean }) {
-  const seq = useVault((s) => s.seq)
+  const version = useVault((s) => s.version)
   const [notes, setNotes] = useState<Note[] | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -97,7 +98,7 @@ export function TagView({ tag, mobile }: { tag: string; mobile: boolean }) {
     return () => {
       cancelled = true
     }
-  }, [tag, seq])
+  }, [tag, version])
   return (
     <section className="view">
       <ViewBar title={`#${tag}`} mobile={mobile} />
@@ -157,7 +158,7 @@ export function TrashView({ mobile }: { mobile: boolean }) {
     })
     if (!ok) return
     try {
-      await api.purge(it.id)
+      await sync.purgeTrash(it.id)
       setItems((list) => list?.filter((x) => x.id !== it.id) ?? null)
     } catch (err) {
       toast({ message: errorMessage(err), tone: 'error' })
@@ -173,7 +174,7 @@ export function TrashView({ mobile }: { mobile: boolean }) {
     })
     if (!ok) return
     try {
-      await api.emptyTrash()
+      await sync.emptyTrash()
       setItems([])
     } catch (err) {
       toast({ message: errorMessage(err), tone: 'error' })

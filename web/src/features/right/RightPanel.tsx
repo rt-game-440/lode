@@ -18,7 +18,7 @@ const TABS: { id: RightTab; label: string; icon: typeof Link }[] = [
 ]
 
 function Backlinks({ id }: { id: string }) {
-  const seq = useVault((s) => s.seq)
+  const version = useVault((s) => s.version)
   const notes = useVault((s) => s.notes)
   const [items, setItems] = useState<Backlink[] | null>(null)
 
@@ -31,8 +31,8 @@ function Backlinks({ id }: { id: string }) {
     return () => {
       cancelled = true
     }
-    // notes 变化（改名、新建）或 seq 变化都可能影响反链
-  }, [id, seq, notes])
+    // notes 变化（改名、新建）或其他笔记内容变化都可能影响反链
+  }, [id, version, notes])
 
   if (!items) return <div className="right-loading"><Spinner /></div>
   if (!items.length) return <EmptyState title="没有反链">其他笔记用 [[链接]] 引用这篇笔记时会显示在这里</EmptyState>
@@ -77,7 +77,7 @@ function Outline() {
 }
 
 function NoteTags({ id }: { id: string }) {
-  const seq = useVault((s) => s.seq)
+  const version = useVault((s) => s.version)
   const rev = useEditor((s) => (s.doc?.id === id ? s.doc.rev : 0))
   const navigate = useUI((s) => s.navigate)
   const [tags, setTags] = useState<string[] | null>(null)
@@ -90,7 +90,7 @@ function NoteTags({ id }: { id: string }) {
     return () => {
       cancelled = true
     }
-  }, [id, seq, rev])
+  }, [id, version, rev])
   if (!tags) return <div className="right-loading"><Spinner /></div>
   if (!tags.length) return <EmptyState title="没有标签">在正文写 #标签，或在 frontmatter 写 tags</EmptyState>
   return (

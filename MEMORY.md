@@ -2,6 +2,31 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-07 16:46 阶段 2 前端同步与 PWA
+
+- **同步引擎**（`web/src/sync/engine.ts`）：前端读写笔记的唯一入口。
+  - **写队列**：每篇笔记只占一项，后写的覆盖先写的，基于的 rev 保留第一次入队时的值。队列持久化在 IndexedDB 的 `queue` store。
+  - **单飞执行**：`drain` 和 `catchUp` 各自同一时间只有一个在跑，执行期间再次调用只设置“再跑一轮”标记。
+  - **冲突副本**：本地冲突时，发送期间又产生的修改、以及编辑器里还没交给引擎的修改，都经写队列写进副本，断网也不丢。
+  - **回声判定**：判断一条变更是否是自己产生的，用 vault store 里的 rev 和 path，不用 `device_id`。同一台设备的另一个标签页也需要收到这些变更。
+- **重连顺序**：`resync()` 先 `catchUp`（遇到 410 就 emit `gone`，并等全量重拉完成），再 `drain` 重放队列。WS 的 `hello` 和浏览器的 `online` 事件都触发 `resync`。拿到笔记树的 seq 之前（`haveSeq`）不补齐，否则会从 0 拉全部变更。
+- **编辑器接远端修改**：store 通过组件注册的 `editorBridge`，把远端版本套进 CodeMirror。
+  - 用 `diffChangeSet(base, next)`，再按本地修改 `map` 做 rebase；dispatch 时带 `remoteSync` 和 `addToHistory.of(false)`，不进撤销栈。
+  - 本地有修改时，rebase 后立即保存。
+  - 输入法组字期间（`view.composing`）推迟应用，在 `compositionend` 之后加 `setTimeout 0` 再应用。推迟期间如果触发保存，保存前先把推迟的远端版本 rebase 进要保存的内容。
+- **派生数据刷新**：vault store 的 `version` 计数器在内容或结构变化时加一（防抖 300ms），反链、搜索、视图依赖它刷新。原先的 `seq` 和轮询已删除。
+- **PWA**：`vite-plugin-pwa` 2.0 的配置是 generateSW、`registerType: 'prompt'`、`navigateFallback: '/index.html'`，denylist 排除 `/api/`。用了 `virtual:pwa-register` 后，pnpm 严格模式下 **`workbox-window` 必须作为直接依赖**，否则 rolldown 解析失败。回到前台时调用 `reg.update()` 检查新版本。
+  - 图标用 `node web/scripts/gen-icons.mjs` 重新生成（Playwright 渲染 SVG）。
+- **离线冷启动**：`session.check` 遇到网络错误时，如果 IndexedDB 里有缓存的树，就进入 ready。退出登录时 `clearCache()` 清空笔记缓存，但保留写队列。
+- **WS 消息字段**：用 snake_case 的 `device_id`，和 REST 的 Change 一致；SPEC 里写的是 `deviceId`，已在 `docs/api.md` 注明。
+- **测试经验**：
+  - IME 组字用 CDP 的 `Input.imeSetComposition`、`Input.insertText` 模拟，删掉推迟分支后这个测试会失败。
+  - SW 状态用 `expect.poll` 等到 `activated`。
+  - 引擎单测用 `gated()` 控制请求的进入和放行，不靠 `setTimeout(0)` 的时序。
+  - 设了 `LODE_SCREENSHOTS` 跑全量 e2e 时，screenshots.spec 会先完成密码设置，导致 smoke 的首启用例失败。截图只单独跑相关 spec。
+  - RSS 测量：`rss.ps1` / `rss.sh` 用 `server/cmd/wsprobe` 保持 2 个 WS 连接（登录返回 204，按 2xx 判断成功）。进程在 finally/trap 里结束，否则会残留并占住 18788 端口。
+- **编码**：bash heredoc 里内嵌含中文的 python 脚本会把编码弄坏，改中文内容用 Edit 工具。
+
 ## 2026-11-07 16:05 阶段 1 审查后的决策
 
 - **符号链接**：vault 内不跟随符号链接和 Windows 目录联接。`vault.Resolve` 从根逐段 Lstat，遇到 `ModeSymlink|ModeIrregular` 就返回 `ErrInvalidPath`，所有读写都经过它，和 Walk 不索引链接一致。Go 1.23 起 `EvalSymlinks` 不解析目录联接，不能拿它做越界检查。Windows 测试用 `mklink /J` 建联接，不需要管理员权限。

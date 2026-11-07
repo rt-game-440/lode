@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { api, setUnauthorizedHandler } from '../api/client'
+import { ApiError, api, setUnauthorizedHandler } from '../api/client'
+import { sync } from '../sync/engine'
 
 type Phase = 'loading' | 'setup' | 'login' | 'ready' | 'offline'
 
@@ -17,8 +18,10 @@ export const useSession = create<SessionState>((set) => ({
     try {
       const s = await api.authStatus()
       set({ phase: !s.initialized ? 'setup' : s.authenticated ? 'ready' : 'login' })
-    } catch {
-      set({ phase: 'offline' })
+    } catch (err) {
+      // 断网冷启动：有缓存的笔记树就直接进入应用，离线编辑，联网后同步
+      const cached = err instanceof ApiError && err.code === 'network' && (await sync.db.getTree().catch(() => undefined))
+      set({ phase: cached ? 'ready' : 'offline' })
     }
   },
   setup: async (password) => {
@@ -31,6 +34,7 @@ export const useSession = create<SessionState>((set) => ({
   },
   logout: async () => {
     await api.logout().catch(() => {})
+    await sync.db.clearCache().catch(() => {})
     set({ phase: 'login' })
   },
 }))

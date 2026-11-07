@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
+import { X } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useUI } from '../stores/ui'
@@ -214,24 +215,28 @@ export interface MenuItem {
 export type MenuEntry = MenuItem | 'separator'
 
 interface MenuState {
-  open: { x: number; y: number; items: MenuEntry[] } | null
+  /** above：空间不够向上翻转时，菜单底边对齐的位置（触发元素的上沿，或点击点） */
+  open: { x: number; y: number; above: number; items: MenuEntry[] } | null
 }
 
 const useMenuStore = create<MenuState>(() => ({ open: null }))
 
-/** 在 (x, y) 打开菜单；传入触发元素时从元素下方弹出。 */
+/** 在 (x, y) 打开菜单；传入触发元素时从元素下方弹出，下方空间不够时改到元素上方。 */
 export function openMenu(at: { x: number; y: number } | HTMLElement, items: MenuEntry[]) {
   let x: number
   let y: number
+  let above: number
   if (at instanceof HTMLElement) {
     const r = at.getBoundingClientRect()
     x = r.left
     y = r.bottom + 4
+    above = r.top - 4
   } else {
     x = at.x
     y = at.y
+    above = at.y - 8
   }
-  useMenuStore.setState({ open: { x, y, items } })
+  useMenuStore.setState({ open: { x, y, above, items } })
 }
 
 export function closeMenu() {
@@ -253,7 +258,7 @@ export function MenuHost() {
     const vh = window.innerHeight
     const left = Math.max(8, Math.min(open.x, vw - r.width - 8))
     const flipUp = open.y + r.height > vh - 8
-    const top = flipUp ? Math.max(8, open.y - r.height - 8) : open.y
+    const top = flipUp ? Math.max(8, open.above - r.height) : open.y
     setPos({ left, top, origin: `${open.x - left}px ${flipUp ? '100%' : '0'}` })
     ref.current.querySelector<HTMLButtonElement>('.menu-item')?.focus()
   }, [open])
@@ -356,6 +361,11 @@ export function ToastHost() {
                 }}
               >
                 {t.action.label}
+              </button>
+            )}
+            {t.persistent && (
+              <button className="toast-close" aria-label="关闭" onClick={() => dismiss(t.id)}>
+                <X size={14} />
               </button>
             )}
           </motion.div>

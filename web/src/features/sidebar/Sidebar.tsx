@@ -7,6 +7,7 @@ import { useVault } from '../../stores/vault'
 import { newFolder, newNote } from '../actions'
 import { FileTree } from './FileTree'
 import { SearchPanel } from './SearchPanel'
+import { SyncIndicator } from './SyncIndicator'
 import './sidebar.css'
 
 const THEME_NEXT: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' }
@@ -110,6 +111,7 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
       </div>
 
       <footer className="sidebar-foot">
+        <SyncIndicator />
         <button
           className={`foot-link${route.view === 'trash' ? ' is-active' : ''}`}
           onClick={() => navigate({ view: 'trash' })}

@@ -74,6 +74,7 @@
 
 .sidebar-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1-5) var(--space-2);
@@ -313,4 +314,58 @@
   font-size: var(--text-caption);
   color: var(--color-label-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+/* 同步状态 */
+.sync-status {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  height: 2rem;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: var(--text-footnote);
+  color: var(--color-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sync-status:hover {
+  background: var(--color-fill);
+  color: var(--color-label);
+}
+.sync-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--color-success);
+  transition: background-color 200ms ease;
+}
+.sync-status.is-syncing .sync-dot {
+  background: var(--color-accent);
+  animation: sync-pulse 1.2s ease-in-out infinite;
+}
+.sync-status.is-offline .sync-dot {
+  background: var(--color-label-tertiary);
+}
+.sync-status.is-conflict {
+  color: var(--color-warning);
+}
+.sync-status.is-conflict .sync-dot {
+  background: var(--color-warning);
+}
+@keyframes sync-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-status.is-syncing .sync-dot {
+    animation: none;
+  }
 }
