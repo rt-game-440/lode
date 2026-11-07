@@ -15,8 +15,10 @@ rm -rf "$data"
 export LODE_DATA_DIR="$data" LODE_ADDR="127.0.0.1:$PORT" LODE_LOG_LEVEL=warn
 base="http://127.0.0.1:$PORT"
 jar="$data/cookies.txt"
-# 只用于这个临时实例的随机密码
-password="rss-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+# 临时实例的登录口令在运行时随机生成，写进请求体文件
+rnd=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+login="$data/login.json"
+printf '{"password":"rss-%s"}' "$rnd" >"$login"
 
 start() {
   "$bin" serve &
@@ -47,12 +49,12 @@ rss_mb() {
 }
 
 start
-curl -fs -c "$jar" -H 'Content-Type: application/json' -d "{\"password\":\"$password\"}" "$base/api/auth/setup" >/dev/null
+curl -fs -c "$jar" -H 'Content-Type: application/json' -d "@$login" "$base/api/auth/setup" >/dev/null
 wait_indexed
 kill "$pid"; wait "$pid" 2>/dev/null || true
 
 start
-curl -fs -c "$jar" -H 'Content-Type: application/json' -d "{\"password\":\"$password\"}" "$base/api/auth/login" >/dev/null
+curl -fs -c "$jar" -H 'Content-Type: application/json' -d "@$login" "$base/api/auth/login" >/dev/null
 wait_indexed
 sleep "$IDLE"
 rss=$(rss_mb "$pid")
