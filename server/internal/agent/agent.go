@@ -61,16 +61,16 @@ type Draft struct {
 
 // Event 是推送给前端的事件。
 type Event struct {
-	Type    string          `json:"type"` // state text thinking tool_call message approval chat done error
-	Text    string          `json:"text,omitempty"`
-	Call    *llm.ToolCall   `json:"call,omitempty"`
-	Message *Message        `json:"message,omitempty"`
-	Pending *Pending        `json:"pending,omitempty"`
-	Chat    *Chat           `json:"chat,omitempty"`
-	Running bool            `json:"running,omitempty"`
-	Draft   *Draft          `json:"draft,omitempty"`
-	Stop    string          `json:"stop,omitempty"` // done：stop tool_calls max_tokens refusal stopped awaiting_approval
-	Kind    llm.ErrorKind   `json:"kind,omitempty"` // error 的类别
+	Type    string        `json:"type"` // state text thinking tool_call message approval chat done error
+	Text    string        `json:"text,omitempty"`
+	Call    *llm.ToolCall `json:"call,omitempty"`
+	Message *Message      `json:"message,omitempty"`
+	Pending *Pending      `json:"pending,omitempty"`
+	Chat    *Chat         `json:"chat,omitempty"`
+	Running bool          `json:"running,omitempty"`
+	Draft   *Draft        `json:"draft,omitempty"`
+	Stop    string        `json:"stop,omitempty"` // done：stop tool_calls max_tokens refusal stopped awaiting_approval
+	Kind    llm.ErrorKind `json:"kind,omitempty"` // error 的类别
 }
 
 func (s *Service) log() *slog.Logger {

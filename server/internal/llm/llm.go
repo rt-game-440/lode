@@ -358,4 +358,6 @@ func classify(ctx context.Context, cfg Config, err error) *Error {
 }
 
 // genID 为没有 id 的工具调用生成一个。
-func genID(prefix string, n int) string { return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixMilli(), n) }
+func genID(prefix string, n int) string {
+	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixMilli(), n)
+}
