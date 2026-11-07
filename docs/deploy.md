@@ -10,7 +10,7 @@ data/
   backups/      升级迁移前自动备份的数据库（保留最近 5 份）
 ```
 
-空闲内存的实测数据见 [benchmark.md](benchmark.md)，目标是 1000 篇笔记 50MB 以内，512MB 内存的机器足够。下面三种部署方式任选一种。
+空闲内存约 22MB（1000 和 10000 篇笔记的实测，见 [benchmark.md](benchmark.md)），512MB 内存的机器足够。下面三种部署方式任选一种。
 
 ## 1. VPS（Docker + Caddy 自动 HTTPS）
 

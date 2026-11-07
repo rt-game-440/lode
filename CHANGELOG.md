@@ -41,4 +41,4 @@
 - 运维子命令：`lode backup`（在线备份成一个 tar.gz）、`lode restore`（停服恢复，原数据保留）、`lode reset-password`、`lode healthcheck`。
 - 启动时自动迁移数据库，迁移前自动备份；数据目录加文件锁，防止两个进程同时使用。
 - 安全响应头（CSP、`X-Content-Type-Options`、`Referrer-Policy`、`X-Frame-Options`）；HTTPS 下会话 cookie 带 `Secure`；登录失败限速。
-- 性能基准工具 `server/cmd/bench`，结果见 `docs/benchmark.md`。
+- 空闲内存约 22MB（Linux，1000 和 10000 篇笔记），见 `docs/benchmark.md`；性能基准工具 `server/cmd/bench`。
