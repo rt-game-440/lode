@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { ApiError, errorMessage } from '../api/client'
 import type { Note, NoteContent } from '../api/types'
 import type { SaveStatus } from '../lib/autosave'
+import { noteTitle } from '../lib/paths'
 import { sync } from '../sync/engine'
 import { useUI } from './ui'
 import { useVault } from './vault'
@@ -71,9 +72,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   headings: [],
 
   open: async (id) => {
+    sync.dismissConflict(id) // 打开冲突副本即视为已查看
     if (get().noteId === id && (get().doc || get().loading)) return
     set({ noteId: id, doc: null, loading: true, notFound: false, error: null, status: 'idle', headings: [] })
-    sync.dismissConflict(id) // 打开冲突副本即视为已查看
     try {
       const { doc, baseRev } = await sync.readNote(id)
       if (get().noteId !== id) return
@@ -161,11 +162,8 @@ sync.on('remote', async (changes) => {
 
 sync.on('conflict', (c) => {
   const ui = useUI.getState()
-  const name = c.path.split('/').pop()!.replace(/\.md$/i, '')
-  const open = () => {
-    sync.dismissConflict(c.copyId)
-    ui.navigate({ view: 'note', id: c.copyId })
-  }
+  const name = noteTitle(c.path)
+  const open = () => ui.navigate({ view: 'note', id: c.copyId }) // 打开副本即视为已查看
   if (c.remote) {
     ui.toast({ message: `“${name}”在另一台设备上与你的修改冲突，已生成冲突副本`, action: { label: '查看副本', run: open } })
     return

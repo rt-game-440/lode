@@ -73,7 +73,9 @@ export class SyncEngine {
   isKnown: (c: Change) => boolean
 
   private queue = new Map<string, QueueEntry>()
+  /** 本地修改的版本号：每次 save 加一，用来判断某次修改是否已被服务器处理（见 acked） */
   private ver = 0
+  /** 入队顺序：同一篇笔记多次修改只保留首次入队的顺序，重放时按它排序 */
   private order = 0
   /** 每篇笔记最近一次被服务器处理（确认或冲突）的版本号 */
   private acked = new Map<string, number>()
@@ -160,7 +162,9 @@ export class SyncEngine {
     try {
       const t = await this.api.tree()
       this.setNetDown(false)
-      this.seq = Math.max(this.seq, t.seq)
+      // 以服务器快照的 seq 为准：数据目录重建后序号会变小，取较大值会导致之后每次补齐都 410。
+      // 快照之后的变更会被重新补齐一次，应用变更是幂等的。
+      this.seq = t.seq
       this.haveSeq = true
       void this.db.putTree({ folders: t.folders, notes: t.notes, seq: t.seq })
       return { ...t, fromCache: false }
@@ -332,9 +336,10 @@ export class SyncEngine {
 
   // ---- 结构性操作 ----
   // 新建、移动、删除等需要服务器分配 id 或改写链接，只能在线进行；离线时抛出 network 错误，由界面提示。
+  // 除新建外都不经写队列，直接调用 REST 客户端（不在可注入的 Transport 里）。
 
   async createNote(path: string, content = '', autoRename = false): Promise<NoteContent> {
-    const n = await api.createNote(path, content, autoRename)
+    const n = await this.api.createNote(path, content, autoRename)
     void this.db.putNote(n)
     return n
   }
@@ -428,6 +433,7 @@ export class SyncEngine {
     if (!foreign.length) return
     const me = deviceId()
     for (const c of foreign) {
+      // 冲突副本由服务器新建，首个版本 rev 为 1；之后有人编辑副本（rev > 1）不再算新冲突
       if (c.type === 'upsert' && c.device_id !== me && CONFLICT_RE.test(c.path) && c.rev === 1) {
         const info: ConflictInfo = { path: c.path.replace(CONFLICT_RE, '.md'), copyId: c.id, copyPath: c.path, remote: true }
         this.addConflict(info)

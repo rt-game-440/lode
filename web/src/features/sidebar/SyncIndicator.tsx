@@ -1,7 +1,8 @@
 import { type MenuEntry, openMenu, promptDialog } from '../../components/overlays'
 import { deviceName, guessDeviceName, setDeviceName } from '../../lib/device'
+import { noteTitle } from '../../lib/paths'
 import { useUI } from '../../stores/ui'
-import { sync, useSync } from '../../sync/engine'
+import { useSync } from '../../sync/engine'
 
 const LABEL = {
   synced: '已同步',
@@ -20,11 +21,8 @@ export function SyncIndicator() {
   const showMenu = (el: HTMLElement) => {
     const navigate = useUI.getState().navigate
     const items: MenuEntry[] = conflicts.map((c) => ({
-      label: `冲突副本：${c.copyPath.split('/').pop()!.replace(/\.md$/i, '')}`,
-      run: () => {
-        sync.dismissConflict(c.copyId)
-        navigate({ view: 'note', id: c.copyId })
-      },
+      label: `冲突副本：${noteTitle(c.copyPath)}`,
+      run: () => navigate({ view: 'note', id: c.copyId }), // 打开副本即视为已查看
     }))
     if (items.length) items.push('separator')
     items.push({

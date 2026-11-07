@@ -275,7 +275,7 @@ func TestStaleWriteMergesOrReturnsConflictCopy(t *testing.T) {
 	st, body = c.doH("PUT", "/api/notes/"+id, map[string]any{"base_rev": 2, "content": "一 A\n\n二\n\n三 C\n"},
 		map[string]string{"X-Device-Id": "d2", "X-Device-Name": url.PathEscape("我的手机")})
 	if st != 409 || body["code"] != "conflict" || body["current_rev"].(float64) != 3 ||
-		!strings.HasPrefix(body["conflict_path"].(string), "a.conflict-我的手机-") || body["conflict_id"] == "" {
+		!strings.HasPrefix(body["conflict_path"].(string), "a.conflict-我的手机-") || body["conflict_id"] == nil || body["conflict_id"] == "" {
 		t.Fatalf("重叠的修改应 409 并返回冲突副本，得到 %d %v", st, body)
 	}
 }

@@ -2,6 +2,10 @@ package notes
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -161,5 +165,33 @@ func TestChangesSinceAndGoneAfterPrune(t *testing.T) {
 	}
 	if _, _, err := f.svc.Changes(f.ctx, 99, 0); !errors.Is(err, ErrGone) {
 		t.Fatalf("since 超过最新序号（数据库被重建）应返回 ErrGone，得到 %v", err)
+	}
+}
+
+func TestExternalChangesProduceChangeEvents(t *testing.T) {
+	f := newFixture(t)
+	types := func(since int64) []string {
+		cs, _, err := f.svc.Changes(f.ctx, since, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range cs {
+			out = append(out, fmt.Sprintf("%s %s r%d", c.Type, c.Path, c.Rev))
+		}
+		return out
+	}
+	f.writeDisk(t, "外部.md", "一")
+	if _, err := f.svc.Reconcile(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	f.writeDisk(t, "外部.md", "二")
+	f.svc.Reconcile(f.ctx)
+	os.Remove(filepath.Join(f.root, "外部.md"))
+	f.svc.Reconcile(f.ctx)
+	want := []string{"upsert 外部.md r1", "upsert 外部.md r2", "delete 外部.md r2"}
+	if got := types(0); !slices.Equal(got, want) {
+		t.Fatalf("外部新建、修改、删除都应产生变更事件（WS 推送和增量接口共用）：\n得到 %v\n期望 %v", got, want)
 	}
 }

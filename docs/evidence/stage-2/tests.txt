@@ -1,0 +1,54 @@
+# Go 单测（阶段 2 相关）：cd server && go test -count=1 -v -run 'Merge|Stale|Changes|Prune|WebSocket|CrossSite|ExternalChanges' ./internal/...
+--- PASS: TestCrossSiteWriteIsRejected (0.04s)
+--- PASS: TestStaleWriteMergesOrReturnsConflictCopy (0.10s)
+--- PASS: TestChangesSinceBeyondLatestIsGone (0.05s)
+--- PASS: TestWebSocketPushesChangesAndHeartbeats (0.16s)
+--- PASS: TestCrossSiteWebSocketIsRejected (0.06s)
+ok  	github.com/rt-game-440/lode/server/internal/api	0.832s
+ok  	github.com/rt-game-440/lode/server/internal/auth	0.428s [no tests to run]
+ok  	github.com/rt-game-440/lode/server/internal/db	0.428s [no tests to run]
+ok  	github.com/rt-game-440/lode/server/internal/mdparse	0.023s [no tests to run]
+--- PASS: TestMergeNonOverlappingChanges (0.00s)
+--- PASS: TestMergeOverlappingChangesConflict (0.00s)
+--- PASS: TestMergeIdenticalChangesOnBothSides (0.00s)
+--- PASS: TestMergeOneSideUnchanged (0.00s)
+--- PASS: TestMergeInsertionsAndDeletionsFarApart (0.00s)
+--- PASS: TestMergeKeepsCRLF (0.00s)
+--- PASS: TestMergeLargeMiddleFallsBackSafely (0.00s)
+ok  	github.com/rt-game-440/lode/server/internal/merge	0.370s
+--- PASS: TestUpdateWithStaleBaseRevReturnsConflict (0.09s)
+--- PASS: TestReconcilePicksUpExternalChanges (0.04s)
+--- PASS: TestStaleUpdateWithNonOverlappingChangesIsMerged (0.06s)
+--- PASS: TestStaleUpdateWithOverlappingChangesCreatesConflictCopy (0.05s)
+--- PASS: TestStaleUpdateWithMissingBaseVersionCreatesConflictCopy (0.04s)
+--- PASS: TestStalePatchIsMergedAgainstBaseVersion (0.04s)
+--- PASS: TestPruneHistoryKeepsRecentVersions (0.62s)
+--- PASS: TestChangesSinceAndGoneAfterPrune (0.04s)
+--- PASS: TestExternalChangesProduceChangeEvents (0.04s)
+ok  	github.com/rt-game-440/lode/server/internal/notes	1.430s
+ok  	github.com/rt-game-440/lode/server/internal/vault	0.023s [no tests to run]
+
+# Playwright：pnpm -C web e2e（不设 LODE_SCREENSHOTS）
+
+Running 15 tests using 1 worker
+
+  -   1 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 desktop light
+  -   2 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 mobile light
+  -   3 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 desktop dark
+  -   4 [chromium] › e2e\screenshots.spec.ts:63:5 › 截图 mobile dark
+  ok  5 [chromium] › e2e\smoke.spec.ts:28:1 › 首启设置密码后进入应用 (619ms)
+  ok  6 [chromium] › e2e\smoke.spec.ts:37:1 › 新建笔记、输入、自动保存、刷新、磁盘一致、搜索、删除与恢复 (2.8s)
+外部新建在 808ms 后出现在文件树
+  ok  7 [chromium] › e2e\smoke.spec.ts:75:1 › 外部修改约 2 秒内反映到文件树和搜索结果 (1.2s)
+  ok  8 [chromium] › e2e\smoke.spec.ts:93:1 › 重命名笔记后更新其他笔记中的链接，反链显示正确 (1.9s)
+  ok  9 [chromium] › e2e\smoke.spec.ts:128:1 › 重命名正在编辑的笔记时，其中的自链接同步更新且之后的保存不冲突 (1.0s)
+B 在 A 停止输入后 633ms 看到修改
+  ok 10 [chromium] › e2e\sync.spec.ts:87:1 › A 修改后，B 不刷新、2 秒内看到 (1.1s)
+  ok 11 [chromium] › e2e\sync.spec.ts:99:1 › B 离线编辑两篇显示“离线（2 项待同步）”，联网后同步到服务器，A 也看到 (1.3s)
+  ok 12 [chromium] › e2e\sync.spec.ts:124:1 › A、B 改同一行生成冲突副本，两端都有提示 (2.8s)
+  ok 13 [chromium] › e2e\sync.spec.ts:161:1 › A 改第 1 段、B 改第 3 段自动合并，不产生副本，两端最终一致 (2.6s)
+  ok 14 [chromium] › e2e\sync.spec.ts:183:1 › B 正在用输入法组字时推迟套用 A 的修改，组字结束后合并且不打断输入 (4.2s)
+  ok 15 [chromium] › e2e\sync.spec.ts:215:1 › PWA：manifest 齐全、service worker 激活，断网后刷新仍能看到笔记树并编辑缓存的笔记 (2.7s)
+
+  4 skipped
+  11 passed (24.3s)

@@ -227,6 +227,28 @@ describe('SyncEngine 增量同步', () => {
     expect(gone).toBe(1)
   })
 
+  it('服务器重建后序号变小：全量重拉后改用服务器的 seq，不会反复 410', async () => {
+    const api = fakeApi()
+    let serverSeq = 50
+    api.tree = async () => ({ folders: [], notes: [], seq: serverSeq })
+    api.changes = async (since: number) => {
+      if (since > serverSeq) throw new ApiError(410, 'gone', '序号超出')
+      return { changes: [], seq: serverSeq }
+    }
+    const e = new SyncEngine({ api, db: freshDB() })
+    await e.loadTree()
+    serverSeq = 3 // 数据目录被重建
+    let gone = 0
+    e.on('gone', async () => {
+      gone++
+      await e.loadTree()
+    })
+    await e.catchUp()
+    await e.catchUp()
+    expect(gone).toBe(1)
+    expect(e.seq).toBe(3)
+  })
+
   it('还没拿到笔记树的 seq 时不补齐，避免从 0 拉取全部历史', async () => {
     const api = fakeApi()
     let asked = 0

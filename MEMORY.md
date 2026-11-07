@@ -2,6 +2,26 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-07 16:58 阶段 2 服务端同步决策
+
+- **三方合并**：`internal/merge` 自己实现按行的 diff3，不引入依赖。前端的 `web/src/sync/textdiff.ts` 也自己实现了按行 LCS，只用来生成 CodeMirror 的 ChangeSet，不参与冲突判定。
+  - 两边的改动范围重叠，或者相邻但结果不同，算冲突。
+  - LCS 表上限 `maxCells = 2_000_000`（uint16，约 4MB）。去掉公共前后缀后仍超限，就把整段当作一处改动。这样冲突判定会偏保守，但不会丢内容。
+- **冲突副本命名**：`名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md`，与原笔记在同一目录。格式定义在三处，改一处要同步另外两处：
+  - 服务端 `notes/write.go` 的 `conflictPathLocked`；
+  - 前端 `sync/engine.ts` 的 `CONFLICT_RE`，它靠"副本由别的设备新建且 rev 为 1"来识别对方产生的冲突；
+  - `e2e/sync.spec.ts`。
+- **PATCH 的 base 版本已清理**：只返回 409，不生成副本。PATCH 只带片段，没法还原客户端的全文。PUT 则按重叠处理，会生成副本。
+- **历史与变更保留**：
+  - 每篇笔记保留 `KeepVersions = 50` 版和 `KeepFor = 30 天` 内的版本，超期的只留最新一版，三方合并要用它作 base。
+  - 清理掉的最大 seq 记在 meta 的 `changes_floor`。`since` 小于 floor 或大于最新 seq（数据目录被重建）时返回 410。
+  - `LatestSeq` 读 `sqlite_sequence`，不用 `MAX(seq)`，这样清理旧事件后序号也不会变小。
+  - 前端遇到 410 全量重拉时，以服务器树的 seq 为准，不和本地取较大值，否则重建后每次补齐都会 410。
+- **WebSocket**：`coder/websocket` 的 `Accept` 默认校验 Origin 与 Host 一致，用来阻止跨站页面借用会话 cookie。所以反向代理不能改写 Host（见 `docs/dev-https.md`）。
+  - 每 30 秒心跳 `{type:"ping", seq}`，客户端 75 秒没收到消息就重连。
+  - 订阅通道满了会丢事件，客户端靠心跳里的 seq 发现缺口后补齐。
+  - 外部修改（fsnotify、对账）和界面写入走同一条变更流，阶段 4 的 MCP 和阶段 5 的 Agent 写入也复用它。
+
 ## 2026-11-07 16:46 阶段 2 前端同步与 PWA
 
 - **同步引擎**（`web/src/sync/engine.ts`）：前端读写笔记的唯一入口。
