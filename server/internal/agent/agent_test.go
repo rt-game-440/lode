@@ -357,3 +357,140 @@ func TestAgentStop(t *testing.T) {
 		t.Errorf("已生成的部分应保存并标记停止：%+v", last)
 	}
 }
+
+// 上下文放不下时，较早的轮次由当前模型压缩成摘要；摘要缓存起来，下次只合并新增的轮次。
+func TestAgentSummarizesEarlierRoundsWithModel(t *testing.T) {
+	var mu sync.Mutex
+	var summaryInputs []string // 每次摘要请求里的用户消息
+	var mainLast string        // 最近一次正常请求里第一条用户消息
+	f := newFixture(t, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content any    `json:"content"`
+			} `json:"messages"`
+		}
+		json.Unmarshal(b, &body)
+		text := func(i int) string {
+			switch c := body.Messages[i].Content.(type) {
+			case string:
+				return c
+			case []any: // [{"type":"text","text":…}]
+				var b strings.Builder
+				for _, p := range c {
+					if s, ok := p.(map[string]any)["text"].(string); ok {
+						b.WriteString(s)
+					}
+				}
+				return b.String()
+			}
+			return ""
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		mu.Lock()
+		defer mu.Unlock()
+		if strings.Contains(text(0), "对话压缩") {
+			summaryInputs = append(summaryInputs, text(1))
+			io.WriteString(w, textFrame(fmt.Sprintf("摘要第%d版：用户问过水果。", len(summaryInputs)))+"\n\ndata: [DONE]\n\n")
+			return
+		}
+		mainLast = text(1)
+		io.WriteString(w, textFrame("好的")+"\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	key := "k"
+	no := false
+	p, _ := f.svc.Store.CreateProvider(ctx, ProviderInput{Name: "小窗口", Kind: llm.KindOpenAI, BaseURL: srv.URL, APIKey: &key})
+	m, err := f.svc.Store.CreateModel(ctx, p.ID, ModelInput{Model: "tiny", ContextWindow: 3000, MaxOutput: 500, Tools: &no})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, _ := f.svc.Store.CreateChat(ctx, m.ID)
+	long := func(s string) string { return s + strings.Repeat("水果", 400) }
+
+	f.send(t, chat.ID, long("第一问：苹果"))
+	f.send(t, chat.ID, long("第二问：香蕉"))
+	f.send(t, chat.ID, long("第三问：橙子"))
+	mu.Lock()
+	n, last := len(summaryInputs), mainLast
+	mu.Unlock()
+	if n == 0 {
+		t.Fatal("超出上下文时应调用模型生成摘要")
+	}
+	if !strings.Contains(summaryInputs[0], "第一问：苹果") {
+		t.Errorf("摘要请求应包含较早的轮次：%.80s", summaryInputs[0])
+	}
+	if !strings.Contains(last, "摘要第") {
+		t.Errorf("正常请求应带上模型生成的摘要：%.80s", last)
+	}
+
+	// 再问一轮：在已有摘要的基础上只合并新增的轮次
+	f.send(t, chat.ID, long("第四问：葡萄"))
+	mu.Lock()
+	defer mu.Unlock()
+	inc := summaryInputs[len(summaryInputs)-1]
+	if len(summaryInputs) <= n || !strings.Contains(inc, fmt.Sprintf("摘要第%d版", len(summaryInputs)-1)) || strings.Contains(inc, "第一问：苹果") {
+		t.Errorf("增量摘要应基于上次的摘要且不再包含已压缩的轮次：%.120s", inc)
+	}
+}
+
+// 所有客户端断开超过宽限时间后，取消生成，向供应商的请求随之中断；宽限内重连则继续。
+func TestAgentCancelsWhenAllClientsDisconnect(t *testing.T) {
+	f := newFixture(t, nil)
+	f.svc.DisconnectGrace = 150 * time.Millisecond
+	aborted := make(chan struct{}, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, `data: {"choices":[{"index":0,"delta":{"content":"写到一半"}}]}`+"\n\n")
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+			aborted <- struct{}{}
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	key := "k"
+	p, _ := f.svc.Store.CreateProvider(ctx, ProviderInput{Name: "慢", Kind: llm.KindOpenAI, BaseURL: srv.URL, APIKey: &key})
+	m, _ := f.svc.Store.CreateModel(ctx, p.ID, ModelInput{Model: "slow", ContextWindow: 8000, MaxOutput: 1000})
+	chat, _ := f.svc.Store.CreateChat(ctx, m.ID)
+
+	ch, unsub := f.svc.Subscribe(chat.ID)
+	<-ch
+	if _, err := f.svc.Send(ctx, chat.ID, SendInput{Text: "写点东西"}); err != nil {
+		t.Fatal(err)
+	}
+	for e := range ch {
+		if e.Type == "text" {
+			break
+		}
+	}
+	// 断开后在宽限时间内重连：继续生成
+	unsub()
+	ch2, unsub2 := f.svc.Subscribe(chat.ID)
+	<-ch2
+	time.Sleep(300 * time.Millisecond)
+	if !f.svc.Running(chat.ID) {
+		t.Fatal("宽限时间内重连，生成不应被取消")
+	}
+	// 全部断开并超过宽限时间：取消
+	unsub2()
+	select {
+	case <-aborted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("客户端全部断开后，向供应商的请求应被中断")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for f.svc.Running(chat.ID) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	msgs, _ := f.svc.Store.Messages(ctx, chat.ID)
+	last := msgs[len(msgs)-1]
+	if f.svc.Running(chat.ID) || !last.Meta.Stopped || last.Parts[0].Text != "写到一半" {
+		t.Errorf("断开后应停止并保存已生成的部分：running=%v %+v", f.svc.Running(chat.ID), last)
+	}
+}

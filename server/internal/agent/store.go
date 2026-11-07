@@ -103,6 +103,9 @@ type Chat struct {
 	ContextTokens int        `json:"context_tokens"`
 	CreatedAt     int64      `json:"created_at"`
 	UpdatedAt     int64      `json:"updated_at"`
+
+	Summary     string `json:"-"` // 较早轮次的模型摘要
+	SummaryUpto int    `json:"-"` // 摘要覆盖的历史消息条数
 }
 
 // Meta 是消息的附加信息，只用于界面显示。
@@ -533,11 +536,11 @@ func (s *Store) setSetting(ctx context.Context, k, v string) error {
 
 // ---- 对话 ----
 
-const chatCols = `id, title, model_id, effort, input_tokens, output_tokens, context_tokens, created_at, updated_at`
+const chatCols = `id, title, model_id, effort, input_tokens, output_tokens, context_tokens, created_at, updated_at, summary, summary_upto`
 
 func scanChat(sc interface{ Scan(...any) error }) (Chat, error) {
 	var c Chat
-	err := sc.Scan(&c.ID, &c.Title, &c.ModelID, &c.Effort, &c.InputTokens, &c.OutputTokens, &c.ContextTokens, &c.CreatedAt, &c.UpdatedAt)
+	err := sc.Scan(&c.ID, &c.Title, &c.ModelID, &c.Effort, &c.InputTokens, &c.OutputTokens, &c.ContextTokens, &c.CreatedAt, &c.UpdatedAt, &c.Summary, &c.SummaryUpto)
 	return c, err
 }
 
@@ -625,6 +628,12 @@ func (s *Store) DeleteChat(ctx context.Context, id string) error {
 func (s *Store) addUsage(ctx context.Context, chatID string, u llm.Usage) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE agent_chats SET input_tokens = input_tokens + ?, output_tokens = output_tokens + ?, context_tokens = ?, updated_at = ? WHERE id = ?`,
 		u.Input, u.Output, u.Input, now(), chatID)
+	return err
+}
+
+// SetSummary 保存对话的摘要缓存，upto 是摘要覆盖的历史消息条数。
+func (s *Store) SetSummary(ctx context.Context, chatID, summary string, upto int) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE agent_chats SET summary = ?, summary_upto = ? WHERE id = ?`, summary, upto, chatID)
 	return err
 }
 

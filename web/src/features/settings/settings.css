@@ -523,3 +523,8 @@
     transition: none;
   }
 }
+@media (pointer: coarse) {
+  .settings-select {
+    height: var(--hit-target);
+  }
+}

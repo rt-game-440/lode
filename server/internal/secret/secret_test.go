@@ -50,7 +50,12 @@ func TestNoKey(t *testing.T) {
 }
 
 func TestLast4(t *testing.T) {
-	for in, want := range map[string]string{"sk-abcdef1234": "1234", "abc": "abc", "": "", "密钥一二三四五": "二三四五"} {
+	for in, want := range map[string]string{
+		"sk-abcdef1234": "1234",
+		"密钥一二三四五六七八九十":  "七八九十",
+		// 太短的 key 末 4 位就是大半个 key，不显示
+		"abc": "", "": "", "sk-short1": "", "密钥一二三四五": "",
+	} {
 		if got := Last4(in); got != want {
 			t.Errorf("Last4(%q) = %q，期望 %q", in, got, want)
 		}

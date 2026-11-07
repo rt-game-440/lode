@@ -78,11 +78,14 @@ func (b *Box) Open(sealed, aad string) (string, error) {
 	return string(plain), nil
 }
 
-// Last4 返回 key 的末 4 个字符，界面上用来辨认是哪个 key。
+// last4MinLen 是显示末 4 位所需的最短长度：更短的 key 显示末 4 位会泄露大部分内容。
+const last4MinLen = 12
+
+// Last4 返回 key 的末 4 个字符，界面上用来辨认是哪个 key；key 短于 12 个字符时返回空串。
 func Last4(key string) string {
 	r := []rune(key)
-	if len(r) <= 4 {
-		return key
+	if len(r) < last4MinLen {
+		return ""
 	}
 	return string(r[len(r)-4:])
 }

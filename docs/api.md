@@ -276,7 +276,7 @@ type Settings = { default_model: string; auto_approve: boolean }
 
 ### 事件流
 
-`GET /api/agent/chats/{id}/stream` 先发 `retry: 2000`，再发一条 `state` 快照，之后每个事件是一行 `data: <json>`，空闲时发 `: ping` 注释。客户端处理不过来时服务器断开连接，`EventSource` 会自动重连；客户端在每次（重新）连接收到 `state` 后应重新 `GET` 一次对话，补上断线期间的消息。
+`GET /api/agent/chats/{id}/stream` 先发 `retry: 2000`，再发一条 `state` 快照（生成中时，对话的所有事件流都断开超过 30 秒会取消生成），之后每个事件是一行 `data: <json>`，空闲时发 `: ping` 注释。客户端处理不过来时服务器断开连接，`EventSource` 会自动重连；客户端在每次（重新）连接收到 `state` 后应重新 `GET` 一次对话，补上断线期间的消息。
 
 ```ts
 type AgentEvent =

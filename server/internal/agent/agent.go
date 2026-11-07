@@ -22,9 +22,11 @@ import (
 // 默认值。
 const (
 	DefaultMaxToolCalls = 20
-	maxAttachmentBytes  = 20 << 20
-	maxMentionRunes     = 60_000
-	rejectedResult      = "用户拒绝了这次操作，笔记没有修改。不要重试同样的操作；如有必要，询问用户想怎么做。"
+	// DefaultDisconnectGrace 是所有客户端断开后等待重连的时间，超过就取消生成。
+	DefaultDisconnectGrace = 30 * time.Second
+	maxAttachmentBytes     = 20 << 20
+	maxMentionRunes        = 60_000
+	rejectedResult         = "用户拒绝了这次操作，笔记没有修改。不要重试同样的操作；如有必要，询问用户想怎么做。"
 )
 
 // Actor 是助手写笔记时的设备身份，其他端据此显示“由助手修改”。
@@ -39,6 +41,9 @@ type Service struct {
 	HTTP         *http.Client     // 调用供应商用；为空时用 llm 的默认客户端
 	MaxToolCalls int              // 每轮最多工具调用次数，默认 20
 	Now          func() time.Time // 测试可替换
+	// DisconnectGrace 是对话的所有订阅者都断开后等待重连的时间，超过就取消生成，
+	// 向供应商的请求随之中断；默认 DefaultDisconnectGrace。
+	DisconnectGrace time.Duration
 
 	mu     sync.Mutex
 	runs   map[string]*run
@@ -50,6 +55,7 @@ type Service struct {
 type run struct {
 	cancel context.CancelFunc
 	draft  Draft
+	idle   *time.Timer // 没有订阅者时开始计时，到期取消生成
 }
 
 // Draft 是正在生成、尚未保存的助手消息。
@@ -109,6 +115,7 @@ func (s *Service) Subscribe(chatID string) (<-chan Event, func()) {
 	s.subs[chatID][ch] = struct{}{}
 	snap := Event{Type: "state"}
 	if r := s.runs[chatID]; r != nil {
+		r.stopIdle()
 		d := r.draft
 		d.Calls = append([]llm.ToolCall(nil), d.Calls...)
 		snap.Running, snap.Draft = true, &d
@@ -125,8 +132,38 @@ func (s *Service) Subscribe(chatID string) (<-chan Event, func()) {
 			}
 			if len(set) == 0 {
 				delete(s.subs, chatID)
+				s.watchIdle(chatID)
 			}
 		}
+	}
+}
+
+// watchIdle 在对话正在生成且没有订阅者时开始计时，宽限时间内没人重连就取消生成。调用时持有 s.mu。
+func (s *Service) watchIdle(chatID string) {
+	r := s.runs[chatID]
+	if r == nil || r.idle != nil || len(s.subs[chatID]) > 0 {
+		return
+	}
+	grace := s.DisconnectGrace
+	if grace <= 0 {
+		grace = DefaultDisconnectGrace
+	}
+	r.idle = time.AfterFunc(grace, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.runs[chatID] == r && r.idle != nil && len(s.subs[chatID]) == 0 {
+			s.log().Info("客户端已全部断开，取消生成", "chat", chatID)
+			r.cancel()
+		}
+		r.idle = nil
+	})
+}
+
+// stopIdle 停止断开计时。调用时持有 s.mu。
+func (r *run) stopIdle() {
+	if r.idle != nil {
+		r.idle.Stop()
+		r.idle = nil
 	}
 }
 
@@ -154,6 +191,7 @@ func (s *Service) publish(chatID string, e Event) {
 			close(ch)
 		}
 	}
+	s.watchIdle(chatID)
 }
 
 // Running 报告对话是否正在生成。
@@ -178,6 +216,7 @@ func (s *Service) start(chatID string) error {
 	}
 	ctx, cancel := context.WithCancel(notes.WithActor(context.Background(), Actor))
 	s.runs[chatID] = &run{cancel: cancel}
+	s.watchIdle(chatID) // 发送后一直没有客户端订阅时同样会取消
 	s.wg.Go(func() {
 		defer func() {
 			if v := recover(); v != nil {
@@ -185,6 +224,7 @@ func (s *Service) start(chatID string) error {
 				s.publish(chatID, Event{Type: "error", Text: "服务器内部错误", Kind: llm.ErrServer})
 			}
 			s.mu.Lock()
+			s.runs[chatID].stopIdle()
 			delete(s.runs, chatID)
 			s.mu.Unlock()
 			cancel()
@@ -428,7 +468,7 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 			fail(llm.ErrServer, "读取对话失败")
 			return
 		}
-		req, used := s.request(chat, model, history)
+		req, used := s.request(ctx, cfg, chat, model, history)
 		s.log().Debug("助手请求", "chat", chatID, "model", model.Model, "messages", len(req.Messages), "estimated_tokens", used)
 
 		res, err := llm.Stream(ctx, cfg, req, func(e llm.Event) {
@@ -587,7 +627,8 @@ func (s *Service) execute(ctx context.Context, c llm.ToolCall) llm.ToolResult {
 }
 
 // request 组装发给模型的请求：系统提示、工具定义，以及按上下文预算裁剪过的历史。
-func (s *Service) request(chat Chat, m Model, history []Message) (llm.Request, int) {
+// 历史放不下时，较早的轮次由当前模型压缩成摘要（见 summary.go）。
+func (s *Service) request(ctx context.Context, cfg llm.Config, chat Chat, m Model, history []Message) (llm.Request, int) {
 	system := systemPrompt(s.now())
 	var defs []llm.ToolDef
 	toolTokens := 0
@@ -605,7 +646,7 @@ func (s *Service) request(chat Chat, m Model, history []Message) (llm.Request, i
 		}
 		msgs = append(msgs, llm.Message{Role: h.Role, Parts: h.Parts})
 	}
-	msgs, used := Fit(system, toolTokens, msgs, Budget{Window: m.ContextWindow, MaxOutput: m.MaxOutput}.Limit())
+	msgs, used := FitWith(system, toolTokens, msgs, Budget{Window: m.ContextWindow, MaxOutput: m.MaxOutput}.Limit(), s.modelSummarizer(ctx, cfg, chat, m))
 	effort := llm.Effort("")
 	if m.Reasoning {
 		effort = m.Effort

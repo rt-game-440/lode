@@ -232,6 +232,7 @@ for (const width of [375, 768, 1440]) {
     const lp = await anon.newPage()
     await lp.goto('/')
     await expect(lp.getByRole('heading', { name: '登录 Lode' })).toBeVisible()
+    await lp.waitForTimeout(600) // 等入场淡入结束，否则半透明的元素不参与检查
     const login = await lp.evaluate(layoutProblems)
     all.push(...login.problems.map((x) => `登录：${x}`))
     expect(login.checked).toBeGreaterThan(0)
@@ -239,6 +240,7 @@ for (const width of [375, 768, 1440]) {
     await lp.route('**/api/auth/status', (r) => r.fulfill({ json: { initialized: false, authenticated: false } }))
     await lp.goto('/')
     await expect(lp.getByRole('heading', { name: '欢迎使用 Lode' })).toBeVisible()
+    await lp.waitForTimeout(600)
     const setup = await lp.evaluate(layoutProblems)
     all.push(...setup.problems.map((x) => `首启：${x}`))
     expect(setup.checked).toBeGreaterThan(0)

@@ -105,13 +105,25 @@ func lastRoundStart(ms []llm.Message) int {
 	return 0
 }
 
+// summaryHead 是摘要消息的开头。
+const summaryHead = "以下是较早对话的摘要（原文已省略）：\n"
+
 // 截断后的工具结果最多保留这么多 token。
 const truncatedResultTokens = 200
+
+// Summarizer 把较早的轮次压缩成一条消息，结果不超过 room 个 token；放不下时返回 false。
+type Summarizer func(earlier []llm.Message, room int) (llm.Message, bool)
 
 // Fit 让系统提示、工具定义（toolTokens）和历史一起不超过 limit：
 // 先截断较早轮次的工具结果，仍超出时把较早的轮次压缩成一条摘要，最后才截断最近一轮的工具结果。
 // 系统提示和最近一轮的提问始终保留。返回新的历史和估算的总 token 数；不修改传入的切片。
+// 摘要用本地规则生成；需要用模型生成时用 FitWith。
 func Fit(system string, toolTokens int, msgs []llm.Message, limit int) ([]llm.Message, int) {
+	return FitWith(system, toolTokens, msgs, limit, summarize)
+}
+
+// FitWith 同 Fit，摘要由 sum 生成。
+func FitWith(system string, toolTokens int, msgs []llm.Message, limit int, sum Summarizer) ([]llm.Message, int) {
 	fixed := EstimateTokens(system) + toolTokens
 	total := fixed + EstimateMessages(msgs)
 	if total <= limit {
@@ -135,7 +147,7 @@ func Fit(system string, toolTokens int, msgs []llm.Message, limit int) ([]llm.Me
 	recentTokens := EstimateMessages(recent)
 	room := limit - fixed - recentTokens
 	out := []llm.Message{}
-	if s, ok := summarize(earlier, room); ok {
+	if s, ok := sum(earlier, room); ok {
 		out = append(out, s)
 	}
 	out = append(out, recent...)
@@ -195,7 +207,7 @@ func cut(s string, maxTokens int) string {
 // summarize 把较早的轮次压缩成一条用户消息：每轮记下提问、调用过的工具和回答的开头。
 // 从最近的轮次往前取，直到用完 room；一轮都放不下时返回 false。
 func summarize(earlier []llm.Message, room int) (llm.Message, bool) {
-	const head = "以下是较早对话的摘要（原文已省略）：\n"
+	const head = summaryHead
 	const perLine = 80 // 每条提问或回答最多保留的 token 数
 	budget := room - messageOverhead - EstimateTokens(head) - 20
 	if budget <= 0 {

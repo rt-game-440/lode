@@ -770,6 +770,13 @@ button.mention-chip:not(:disabled):hover {
   right: var(--space-2);
 }
 
+/* 触控设备上下拉框保持 44px 高的可点区域 */
+@media (pointer: coarse) {
+  .composer-select {
+    height: var(--hit-target);
+  }
+}
+
 /* 平板抽屉里显示助手时加宽 */
 .drawer:has(.right-body.is-agent) {
   width: min(var(--rightbar-width-agent), 92vw);
