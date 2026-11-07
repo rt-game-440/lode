@@ -45,6 +45,7 @@ describe('tree', () => {
     expect(root.children.map((c) => c.name)).toEqual(['空', 'b', 'a'])
     const rows = visibleRows(root, new Set(['b']))
     expect(rows.map((r) => `${r.depth}:${r.node.name}`)).toEqual(['0:空', '0:b', '1:c', '1:2', '1:10', '0:a'])
+    expect(rows.map((r) => `${r.posInSet}/${r.setSize}`)).toEqual(['1/3', '2/3', '1/3', '2/3', '3/3', '3/3'])
   })
 })
 

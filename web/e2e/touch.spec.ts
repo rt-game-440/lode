@@ -72,11 +72,11 @@ async function openNote() {
 
 test('左缘右滑：详情页跟手移动，快速滑过一半松手后返回列表', async () => {
   await openNote()
-  await swipe({ x: 4, y: 420 }, { x: 154, y: 424 }, 10, 16, async () => {
-    // 松手前：详情层跟着手指走了约 150px（锁定方向前的 10px 防抖之后 1:1 跟随）
+  await swipe({ x: 4, y: 420 }, { x: 224, y: 424 }, 10, 16, async () => {
+    // 松手前：详情层从锁定方向的那一刻起 1:1 跟随手指（第一步 22px 用于方向锁定，之后又走了 198px），越过了屏幕一半
     const x = await translateX('.mobile-layer.is-detail')
-    expect(x).toBeGreaterThan(120)
-    expect(x).toBeLessThanOrEqual(152)
+    expect(x).toBeGreaterThan(190)
+    expect(x).toBeLessThanOrEqual(200)
   })
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole('tree', { name: '笔记' })).toBeVisible()
@@ -96,6 +96,11 @@ test('右栏抽屉：跟手拖拽，向右甩出关闭；拖一小段松手弹�
   const drawer = page.getByRole('dialog', { name: '笔记信息' })
   await expect(drawer).toBeVisible()
   await page.waitForTimeout(500)
+  // 焦点移入抽屉，Tab 在抽屉内循环，不会跑到遮罩后面的页面
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('Tab')
+    expect(await drawer.evaluate((el) => el.contains(document.activeElement))).toBe(true)
+  }
   const box = (await drawer.boundingBox())!
 
   // 小幅慢拖：弹回

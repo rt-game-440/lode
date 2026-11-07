@@ -6,11 +6,8 @@
 /** 记录最近一小段时间的位置，松手时算出速度（px/s）。 */
 export class VelocityTracker {
   private samples: { t: number; x: number }[] = []
-  constructor(private windowMs = 100) {}
-
-  reset() {
-    this.samples = []
-  }
+  /** 只用最近这么长时间内的采样算速度 */
+  private readonly windowMs = 100
 
   add(x: number, t: number) {
     this.samples.push({ t, x })

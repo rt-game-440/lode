@@ -19,16 +19,11 @@ export function viewportMetrics(layoutHeight: number, vvHeight: number, vvOffset
 }
 
 const listeners = new Set<(m: ViewportMetrics) => void>()
-let current: ViewportMetrics | null = null
 
 /** 订阅可视区域变化（键盘弹出、收起）。 */
 export function onViewportChange(fn: (m: ViewportMetrics) => void): () => void {
   listeners.add(fn)
   return () => listeners.delete(fn)
-}
-
-export function keyboardOpen(): boolean {
-  return (current?.keyboard ?? 0) > 0
 }
 
 export function installViewportTracking() {
@@ -39,7 +34,6 @@ export function installViewportTracking() {
   const update = () => {
     frame = 0
     const m = viewportMetrics(window.innerHeight, vv.height, vv.offsetTop)
-    current = m
     root.setProperty('--vv-height', `${m.height}px`)
     root.setProperty('--vv-top', `${m.top}px`)
     root.setProperty('--keyboard-inset', `${m.keyboard}px`)

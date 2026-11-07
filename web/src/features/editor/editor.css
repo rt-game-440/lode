@@ -135,8 +135,8 @@
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 2.75rem;
-  height: 2.5rem;
+  width: var(--hit-target);
+  height: var(--hit-target);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -155,4 +155,12 @@
   display: inline-flex;
   align-items: center;
   min-width: 0;
+}
+
+/* 正文里的任务复选框属于行内控件（WCAG 2.5.8 的行内例外），触控设备上适当放大，但不扩到 44px，避免盖住相邻行 */
+@media (pointer: coarse) {
+  .cm-editor .cm-content .cm-task-checkbox {
+    width: 1.3em;
+    height: 1.3em;
+  }
 }

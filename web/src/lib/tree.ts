@@ -57,15 +57,18 @@ export function buildTree(folders: string[], notes: Note[]): FolderNode {
 export interface VisibleRow {
   node: TreeNode
   depth: number
+  /** 在同级中的位置（从 1 开始）和同级总数：虚拟滚动只渲染一部分行时，读屏靠它们知道真实位置 */
+  posInSet: number
+  setSize: number
 }
 
 export function visibleRows(root: FolderNode, expanded: Set<string>): VisibleRow[] {
   const out: VisibleRow[] = []
   const walk = (node: FolderNode, depth: number) => {
-    for (const c of node.children) {
-      out.push({ node: c, depth })
+    node.children.forEach((c, i) => {
+      out.push({ node: c, depth, posInSet: i + 1, setSize: node.children.length })
       if (c.kind === 'folder' && expanded.has(c.path)) walk(c, depth + 1)
-    }
+    })
   }
   walk(root, 0)
   return out

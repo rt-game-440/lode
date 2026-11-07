@@ -30,6 +30,8 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
   const [shown, setShown] = useState<Route | null>(pane === 'detail' ? route : null)
   /** 详情页稳定地完全盖住列表（此时列表不可见、不可交互） */
   const [covered, setCovered] = useState(pane === 'detail')
+  /** 这次返回由手势甩出触发：带动量，用有轻微回弹的 springSheet；点返回按钮则用 springPanel */
+  const flung = useRef(false)
 
   if (pane === 'detail' && route.view !== 'home' && shown !== route) setShown(route)
 
@@ -61,7 +63,9 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
       done()
       return
     }
-    const c = animate(dx, w, { ...springSheet, onComplete: done })
+    const spring = flung.current ? springSheet : springPanel
+    flung.current = false
+    const c = animate(dx, w, { ...spring, onComplete: done })
     return () => c.stop()
   }, [pane, reduced, dx])
 
@@ -75,13 +79,15 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
     const s = g.current
     if (!s || s.id !== e.pointerId) return
-    const d = e.clientX - s.x0
     if (!s.axis) {
-      s.axis = lockAxis(d, e.clientY - s.y0)
+      s.axis = lockAxis(e.clientX - s.x0, e.clientY - s.y0)
       if (s.axis !== 'x') return
+      // 锁定方向前的防抖距离不计入位移，详情页从当前位置开始跟手，不跳一下
+      s.x0 = e.clientX
       setCovered(false)
     }
     if (s.axis !== 'x') return
+    const d = e.clientX - s.x0
     dx.set(d >= 0 ? d : -rubberband(-d, widthRef.current))
     s.v.add(d, e.timeStamp)
   }
@@ -90,8 +96,11 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
     g.current = null
     if (!s || s.id !== e.pointerId) return
     if (s.axis === 'x') {
-      if (shouldComplete(dx.get(), s.v.velocity(), widthRef.current)) goBack()
-      else animate(dx, 0, { ...springSheet, onComplete: () => setCovered(true) })
+      // pointercancel（系统接管了手势）不按速度判断，直接弹回
+      if (e.type === 'pointerup' && shouldComplete(dx.get(), s.v.velocity(), widthRef.current)) {
+        flung.current = true
+        goBack()
+      } else animate(dx, 0, { ...springSheet, onComplete: () => setCovered(true) })
       return
     }
     if (s.axis === null && e.type === 'pointerup') forwardTap(e.currentTarget, e.clientX, e.clientY)

@@ -259,6 +259,7 @@ const LIST_ANIMATE_MAX = 300
 function useVirtualRows(listRef: RefObject<HTMLDivElement | null>, count: number, enabled: boolean) {
   const [win, setWin] = useState<VirtualWindow | null>(null)
   const measure = useRef<() => void>(() => {})
+  const rowHeight = useRef(0)
 
   useLayoutEffect(() => {
     const tree = listRef.current
@@ -268,10 +269,16 @@ function useVirtualRows(listRef: RefObject<HTMLDivElement | null>, count: number
       measure.current = () => {}
       return
     }
+    rowHeight.current = rowHeightOf(tree)
     const update = () => {
-      const rowHeight = rowHeightOf(tree)
-      const treeTop = tree.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
-      const next = virtualWindow({ count, rowHeight, scrollTop: scroller.scrollTop - treeTop, viewport: scroller.clientHeight, overscan: OVERSCAN })
+      const top = treeTop(tree, scroller)
+      const next = virtualWindow({
+        count,
+        rowHeight: rowHeight.current,
+        scrollTop: scroller.scrollTop - top,
+        viewport: scroller.clientHeight,
+        overscan: OVERSCAN,
+      })
       setWin((prev) => (prev && prev.start === next.start && prev.end === next.end && prev.padBottom === next.padBottom ? prev : next))
     }
     measure.current = update
@@ -281,7 +288,11 @@ function useVirtualRows(listRef: RefObject<HTMLDivElement | null>, count: number
     }
     update()
     scroller.addEventListener('scroll', onScroll, { passive: true })
-    const ro = new ResizeObserver(onScroll)
+    // 尺寸变化（含 pointer: coarse 下行高改变、字号缩放）时重新读取行高
+    const ro = new ResizeObserver(() => {
+      rowHeight.current = rowHeightOf(tree)
+      onScroll()
+    })
     ro.observe(scroller)
     return () => {
       cancelAnimationFrame(frame)
@@ -294,15 +305,19 @@ function useVirtualRows(listRef: RefObject<HTMLDivElement | null>, count: number
     const tree = listRef.current
     const scroller = tree?.parentElement
     if (!enabled || index < 0 || !tree || !scroller) return
-    const rowHeight = rowHeightOf(tree)
-    const treeTop = tree.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
-    const to = scrollToShow({ index, rowHeight, scrollTop: scroller.scrollTop - treeTop, viewport: scroller.clientHeight })
+    const top = treeTop(tree, scroller)
+    const to = scrollToShow({ index, rowHeight: rowHeight.current, scrollTop: scroller.scrollTop - top, viewport: scroller.clientHeight })
     if (to === null) return
-    scroller.scrollTop = to + treeTop
+    scroller.scrollTop = to + top
     flushSync(() => measure.current())
   }
 
   return { window: win, ensureVisible }
+}
+
+/** 树顶部在滚动内容中的偏移（树上方还有其他内容时不为 0） */
+function treeTop(tree: HTMLElement, scroller: HTMLElement): number {
+  return tree.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
 }
 
 function rowHeightOf(el: HTMLElement): number {
@@ -367,6 +382,8 @@ const Row = memo(function Row({
     <div
       role="treeitem"
       aria-level={depth + 1}
+      aria-posinset={row.posInSet}
+      aria-setsize={row.setSize}
       aria-expanded={isFolder ? expanded : undefined}
       aria-selected={active}
       aria-current={active ? 'page' : undefined}

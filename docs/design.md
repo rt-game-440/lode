@@ -31,7 +31,11 @@
 ## 间距与布局
 
 - 4px 栅格：`--space-0-5` 至 `--space-16`。
-- 触控最小可点区域为 `--hit-target`（44px）。在 `pointer: coarse` 设备上，列表行高 `--row-height` 自动升到 44px。
+- 触控最小可点区域为 `--hit-target`（44px）。在 `pointer: coarse` 设备上：
+  - 列表行高 `--row-height`、输入框、手机工具栏按钮直接升到 44px；
+  - 视觉上较小的按钮（`.btn`、`.icon-btn`、`.segment`，以及加了 `.hit-expand` 的元素）用透明的 `::after` 把可点区域扩到 44×44，外观和布局不变；
+  - 正文里的任务复选框是行内控件（WCAG 2.5.8 的行内例外），只适当放大，不扩到 44px，以免盖住相邻行。
+  - `e2e/visual.spec.ts` 的“手机上可点区域不小于 44×44”检查首页、编辑中的笔记、设置、回收站。
 - 布局尺寸：顶栏 `--bar-height`、侧栏默认宽 `--sidebar-width`（可在 200–420 之间拖拽调整并记住）、右栏 `--rightbar-width`、手机编辑工具栏 `--toolbar-height`、编辑区最大宽度 `--editor-max-width`。
 - 层级 z-index：顶栏 `--z-bar`、弹出层 `--z-popover`、模态 `--z-modal`、toast `--z-toast`。
 - 安全区：顶栏、手机工具栏、抽屉、左缘手势区都加上 `env(safe-area-inset-*)`。
@@ -91,10 +95,13 @@ CSS 过渡只用于 hover、颜色变化和按压反馈，时长取 `--duration-
 ### 规则
 
 - **只对 transform 和 opacity 做动画。** 桌面侧栏展开收起时，各栏绝对定位，动画期间只改 transform；面板稳定后主区域再一次性让出布局（`panelMotion.ts`）。静止时 transform 归零，避免 CodeMirror 的 fixed 定位提示框错位。
+  - 唯一的例外是拖拽调整侧栏宽度：调宽本身就是改变布局，拖动时宽度逐帧跟手，越界松手的回弹和键盘步进用 `springSnappy` 直接改 width（`SidebarResizer.tsx`）。
 - **可中断。** 动画都从当前值出发，手势或动画进行中反向操作会平滑转向。拖拽松手时把手势速度交给弹簧（motion value 自带速度）。
 - **跟手。** 拖拽时元素 1:1 跟随手指，并保留按下时的偏移。越界时用 `rubberband` 阻力，不硬停。
 - **按速度投射落点。** 松手时用 `project(v)` 估算惯性落点，再用 `shouldComplete` 判断完成还是弹回（`lib/gesture.ts`）。
-- **方向先锁定。** 移动超过 10px 后再判断横向还是纵向（`lockAxis`），不抢滚动。
+- **方向先锁定。** 移动超过 10px 后再判断横向还是纵向（`lockAxis`），不抢滚动。锁定后从当前位置开始跟随，防抖的 10px 不计入位移，避免一开始跳一下。
+- **系统取消不算松手。** `pointercancel`（系统接管了手势）时直接弹回，不按速度投射。
+- **弹簧的选择看有没有动量。** 拖拽松手、快甩关闭用 `springSheet`；点按钮、按 Esc、点遮罩触发的同一个动画用 `springPanel`。
 - **进出同路径。** 从哪里来就回到哪里去：抽屉从右边进、向右出；详情页从右边推入、向右滑出。
 - **列表增删。** 用 `components/AnimatedList.tsx`：新增项淡入，删除项淡出并让出位置，其余项用弹簧平移。文件树超过 300 行时关闭这个动画，超过 2000 行时改用虚拟滚动。
 

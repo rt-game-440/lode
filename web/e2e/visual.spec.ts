@@ -126,6 +126,7 @@ for (const reduce of [false, true]) {
     if (reduce) {
       // 只有起点和终点两个取值，没有中间帧；切换器始终不缩放、不位移
       expect(sidebar.length).toBeLessThanOrEqual(2)
+      expect(switcher.length, '切换器出现过（采样不为空）').toBeGreaterThan(0)
       expect(switcher.filter((t) => t !== 'none' && t !== 'matrix(1, 0, 0, 1, 0, 0)')).toEqual([])
     } else {
       // 对照组：同样的采样方法能看到中间帧，说明上面的断言不是空转
@@ -207,6 +208,14 @@ for (const width of [375, 768, 1440]) {
       ['笔记', `/note/${noteId}`, async () => void (await expect(p.locator('.cm-content')).toContainText('检查对比度'))],
       ['设置', '/settings', async () => void (await expect(p.getByRole('heading', { name: 'API token' })).toBeVisible())],
       ['回收站', '/trash', async () => void (await expect(p.getByRole('heading', { name: '回收站' })).toBeVisible())],
+      [
+        '标签',
+        '/',
+        async () => {
+          await p.getByRole('tab', { name: '标签' }).click()
+          await expect(p.getByRole('tab', { name: '标签' })).toHaveAttribute('aria-selected', 'true')
+        },
+      ],
     ]
     const all: string[] = []
     for (const [name, url, ready] of pages) {
@@ -226,12 +235,71 @@ for (const width of [375, 768, 1440]) {
     const login = await lp.evaluate(layoutProblems)
     all.push(...login.problems.map((x) => `登录：${x}`))
     expect(login.checked).toBeGreaterThan(0)
+    // 首启页（模拟尚未设置密码）
+    await lp.route('**/api/auth/status', (r) => r.fulfill({ json: { initialized: false, authenticated: false } }))
+    await lp.goto('/')
+    await expect(lp.getByRole('heading', { name: '欢迎使用 Lode' })).toBeVisible()
+    const setup = await lp.evaluate(layoutProblems)
+    all.push(...setup.problems.map((x) => `首启：${x}`))
+    expect(setup.checked).toBeGreaterThan(0)
     await anon.close()
 
     expect(all).toEqual([])
     await c.close()
   })
 }
+
+/** 触控设备上小于 44×44 的可点区域。用 ::after 扩大点击区域的按钮按伪元素的尺寸计算。 */
+function smallTargets() {
+  const MIN = 43.5
+  const sel = 'button, a[href], input:not([type=hidden]), select, [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"]'
+  const out: string[] = []
+  for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+    if (el.closest('[inert], [hidden]') || !el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue
+    // 正文里的任务复选框是行内控件（WCAG 2.5.8 行内例外），扩到 44px 会盖住相邻行
+    if (el.closest('.cm-content')) continue
+    const r = el.getBoundingClientRect()
+    if (r.width < 1 || r.height < 1) continue
+    let w = r.width
+    let h = r.height
+    const after = getComputedStyle(el, '::after')
+    if (after.content !== 'none' && after.position === 'absolute') {
+      w = Math.max(w, parseFloat(after.width) || 0)
+      h = Math.max(h, parseFloat(after.height) || 0)
+    }
+    if (w < MIN || h < MIN) {
+      const name = el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 16) ?? ''
+      out.push(`${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}「${name}」${Math.round(w)}×${Math.round(h)}`)
+    }
+  }
+  return out
+}
+
+test('手机上可点区域不小于 44×44', async ({ browser }) => {
+  const c = await signedIn(browser, { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true })
+  const p = await c.newPage()
+  expect(await p.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true)
+  const all: string[] = []
+  const check = async (name: string) => all.push(...(await p.evaluate(smallTargets)).map((x) => `${name}：${x}`))
+
+  await p.goto('/')
+  await expect(p.getByRole('tree', { name: '笔记' })).toBeVisible()
+  await check('首页')
+  await p.goto(`/note/${noteId}`)
+  await p.locator('.cm-line').first().tap()
+  await expect(p.getByRole('toolbar', { name: '插入 Markdown' })).toBeVisible()
+  await p.waitForTimeout(500)
+  await check('笔记（编辑中）')
+  await p.goto('/settings')
+  await expect(p.getByRole('heading', { name: 'API token' })).toBeVisible()
+  await check('设置')
+  await p.goto('/trash')
+  await expect(p.getByRole('heading', { name: '回收站' })).toBeVisible()
+  await check('回收站')
+
+  expect(all).toEqual([])
+  await c.close()
+})
 
 /* ---------------- 4. 文件树虚拟滚动（最后一个用例） ---------------- */
 

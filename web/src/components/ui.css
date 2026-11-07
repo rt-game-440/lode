@@ -94,7 +94,7 @@
   color: var(--color-label);
 }
 .icon-btn:active:not(:disabled) {
-  transform: scale(0.92);
+  transform: scale(var(--press-scale));
   background: var(--color-fill-strong);
 }
 .icon-btn.is-active {
@@ -107,6 +107,27 @@
   .icon-btn-md {
     width: var(--hit-target);
     height: var(--hit-target);
+  }
+}
+
+/*
+ * 触控设备上，视觉上较小的按钮用透明伪元素把可点区域扩到 44×44（--hit-target），
+ * 按钮外观和布局不变。本身已经够大的方向上 inset 为 0，不会缩小可点区域。
+ */
+@media (pointer: coarse) {
+  .btn,
+  .icon-btn,
+  .segment,
+  .hit-expand {
+    position: relative;
+  }
+  .btn::after,
+  .icon-btn::after,
+  .segment::after,
+  .hit-expand::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((100% - var(--hit-target)) / 2));
   }
 }
 
@@ -132,6 +153,11 @@
   transition:
     box-shadow var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out);
+}
+@media (pointer: coarse) {
+  .field-box {
+    height: var(--hit-target);
+  }
 }
 .field-box:focus-within {
   background: var(--color-bg);

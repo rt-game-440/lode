@@ -113,7 +113,7 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
       <footer className="sidebar-foot">
         <SyncIndicator />
         <button
-          className={`foot-link${route.view === 'trash' ? ' is-active' : ''}`}
+          className={`foot-link hit-expand${route.view === 'trash' ? ' is-active' : ''}`}
           onClick={() => navigate({ view: 'trash' })}
           aria-current={route.view === 'trash' ? 'page' : undefined}
         >
