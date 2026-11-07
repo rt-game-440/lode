@@ -1,0 +1,366 @@
+import { AnimatePresence, motion } from 'motion/react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { create } from 'zustand'
+import { useUI } from '../stores/ui'
+import { fadeTransition, springDefault, springSnappy } from '../styles/tokens/motion'
+import { Button, TextField } from './ui'
+
+/* ---------- 对话框：prompt / confirm ---------- */
+
+interface PromptRequest {
+  kind: 'prompt'
+  title: string
+  label?: string
+  initial?: string
+  placeholder?: string
+  confirmLabel?: string
+  /** 选中初始值的前 n 个字符（例如不选中扩展名） */
+  selectLength?: number
+  validate?: (value: string) => string | null
+  resolve: (v: string | null) => void
+}
+
+interface ConfirmRequest {
+  kind: 'confirm'
+  title: string
+  message?: ReactNode
+  confirmLabel?: string
+  danger?: boolean
+  resolve: (ok: boolean) => void
+}
+
+type DialogRequest = PromptRequest | ConfirmRequest
+
+const useDialogStore = create<{ current: DialogRequest | null }>(() => ({ current: null }))
+
+/** 打开新对话框前，把仍在显示的对话框按取消处理。 */
+function show(req: DialogRequest) {
+  const cur = useDialogStore.getState().current
+  if (cur) {
+    if (cur.kind === 'prompt') cur.resolve(null)
+    else cur.resolve(false)
+  }
+  useDialogStore.setState({ current: req })
+}
+
+export function promptDialog(opts: Omit<PromptRequest, 'kind' | 'resolve'>): Promise<string | null> {
+  return new Promise((resolve) => show({ ...opts, kind: 'prompt', resolve }))
+}
+
+export function confirmDialog(opts: Omit<ConfirmRequest, 'kind' | 'resolve'>): Promise<boolean> {
+  return new Promise((resolve) => show({ ...opts, kind: 'confirm', resolve }))
+}
+
+function closeDialog() {
+  useDialogStore.setState({ current: null })
+}
+
+function PromptBody({ req }: { req: PromptRequest }) {
+  const [value, setValue] = useState(req.initial ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+
+  useLayoutEffect(() => {
+    const el = input.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(0, req.selectLength ?? el.value.length)
+  }, [req])
+
+  const submit = () => {
+    const err = req.validate?.(value) ?? null
+    if (err) {
+      setError(err)
+      return
+    }
+    req.resolve(value)
+    closeDialog()
+  }
+
+  return (
+    <form
+      className="dialog"
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+    >
+      <h2 className="dialog-title" id="dialog-title">
+        {req.title}
+      </h2>
+      <TextField
+        ref={input}
+        label={req.label}
+        placeholder={req.placeholder}
+        value={value}
+        error={error}
+        onChange={(e) => {
+          setValue(e.target.value)
+          setError(null)
+        }}
+      />
+      <div className="dialog-actions">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            req.resolve(null)
+            closeDialog()
+          }}
+        >
+          取消
+        </Button>
+        <Button variant="primary" type="submit">
+          {req.confirmLabel ?? '确定'}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function ConfirmBody({ req }: { req: ConfirmRequest }) {
+  const ok = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => ok.current?.focus(), [])
+  return (
+    <div className="dialog">
+      <h2 className="dialog-title" id="dialog-title">
+        {req.title}
+      </h2>
+      {req.message && <div className="dialog-message">{req.message}</div>}
+      <div className="dialog-actions">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            req.resolve(false)
+            closeDialog()
+          }}
+        >
+          取消
+        </Button>
+        <Button
+          ref={ok}
+          variant={req.danger ? 'danger' : 'primary'}
+          onClick={() => {
+            req.resolve(true)
+            closeDialog()
+          }}
+        >
+          {req.confirmLabel ?? '确定'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function cancel(req: DialogRequest) {
+  if (req.kind === 'prompt') req.resolve(null)
+  else req.resolve(false)
+  closeDialog()
+}
+
+export function DialogHost() {
+  const req = useDialogStore((s) => s.current)
+  useEffect(() => {
+    if (!req) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        cancel(req)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [req])
+
+  return (
+    <AnimatePresence>
+      {req && (
+        <motion.div
+          className="scrim"
+          key="dialog"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={fadeTransition}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) cancel(req)
+          }}
+        >
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dialog-title"
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: 4 }}
+            transition={springDefault}
+            style={{ width: 'min(26rem, 100%)' }}
+          >
+            {req.kind === 'prompt' ? <PromptBody req={req} /> : <ConfirmBody req={req} />}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+/* ---------- 右键 / 更多菜单 ---------- */
+
+export interface MenuItem {
+  label: string
+  icon?: ReactNode
+  danger?: boolean
+  run: () => void
+}
+export type MenuEntry = MenuItem | 'separator'
+
+interface MenuState {
+  open: { x: number; y: number; items: MenuEntry[] } | null
+}
+
+const useMenuStore = create<MenuState>(() => ({ open: null }))
+
+/** 在 (x, y) 打开菜单；传入触发元素时从元素下方弹出。 */
+export function openMenu(at: { x: number; y: number } | HTMLElement, items: MenuEntry[]) {
+  let x: number
+  let y: number
+  if (at instanceof HTMLElement) {
+    const r = at.getBoundingClientRect()
+    x = r.left
+    y = r.bottom + 4
+  } else {
+    x = at.x
+    y = at.y
+  }
+  useMenuStore.setState({ open: { x, y, items } })
+}
+
+export function closeMenu() {
+  useMenuStore.setState({ open: null })
+}
+
+export function MenuHost() {
+  const open = useMenuStore((s) => s.open)
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ left: number; top: number; origin: string } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open || !ref.current) {
+      setPos(null)
+      return
+    }
+    const r = ref.current.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const left = Math.max(8, Math.min(open.x, vw - r.width - 8))
+    const flipUp = open.y + r.height > vh - 8
+    const top = flipUp ? Math.max(8, open.y - r.height - 8) : open.y
+    setPos({ left, top, origin: `${open.x - left}px ${flipUp ? '100%' : '0'}` })
+    ref.current.querySelector<HTMLButtonElement>('.menu-item')?.focus()
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: Event) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) closeMenu()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        closeMenu()
+        return
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const items = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('.menu-item') ?? [])
+        const i = items.indexOf(document.activeElement as HTMLButtonElement)
+        const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length
+        items[next]?.focus()
+      }
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('blur', closeMenu)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('blur', closeMenu)
+    }
+  }, [open])
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          ref={ref}
+          role="menu"
+          className="menu"
+          key={`${open.x},${open.y}`}
+          style={{ left: pos?.left ?? open.x, top: pos?.top ?? open.y, transformOrigin: pos?.origin ?? '0 0', visibility: pos ? 'visible' : 'hidden' }}
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.12 } }}
+          transition={springSnappy}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {open.items.map((it, i) =>
+            it === 'separator' ? (
+              <div key={`sep-${i}`} className="menu-sep" role="separator" />
+            ) : (
+              <button
+                key={it.label}
+                role="menuitem"
+                className={`menu-item${it.danger ? ' is-danger' : ''}`}
+                onClick={() => {
+                  closeMenu()
+                  it.run()
+                }}
+              >
+                {it.icon}
+                <span>{it.label}</span>
+              </button>
+            ),
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+/* ---------- 提示条 ---------- */
+
+export function ToastHost() {
+  const toasts = useUI((s) => s.toasts)
+  const dismiss = useUI((s) => s.dismissToast)
+  return (
+    <div className="toasts" role="status" aria-live="polite">
+      <AnimatePresence initial={false}>
+        {toasts.map((t) => (
+          <motion.div
+            key={t.id}
+            layout
+            className={`toast${t.tone === 'error' ? ' is-error' : ''}`}
+            initial={{ opacity: 0, y: 16, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={springDefault}
+          >
+            <span className="toast-msg">{t.message}</span>
+            {t.action && (
+              <button
+                className="toast-action"
+                onClick={() => {
+                  t.action?.run()
+                  dismiss(t.id)
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  )
+}

@@ -1,0 +1,17 @@
+import { MotionConfig } from 'motion/react'
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { App } from './App'
+import { applyTheme, useUI } from './stores/ui'
+import './styles/global.css'
+
+applyTheme(useUI.getState().theme)
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    {/* 系统开启"减弱动态效果"时，位移和缩放动画直接跳到终点，只保留透明度过渡 */}
+    <MotionConfig reducedMotion="user">
+      <App />
+    </MotionConfig>
+  </StrictMode>,
+)

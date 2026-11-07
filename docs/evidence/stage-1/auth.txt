@@ -1,0 +1,35 @@
+## 版本
+lode 8254a58 (8254a58)
+## 首启状态
+{"authenticated":false,"initialized":false}
+
+## 未登录访问 /api/tree
+HTTP 401
+## 设置密码
+ HTTP 204
+## 再次设置被拒
+{"code":"already_initialized","message":"密码已经设置过"}
+ HTTP 409
+## 设置后的会话可访问 /api/tree
+HTTP 200
+## 登出后再登录
+登出 HTTP 204
+ 登录 HTTP 204
+## 连续输错密码
+第 1 次：{"code":"wrong_password","message":"密码错误"}
+ HTTP 401
+第 2 次：{"code":"wrong_password","message":"密码错误"}
+ HTTP 401
+第 3 次：{"code":"wrong_password","message":"密码错误"}
+ HTTP 401
+第 4 次：{"code":"wrong_password","message":"密码错误"}
+ HTTP 401
+第 5 次：{"code":"wrong_password","message":"密码错误"}
+ HTTP 401
+第 6 次：{"code":"rate_limited","message":"尝试次数过多，请 60 秒后再试","retry_after":60}
+ HTTP 429
+第 7 次：{"code":"rate_limited","message":"尝试次数过多，请 60 秒后再试","retry_after":60}
+ HTTP 429
+## 锁定期间输入正确密码也被拒
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
