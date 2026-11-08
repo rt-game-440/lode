@@ -139,6 +139,58 @@ for (const scheme of ['light', 'dark'] as const) {
   }
 }
 
+// 阶段 7：侧栏工作空间切换器（展开）和设置页“工作空间”分区，三种宽度各一张。
+// 只截这几张：LODE_SCREENSHOTS=stage-7 pnpm -C web e2e screenshots -g 工作空间
+const WS_SIZES = [
+  { name: 'mobile', width: 375, height: 812, scale: 3, touch: true },
+  { name: 'tablet', width: 768, height: 1024, scale: 2, touch: false },
+  { name: 'desktop', width: 1440, height: 900, scale: 2, touch: false },
+] as const
+
+for (const size of WS_SIZES) {
+  test(`截图 工作空间 ${size.name}`, async ({ browser }) => {
+    mkdirSync(outDir, { recursive: true })
+    const ctx = await browser.newContext({
+      colorScheme: 'light',
+      locale: 'zh-CN',
+      viewport: { width: size.width, height: size.height },
+      deviceScaleFactor: size.scale,
+      isMobile: size.touch,
+      hasTouch: size.touch,
+    })
+    const page = await ctx.newPage()
+    await seed(page)
+    const list = async () => (await (await page.request.get('/api/workspaces')).json()).workspaces as { id: string; name: string }[]
+    if ((await list()).length < 3) {
+      for (const name of ['工作', '读书']) {
+        const res = await page.request.post('/api/workspaces', { data: { name } })
+        expect(res.status()).toBe(201)
+        const id = (await res.json()).id as string
+        await page.request.post(`/api/w/${id}/notes`, { data: { path: `${name}笔记.md`, content: `# ${name}
+
+${name}空间里的内容
+` } })
+      }
+    }
+    await page.goto('/')
+    await page.evaluate(() => localStorage.setItem('lode.expanded', JSON.stringify(['项目'])))
+    await page.goto('/')
+    const sw = page.getByTestId('workspace-switcher')
+    await expect(sw).toBeVisible()
+    await sw.click()
+    await expect(page.getByRole('menuitemradio').first()).toBeVisible()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: resolve(outDir, `ws-switcher-${size.name}.png`) })
+    await page.keyboard.press('Escape')
+    await page.goto('/settings/workspaces')
+    await expect(page.getByRole('heading', { name: '工作空间', level: 1, exact: true })).toBeVisible()
+    await expect(page.getByTestId('workspace-row').first()).toBeVisible()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: resolve(outDir, `ws-settings-${size.name}.png`) })
+    await ctx.close()
+  })
+}
+
 // 录屏：侧栏展开收起、快速切换器、保存反馈（手势录屏在 touch.spec）
 test('录屏 desktop', async ({ browser }) => {
   test.setTimeout(90_000)

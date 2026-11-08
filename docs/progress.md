@@ -171,7 +171,21 @@
 
 - #62 多工作空间备份恢复：`lode backup` 默认备份全部工作空间（格式 2：清单 `lode-backup.json` 列出每个空间，外部目录记原路径；`app.db` + `vault/` + `trash/` 仍是默认空间，其他空间放 `workspaces/<id>/{index.db,vault/,trash/}`，外部 vault 也打在 `workspaces/<id>/vault/` 下；每个 `index.db` 用 `VACUUM INTO` 在线快照；外部目录不可用时完整备份失败），`--workspace <id>` 只备份一个（不含 `secret.key` 和全局数据）。`lode restore` 恢复全部：外部 vault 回原路径，原路径非空返回 `ErrExternalNotEmpty` 并提示 `--external-to`，`--external-to <目录>` 把每个外部空间放到 `<目录>/<id>` 并更新登记路径；阶段 6 格式（format 1）按只有默认空间恢复；单空间备份只替换那一个空间（默认空间只替换 `app.db` 里属于它的表），其他空间和全局数据不动；恢复在 `txn`（`internal/ops/txn.go`）里做，失败回滚。tar 条目检查 `safeEntry` 覆盖 `workspaces/<id>/…`。测试：`internal/ops/workspaces_test.go`（`TestBackupRestoreAllWorkspaces`、`TestRestoreExternalNonEmptyAndExternalTo`、`TestRestoreStage6FormatBackup`、`TestSingleWorkspaceBackupAndRestore`、`TestSingleDefaultWorkspaceRestore`、`TestSafeEntryWorkspaces`、`TestRestoreRejectsEscapingWorkspaceEntries` 等）、`cmd/lode/ops_test.go`（`TestBackupRestoreCommandFlags`）；真实二进制往返冒烟输出在 `docs/evidence/stage-7/backup-restore.txt`。文档：`docs/deploy.md` 的“备份”“恢复多个工作空间”。
 
-下一步：#63 等。
+- #61 助手按工作空间隔离：`agent.Store` 拆出按空间的 `ChatStore`，对话、待审批操作、`@` 补全和工具调用只作用于当前工作空间；删除空间时先经 `SetBeforeRemove(agentSvc.CloseWorkspace)` 停掉它的助手任务。供应商、模型和设置仍是全局的。测试：`web/e2e/ui-workspace-agent.spec.ts`、`internal/agent` 的工作空间用例。
+
+- #63 资源占用验收：`scripts/rss.sh` / `.ps1` 支持 `WORKSPACES=K`（`-Workspaces K`），外部大库耗尽监听句柄时记警告；结果见 `docs/evidence/stage-7/rss-summary.md`（默认空间相比阶段 6 的增量、3 个空间各 1000 篇且全部打开时的 RSS）。
+
+- #64 文档与验收收尾：SPEC 新增“工作空间”一节和阶段表第 7 行，`AGENTS.md` 补阶段 7 = #54 的例外、新 e2e spec、`WORKSPACES=`、`backup-smoke`；`docs/workspaces.md` 改为已实现并更正字段名；CHANGELOG 新增 Unreleased（含全量 e2e 修复带出的产品修复：删除供应商/模型后清空默认模型、768 宽目录条不再遮挡标题、`@` 补全列表可聚焦、深色模式对比度、快速切换器筛选）；`scripts/backup-smoke.sh` / `.ps1` 取代临时脚本，证据 `docs/evidence/stage-7/backup-restore.txt`；3 级截图 `docs/screenshots/stage-7/ws-switcher-*.png`、`ws-settings-*.png`（手机 375 / 平板 768 / 桌面 1440，由 `screenshots.spec.ts` 的“截图 工作空间”用例生成，已推送 Telegram）；4 级清单 `docs/checklist/stage-7.md`（第 5–7 条为手机 PWA 切换、手机上管理并删除空间、绑定空间的 MCP token）；全量验证证据 `docs/evidence/stage-7/e2e-full.txt`、`tests.txt`。
+
+状态：代码与文档完成，待阶段 7 的 PR 上 CI 全绿并合并。
+
+遗留：
+
+- 非默认工作空间的 `index.db` 与 `app.db` 同构，里面有几张永远为空的全局表（设计如此，见 `docs/workspaces.md` 第 3 节）。
+- 同一个外部目录被两个 Lode 实例使用无法阻止，只在 `docs/deploy.md` 里写明。
+- 助手真实供应商冒烟仍需自备 key（阶段 5 遗留，与本阶段无关）。
+
+下一步：人工验收 `docs/checklist/stage-7.md`（Obsidian 外部库交叉编辑、手机 PWA 切换与删除）；通过后合并阶段 7 的 PR。
 
 ## 发布前
 

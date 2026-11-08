@@ -1,36 +1,36 @@
 == 1. 准备：默认空间、内置空间、外部空间各放笔记（服务启动一次让它们建索引）
 
 $ lode workspace add 内置空间
-已新建工作空间 tzi4kt（内置空间），笔记放在数据目录的 workspaces/tzi4kt/vault。
+已新建工作空间 ln9jwi（内置空间），笔记放在数据目录的 workspaces/ln9jwi/vault。
 [退出码 0]
 
-$ lode workspace add 外部库 --dir C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian
-已接入工作空间 nqcuz4（外部库），使用已有文件夹 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian，里面的笔记会在 Lode 启动后自动对账。
+$ lode workspace add 外部库 --dir C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian
+已接入工作空间 oyso5b（外部库），使用已有文件夹 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian，里面的笔记会在 Lode 启动后自动对账。
 [退出码 0]
   打开 default：200
-  打开 tzi4kt：200
-  打开 nqcuz4：200
+  打开 ln9jwi：200
+  打开 oyso5b：200
 
 == 2. 服务运行中备份（完整 + 单空间）
 
-$ lode backup C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz
-已备份到 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz（0.0 MB）
+$ lode backup C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz
+已备份到 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz（0.0 MB）
 包含的工作空间：
   - default（笔记，数据目录内）
-  - tzi4kt（内置空间，数据目录内）
-  - nqcuz4（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian）
+  - ln9jwi（内置空间，数据目录内）
+  - oyso5b（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian）
 备份文件包含助手 API key 的主密钥，等同于含有你的 API key，请妥善保管。
 [退出码 0]
 
-$ lode backup C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\one.tar.gz --workspace tzi4kt
-已备份到 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\one.tar.gz（0.0 MB）
+$ lode backup C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\one.tar.gz --workspace ln9jwi
+已备份到 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\one.tar.gz（0.0 MB）
 包含的工作空间：
-  - tzi4kt（内置空间，数据目录内）
+  - ln9jwi（内置空间，数据目录内）
 这是单个工作空间的备份：不含 secret.key 和全局数据（密码、token、助手配置），恢复时只替换这个空间。
 [退出码 0]
 
-$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz -y
-从 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\data。
+$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz -y
+从 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\data。
 注意：
   - 必须先停止 lode 服务；服务运行中会拒绝恢复。
   - 数据库和全部工作空间会被备份里的内容替换，备份之后的修改都会丢失。
@@ -43,8 +43,8 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz -y
     各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
 备份里的工作空间：
   - default（笔记，数据目录内）
-  - tzi4kt（内置空间，数据目录内）
-  - nqcuz4（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian）
+  - ln9jwi（内置空间，数据目录内）
+  - oyso5b（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian）
 错误: lode 服务正在运行，请先停止服务再恢复
 [退出码 1]
 
@@ -53,43 +53,43 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz -y
   app.db
   secret.key
   vault/\346\227\245\350\256\260/\351\273\230\350\256\244.md
-  workspaces/tzi4kt/index.db
-  workspaces/tzi4kt/vault/\345\206\205\347\275\256.md
-  workspaces/nqcuz4/index.db
-  workspaces/nqcuz4/vault/.obsidian/app.json
-  workspaces/nqcuz4/vault/\345\244\226\351\203\250\347\254\224\350\256\260.md
-  workspaces/nqcuz4/vault/\345\255\220\347\233\256\345\275\225/\345\265\214\345\245\227.md
+  workspaces/ln9jwi/index.db
+  workspaces/ln9jwi/vault/\345\206\205\347\275\256.md
+  workspaces/oyso5b/index.db
+  workspaces/oyso5b/vault/.obsidian/app.json
+  workspaces/oyso5b/vault/\345\244\226\351\203\250\347\254\224\350\256\260.md
+  workspaces/oyso5b/vault/\345\255\220\347\233\256\345\275\225/\345\265\214\345\245\227.md
 -- 单空间备份
   lode-backup.json
-  workspaces/tzi4kt/index.db
-  workspaces/tzi4kt/vault/\345\206\205\347\275\256.md
+  workspaces/ln9jwi/index.db
+  workspaces/ln9jwi/vault/\345\206\205\347\275\256.md
 -- 清单
 {
   "format": 2,
-  "version": "dev",
+  "version": "v0.1.0-18-g3d7a8f1-dirty",
   "db_version": 6,
-  "created_at": "2026-11-08T22:45:21+08:00",
+  "created_at": "2026-11-08T22:56:33+08:00",
   "scope": "all",
   "workspaces": [
     {
       "id": "default",
       "name": "笔记",
       "sort": 0,
-      "created_at": 1794149118823
+      "created_at": 1794149790911
     },
     {
-      "id": "tzi4kt",
+      "id": "ln9jwi",
       "name": "内置空间",
       "sort": 1,
-      "created_at": 1794149120486
+      "created_at": 1794149792553
     },
     {
-      "id": "nqcuz4",
+      "id": "oyso5b",
       "name": "外部库",
       "sort": 2,
-      "created_at": 1794149120624,
+      "created_at": 1794149792685,
       "external": true,
-      "vault_dir": "C:\\Users\\15575\\AppData\\Local\\Temp\\tmp.8Wr8ePEeaA\\obsidian"
+      "vault_dir": "C:\\Users\\15575\\AppData\\Local\\Temp\\tmp.W93T4rJbHn\\obsidian"
     }
   ]
 }
@@ -101,8 +101,8 @@ serve.log
 
 == 5. 外部原路径非空时拒绝恢复
 
-$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz -y
-从 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\data。
+$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz -y
+从 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\data。
 注意：
   - 必须先停止 lode 服务；服务运行中会拒绝恢复。
   - 数据库和全部工作空间会被备份里的内容替换，备份之后的修改都会丢失。
@@ -115,15 +115,15 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz -y
     各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
 备份里的工作空间：
   - default（笔记，数据目录内）
-  - tzi4kt（内置空间，数据目录内）
-  - nqcuz4（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian）
-错误: 外部笔记目录已存在且不是空的：工作空间「外部库」的笔记目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian 已存在且不是空的，不会覆盖。请清空它，或用 --external-to <目录> 恢复到新位置（每个外部工作空间会放进该目录下以 id 命名的子目录，登记的路径随之更新）
+  - ln9jwi（内置空间，数据目录内）
+  - oyso5b（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian）
+错误: 外部笔记目录已存在且不是空的：工作空间「外部库」的笔记目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian 已存在且不是空的，不会覆盖。请清空它，或用 --external-to <目录> 恢复到新位置（每个外部工作空间会放进该目录下以 id 命名的子目录，登记的路径随之更新）
 [退出码 1]
 
 == 6. 恢复（外部原路径空闲）
 
-$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz -y
-从 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\data。
+$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz -y
+从 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\data。
 注意：
   - 必须先停止 lode 服务；服务运行中会拒绝恢复。
   - 数据库和全部工作空间会被备份里的内容替换，备份之后的修改都会丢失。
@@ -136,29 +136,29 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz -y
     各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
 备份里的工作空间：
   - default（笔记，数据目录内）
-  - tzi4kt（内置空间，数据目录内）
-  - nqcuz4（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian）
+  - ln9jwi（内置空间，数据目录内）
+  - oyso5b（外部库，外部目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian）
 恢复完成。启动服务后会自动对账笔记文件。
 [退出码 0]
 -- 外部目录
-  /tmp/tmp.8Wr8ePEeaA/obsidian/.obsidian/app.json
-  /tmp/tmp.8Wr8ePEeaA/obsidian/外部笔记.md
-  /tmp/tmp.8Wr8ePEeaA/obsidian/子目录/嵌套.md
+  /tmp/tmp.W93T4rJbHn/obsidian/.obsidian/app.json
+  /tmp/tmp.W93T4rJbHn/obsidian/外部笔记.md
+  /tmp/tmp.W93T4rJbHn/obsidian/子目录/嵌套.md
   打开 default：200
-  打开 tzi4kt：200
-  打开 nqcuz4：200
+  打开 ln9jwi：200
+  打开 oyso5b：200
 
 $ lode workspace list
 ID       名称    笔记数  位置
 default  笔记    1    vault（数据目录内）
-tzi4kt   内置空间  1    workspaces/tzi4kt/vault（数据目录内）
-nqcuz4   外部库   2    C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian
+ln9jwi   内置空间  1    workspaces/ln9jwi/vault（数据目录内）
+oyso5b   外部库   2    C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian
 [退出码 0]
 
 == 7. 恢复到新位置（--external-to）
 
-$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz --external-to C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\moved -y
-从 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\data。
+$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz --external-to C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\moved -y
+从 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\all.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\data。
 注意：
   - 必须先停止 lode 服务；服务运行中会拒绝恢复。
   - 数据库和全部工作空间会被备份里的内容替换，备份之后的修改都会丢失。
@@ -171,29 +171,29 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\all.tar.gz --ext
     各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
 备份里的工作空间：
   - default（笔记，数据目录内）
-  - tzi4kt（内置空间，数据目录内）
-  - nqcuz4（外部库，外部目录，原路径 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\obsidian，将恢复到 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\moved\nqcuz4）
+  - ln9jwi（内置空间，数据目录内）
+  - oyso5b（外部库，外部目录，原路径 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\obsidian，将恢复到 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\moved\oyso5b）
 恢复完成。启动服务后会自动对账笔记文件。
-工作空间 nqcuz4（外部库）的笔记已恢复到 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\moved\nqcuz4
+工作空间 oyso5b（外部库）的笔记已恢复到 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\moved\oyso5b
 [退出码 0]
-  /tmp/tmp.8Wr8ePEeaA/moved/nqcuz4/.obsidian/app.json
-  /tmp/tmp.8Wr8ePEeaA/moved/nqcuz4/外部笔记.md
-  /tmp/tmp.8Wr8ePEeaA/moved/nqcuz4/子目录/嵌套.md
+  /tmp/tmp.W93T4rJbHn/moved/oyso5b/.obsidian/app.json
+  /tmp/tmp.W93T4rJbHn/moved/oyso5b/外部笔记.md
+  /tmp/tmp.W93T4rJbHn/moved/oyso5b/子目录/嵌套.md
   打开 default：200
-  打开 tzi4kt：200
-  打开 nqcuz4：200
+  打开 ln9jwi：200
+  打开 oyso5b：200
 
 $ lode workspace list
 ID       名称    笔记数  位置
 default  笔记    1    vault（数据目录内）
-tzi4kt   内置空间  1    workspaces/tzi4kt/vault（数据目录内）
-nqcuz4   外部库   2    C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\moved\nqcuz4
+ln9jwi   内置空间  1    workspaces/ln9jwi/vault（数据目录内）
+oyso5b   外部库   2    C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\moved\oyso5b
 [退出码 0]
 
 == 8. 单空间备份恢复：改乱内置空间后只恢复它
 
-$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\one.tar.gz -y
-从 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\one.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\data。
+$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\one.tar.gz -y
+从 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\one.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\data。
 注意：
   - 必须先停止 lode 服务；服务运行中会拒绝恢复。
   - 这是单个工作空间的备份：只替换下面这个工作空间（笔记、历史版本、回收站和助手对话），
@@ -202,9 +202,9 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\one.tar.gz -y
   - 外部目录的笔记恢复到现在登记的路径（还没登记则用备份里记的原路径），路径已存在且非空时会拒绝（不覆盖你的文件），
     这时用 --external-to <目录> 恢复到 <目录>/<工作空间id> 并更新登记的路径。
 备份里的工作空间：
-  - tzi4kt（内置空间，数据目录内）
+  - ln9jwi（内置空间，数据目录内）
 恢复完成。启动服务后会自动对账笔记文件。
-原有数据保存在 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\data\pre-restore-20261108-224528
+原有数据保存在 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\data\pre-restore-20261108-225639
 [退出码 0]
 -- 内置笔记内容：
 # 内置笔记
@@ -214,22 +214,22 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\one.tar.gz -y
 之后新增.md
 默认.md
 -- pre-restore：
-pre-restore-20261108-224528
+pre-restore-20261108-225639
   打开 default：200
-  打开 tzi4kt：200
-  打开 nqcuz4：200
+  打开 ln9jwi：200
+  打开 oyso5b：200
 
 $ lode workspace list
 ID       名称    笔记数  位置
 default  笔记    2    vault（数据目录内）
-tzi4kt   内置空间  1    workspaces/tzi4kt/vault（数据目录内）
-nqcuz4   外部库   2    C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\moved\nqcuz4
+ln9jwi   内置空间  1    workspaces/ln9jwi/vault（数据目录内）
+oyso5b   外部库   2    C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\moved\oyso5b
 [退出码 0]
 
 == 9. 阶段 6 格式（format 1）备份
 
-$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\stage6.tar.gz -y
-从 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\stage6.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\data。
+$ lode restore C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\stage6.tar.gz -y
+从 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\stage6.tar.gz 恢复到数据目录 C:\Users\15575\AppData\Local\Temp\tmp.W93T4rJbHn\data。
 注意：
   - 必须先停止 lode 服务；服务运行中会拒绝恢复。
   - 数据库和全部工作空间会被备份里的内容替换，备份之后的修改都会丢失。
@@ -244,11 +244,11 @@ $ lode restore C:\Users\15575\AppData\Local\Temp\tmp.8Wr8ePEeaA\stage6.tar.gz -y
   - default（笔记，数据目录内）
 恢复完成。启动服务后会自动对账笔记文件。
 [退出码 0]
-  /tmp/tmp.8Wr8ePEeaA/data/vault/日记/旧版.md
+  /tmp/tmp.W93T4rJbHn/data/vault/日记/旧版.md
 
 $ lode workspace list
 ID       名称  笔记数  位置
 default  笔记  0    vault（数据目录内）
 [退出码 0]
 
-冒烟完成，临时目录 /tmp/tmp.8Wr8ePEeaA
+冒烟完成，临时目录 /tmp/tmp.W93T4rJbHn

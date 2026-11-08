@@ -53,6 +53,19 @@
 - 对话中可以切换模型；按当前模型的上下文窗口裁剪或压缩历史；SSE 流式输出，可中断。
 - Agent 调用工具写笔记时，界面先显示 diff，默认需要用户确认。
 
+## 工作空间
+
+阶段 7 起一个实例可以管理多个互相隔离的笔记库（工作空间）。设计与取舍见 [workspaces.md](workspaces.md)，接口见 [api.md](api.md)。上面“数据”一节描述的就是默认工作空间。
+
+- 数据布局：`data/app.db`、`data/vault/`、`data/trash/` 仍是默认工作空间（id `default`，不搬迁）；其他工作空间在 `data/workspaces/<id>/{index.db,vault/,trash/}`，id 是创建时生成的 6 位小写字母或数字，之后不变。`index.db` 与 `app.db` 跑同一套迁移，登记在全局库的 `workspaces` 表。
+- 外部目录：vault 可以指向服务器上已有的绝对路径（如 Obsidian 库），里面只放笔记文件，索引和回收站仍在 `data/workspaces/<id>/`；不能与数据目录或其他 vault 相同或嵌套。删除外部空间不动外部笔记文件，删除内置空间是移到 `data/trash-workspaces/`。
+- 全局：密码、会话、通行密钥、API token、审计日志、助手供应商/模型/设置、`secret.key`。按工作空间：笔记、搜索、标签、反链、回收站、历史、变更序号与 WebSocket 推送、助手对话与待审批操作。
+- API：原有 `/api/...` 表示默认工作空间；按工作空间的路由同时挂在 `/api/w/{ws}/...`，未知 id 返回 `404 workspace_not_found`；`/api/workspaces` 管理增删改查，默认空间不可删除。
+- MCP：token 创建时绑定一个工作空间，`/mcp` 只能访问这个空间；已有 token 属于默认空间。
+- 前端：默认空间 URL 不变，其他空间用 `/w/<id>/...`；IndexedDB 与同步引擎按空间实例化（`lode` / `lode:<id>`），最近打开、展开状态、当前对话按空间存，主题、布局、字号、编辑器偏好全局。
+- 运维：`lode backup` 默认含全部空间（外部 vault 也打包），`--workspace <id>` 只备份一个；`lode restore` 兼容旧备份，外部路径非空时拒绝并提示 `--external-to`；`lode workspace list|add|rename|remove` 需停服。
+- 资源：只有默认空间时 RSS 比阶段 6 增加不超过 2MB；3 个空间各 1000 篇且都已打开时空闲 RSS ≤ 80MB。
+
 ## 界面
 
 - 实现任何界面前，先加载 `apple-design` skill 并遵循。亮/暗色跟随系统；尊重 prefers-reduced-motion。
@@ -89,3 +102,4 @@
 | 4 | #4 | API token 与 MCP 服务 | #1 |
 | 5 | #5 | Agent 助手 | #3、#4 |
 | 6 | #6 | 发布、部署与运维 | #5 |
+| 7 | #54 | 多工作空间（issue 号与阶段号不一致，因为 #7 已被占用；修改 SPEC 的理由：新增功能跨越存储、API、同步和 MCP） | #6 |

@@ -1,0 +1,33 @@
+# 阶段 7 测试汇总（2026-11-08 23:04）
+
+## go vet ./...（无输出，退出码 0）
+
+## go test -count=1 ./...
+ok  	github.com/rt-game-440/lode/server/cmd/lode	1.301s
+ok  	github.com/rt-game-440/lode/server/internal/agent	1.589s
+ok  	github.com/rt-game-440/lode/server/internal/api	4.983s
+ok  	github.com/rt-game-440/lode/server/internal/audit	0.219s
+ok  	github.com/rt-game-440/lode/server/internal/auth	0.337s
+ok  	github.com/rt-game-440/lode/server/internal/db	0.525s
+ok  	github.com/rt-game-440/lode/server/internal/keyprotect	0.514s
+ok  	github.com/rt-game-440/lode/server/internal/llm	0.091s
+ok  	github.com/rt-game-440/lode/server/internal/mcpserver	0.895s
+ok  	github.com/rt-game-440/lode/server/internal/mdparse	0.023s
+ok  	github.com/rt-game-440/lode/server/internal/merge	0.025s
+ok  	github.com/rt-game-440/lode/server/internal/notes	3.167s
+ok  	github.com/rt-game-440/lode/server/internal/ops	6.031s
+ok  	github.com/rt-game-440/lode/server/internal/passkey	0.365s
+ok  	github.com/rt-game-440/lode/server/internal/secret	0.075s
+ok  	github.com/rt-game-440/lode/server/internal/tools	0.208s
+ok  	github.com/rt-game-440/lode/server/internal/vault	1.025s
+ok  	github.com/rt-game-440/lode/server/internal/workspace	3.024s
+
+## pnpm -C web test
+ Test Files  22 passed (22)
+      Tests  159 passed (159)
+
+## pnpm -C web typecheck（tsc，无错误，退出码 0）
+
+## pnpm -C web e2e（全量，明细见 e2e-full.txt）
+  14 skipped
+  159 passed (6.1m)
