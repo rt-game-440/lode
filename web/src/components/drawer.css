@@ -3,6 +3,8 @@
   inset: 0;
   z-index: var(--z-modal);
   background: var(--color-scrim);
+  /* 在遮罩上横向拖动也能拖动抽屉（向外拖关闭），手势全部交给脚本 */
+  touch-action: none;
 }
 .drawer {
   position: fixed;
@@ -14,6 +16,11 @@
   flex-direction: column;
   background: var(--color-bg);
   box-shadow: var(--shadow-lg);
+  outline: none;
+}
+/* 打开时焦点移到抽屉容器上（不可交互的 tabIndex=-1 容器）。手势拉出后浏览器会把这次脚本聚焦
+   判定为 :focus-visible，全局焦点环会在抽屉左缘画出一条蓝线；容器本身不需要焦点环，里面的控件照常显示 */
+.drawer:focus-visible {
   outline: none;
 }
 /* 横向拖拽交给脚本，纵向仍可滚动。touch-action 只算到最近的滚动容器为止，

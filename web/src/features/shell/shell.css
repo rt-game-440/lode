@@ -108,6 +108,12 @@
   width: calc(var(--edge-swipe-width) + env(safe-area-inset-left));
   touch-action: none;
 }
+/* 笔记页右缘左滑拉出右侧栏（Drawer 的 edgeSwipe）：编辑区里的横向拖动交给脚本判定方向，
+   纵向滚动和双指缩放仍由浏览器处理。能横向滚动的子元素（宽代码块、表格）自己是滚动容器，
+   touch-action 在滚动容器处重新计算，不受这里影响，横向拖动照常滚动它们。 */
+.mobile-layer.is-detail .editor-scroll {
+  touch-action: pan-y pinch-zoom;
+}
 
 /* ---- 模态面板（快捷键一览等） ---- */
 .modal {

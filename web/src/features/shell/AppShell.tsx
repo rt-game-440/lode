@@ -25,6 +25,8 @@ import './shell.css'
 const RIGHT_W = 300
 // 右栏显示助手时更宽，与 tokens 中 --rightbar-width-agent 一致
 const AGENT_W = 380
+/** 手机笔记页的编辑区：右缘左滑拉出右侧栏的起手区域（touch-action 见 shell.css） */
+const MOBILE_NOTE_ZONE = '.mobile-layer.is-detail .editor-scroll'
 
 function useMedia(query: string): boolean {
   return useSyncExternalStore(
@@ -155,10 +157,17 @@ export function AppShell() {
   )
 
   if (mobile) {
+    const noteDetail = mobilePane === 'detail' && route.view === 'note'
     return (
       <div className="shell is-mobile">
         <MobileStack list={<Sidebar mobile />} detail={(r) => <MainView mobile route={r} contextNoteId={lastNoteId.current} />} />
-        <Drawer open={showRight && mobilePane === 'detail' && route.view === 'note'} onClose={closeRight} label="笔记信息">
+        <Drawer
+          open={showRight && noteDetail}
+          onClose={closeRight}
+          label="笔记信息"
+          // 笔记页从屏幕右缘向左滑拉出右侧栏，起手区是编辑区（顶栏、底部工具栏不算）
+          edgeSwipe={noteDetail ? { zone: MOBILE_NOTE_ZONE, onOpen: () => toggleRight(true) } : undefined}
+        >
           <RightPanel id={lastNoteId.current} onClose={closeRight} allowAgent={false} />
         </Drawer>
         {overlays}
