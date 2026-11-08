@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"log/slog"
 	"path"
 	"strings"
@@ -130,6 +131,9 @@ type Service struct {
 	trashDir string
 	log      *slog.Logger
 	now      func() time.Time
+
+	// addWatch 给监听器添加目录；nil 时用 fsnotify 自带的 Add。仅测试替换，用来模拟句柄耗尽。
+	addWatch func(w *fsnotify.Watcher, dir string) error
 
 	mu sync.Mutex // 串行化所有写操作（含对账）
 

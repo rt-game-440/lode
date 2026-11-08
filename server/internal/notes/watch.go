@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -22,11 +24,22 @@ func (s *Service) Watch(ctx context.Context, debounce time.Duration, ready func(
 	defer w.Close()
 	// 以下状态只在本 goroutine 中访问
 	watched := map[string]bool{}
+	warned := false // 监听句柄耗尽的警告每次 Watch 只打一次
 	addDirs := func(rel string) {
 		_ = s.vault.Walk(rel, func(e vault.Entry) error {
 			if e.IsDir && !watched[e.Path] {
-				if err := w.Add(s.vault.Abs(e.Path)); err == nil {
+				add := s.addWatch
+				if add == nil {
+					add = (*fsnotify.Watcher).Add
+				}
+				if err := add(w, s.vault.Abs(e.Path)); err == nil {
 					watched[e.Path] = true
+				} else if isWatchLimit(err) && !warned {
+					warned = true
+					s.log.Warn("文件监听句柄不足，部分目录的外部修改不会即时同步（重启后的对账仍会发现）。"+
+						"Linux 可调高上限：sudo sysctl fs.inotify.max_user_watches=524288，"+
+						"并写入 /etc/sysctl.d/ 下的配置文件使其重启后仍生效；容器需在宿主机上调整",
+						"dir", e.Path, "err", err)
 				}
 			}
 			return nil
@@ -129,4 +142,13 @@ func (s *Service) Watch(ctx context.Context, debounce time.Duration, ready func(
 			schedule()
 		}
 	}
+}
+
+// isWatchLimit 判断添加监听失败是否因为系统句柄耗尽（Linux 的 inotify watch / 实例数上限）。
+func isWatchLimit(err error) bool {
+	if errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EMFILE) || errors.Is(err, syscall.ENFILE) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "no space left on device") || strings.Contains(msg, "too many open files")
 }
