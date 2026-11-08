@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -26,9 +25,9 @@ import (
 	"github.com/rt-game-440/lode/server/internal/ops"
 	"github.com/rt-game-440/lode/server/internal/passkey"
 	"github.com/rt-game-440/lode/server/internal/secret"
-	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
 	"github.com/rt-game-440/lode/server/internal/webui"
+	"github.com/rt-game-440/lode/server/internal/workspace"
 )
 
 // 构建时通过 -ldflags "-X main.version=... -X main.commit=..." 注入。
@@ -109,11 +108,17 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	svc := notes.New(notes.Options{DB: database, Vault: v, TrashDir: cfg.TrashDir(), Logger: log})
+	// 默认工作空间：索引在 app.db，vault 在 data/vault。其他工作空间由 Manager 按需打开（#57）。
+	workspaces := workspace.New(workspace.Options{
+		Default: notes.New(notes.Options{DB: database, Vault: v, TrashDir: cfg.TrashDir(), Logger: log}),
+		Logger:  log,
+	})
+	def := workspaces.Default()
 	authSvc := auth.New(database)
 
 	auditLog := audit.New(database)
-	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: authSvc, Audit: auditLog, Version: version, Log: log})
+	// MCP 目前只服务默认工作空间；#59 改为按 token 绑定的工作空间取 Tools。
+	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: def.Tools, Auth: authSvc, Audit: auditLog, Version: version, Log: log})
 
 	protected, err := keyprotect.Enabled(ctx, database)
 	if err != nil {
@@ -135,7 +140,7 @@ func serve(cfg config.Config, log *slog.Logger) error {
 		log.Info("API key 由通行密钥保护，当前处于锁定状态：用加入保护的通行密钥登录一次即可解锁", "removed_stale_secret_key", keySrc == secret.SourcePasskeyStale)
 	}
 	store := agent.NewStore(database, keys)
-	agentSvc := &agent.Service{Store: store, Tools: tools.New(svc), Notes: svc, Log: log}
+	agentSvc := &agent.Service{Store: store, Tools: def.Tools, Notes: def.Notes, Log: log}
 	defer agentSvc.Close() // 在关闭数据库之前停止生成（defer 逆序执行）
 
 	passkeys := passkey.New(database, log)
@@ -145,7 +150,7 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	}
 	passkeys.PRFSalt = keyProtect.LoginSalt
 
-	srv := &api.Server{Notes: svc, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
+	srv := &api.Server{Workspaces: workspaces, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
 		Audit: auditLog, MCP: mcpHandler, Agent: agentSvc, Passkeys: passkeys, KeyProtect: keyProtect}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
@@ -155,63 +160,26 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	}
 	httpSrv.RegisterOnShutdown(srv.Close) // 让 WebSocket 连接随关闭退出
 
-	// 后台任务：先建立文件监听，再全量对账（中间的外部修改由监听事件补上）。HTTP 服务立即可用。
+	// 后台任务：每个工作空间先建立文件监听，再全量对账（中间的外部修改由监听事件补上），并定期清理历史版本；
+	// 会话清理是全局的。HTTP 服务立即可用。
 	// 退出时先停掉后台任务并等它们结束，再关闭数据库（defer 逆序执行）。
 	bgCtx, cancelBg := context.WithCancel(ctx)
 	var bg sync.WaitGroup
 	defer func() {
 		cancelBg()
 		bg.Wait()
+		workspaces.Close()
 	}()
-	watching := make(chan struct{})
-	bg.Go(func() {
-		var once sync.Once
-		markReady := func() { once.Do(func() { close(watching) }) }
-		defer markReady() // 监听启动失败时也不要阻塞对账
-		if err := svc.Watch(bgCtx, 300*time.Millisecond, markReady); err != nil {
-			log.Error("文件监听失败", "err", err)
-		}
-	})
-	bg.Go(func() {
-		select {
-		case <-watching:
-		case <-bgCtx.Done():
-			return
-		}
-		start := time.Now()
-		st, err := svc.Reconcile(bgCtx)
-		if err != nil {
-			if bgCtx.Err() == nil {
-				log.Error("启动对账失败", "err", err)
-			}
-			return
-		}
-		log.Info("索引就绪", "added", st.Added, "updated", st.Updated, "moved", st.Moved, "removed", st.Removed, "dur", time.Since(start).Round(time.Millisecond))
-		debug.FreeOSMemory()
-	})
+	workspaces.Start(bgCtx)
 	bg.Go(func() {
 		session := time.NewTicker(6 * time.Hour)
 		defer session.Stop()
-		history := time.NewTicker(time.Hour)
-		defer history.Stop()
-		prune := func() {
-			if st, err := svc.PruneHistory(bgCtx); err != nil {
-				if bgCtx.Err() == nil {
-					log.Error("清理历史版本失败", "err", err)
-				}
-			} else if st.Versions+st.Changes > 0 {
-				log.Info("已清理历史", "versions", st.Versions, "changes", st.Changes)
-			}
-		}
-		prune()
 		for {
 			select {
 			case <-bgCtx.Done():
 				return
 			case <-session.C:
 				_ = authSvc.PurgeExpired(bgCtx)
-			case <-history.C:
-				prune()
 			}
 		}
 	})

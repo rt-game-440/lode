@@ -16,6 +16,7 @@ import (
 
 // 助手接口：供应商与模型配置、对话、SSE 事件流、停止和批准。见 docs/api.md 的“助手”一节。
 
+// routeAgent 注册全局的助手接口（供应商、模型、设置）。对话接口按工作空间区分，见 agentChatRoutes。
 func (s *Server) routeAgent(p *http.ServeMux) {
 	p.HandleFunc("GET /api/agent/config", s.agentConfig)
 	p.HandleFunc("POST /api/agent/providers", s.createProvider)
@@ -26,15 +27,28 @@ func (s *Server) routeAgent(p *http.ServeMux) {
 	p.HandleFunc("PUT /api/agent/models/{id}", s.updateModel)
 	p.HandleFunc("DELETE /api/agent/models/{id}", s.deleteModel)
 	p.HandleFunc("PUT /api/agent/settings", s.updateAgentSettings)
-	p.HandleFunc("GET /api/agent/chats", s.listChats)
-	p.HandleFunc("POST /api/agent/chats", s.createChat)
-	p.HandleFunc("GET /api/agent/chats/{id}", s.getChat)
-	p.HandleFunc("PATCH /api/agent/chats/{id}", s.patchChat)
-	p.HandleFunc("DELETE /api/agent/chats/{id}", s.deleteChat)
-	p.HandleFunc("POST /api/agent/chats/{id}/messages", s.sendMessage)
-	p.HandleFunc("GET /api/agent/chats/{id}/stream", s.chatStream)
-	p.HandleFunc("POST /api/agent/chats/{id}/stop", s.stopChat)
-	p.HandleFunc("POST /api/agent/chats/{id}/approvals/{callId}", s.resolveApproval)
+}
+
+// agentChatRoutes 是按工作空间区分的助手对话接口。
+func (s *Server) agentChatRoutes() []route {
+	return []route{
+		{"GET /api/agent/chats", s.listChats},
+		{"POST /api/agent/chats", s.createChat},
+		{"GET /api/agent/chats/{id}", s.getChat},
+		{"PATCH /api/agent/chats/{id}", s.patchChat},
+		{"DELETE /api/agent/chats/{id}", s.deleteChat},
+		{"POST /api/agent/chats/{id}/messages", s.sendMessage},
+		{"GET /api/agent/chats/{id}/stream", s.chatStream},
+		{"POST /api/agent/chats/{id}/stop", s.stopChat},
+		{"POST /api/agent/chats/{id}/approvals/{callId}", s.resolveApproval},
+	}
+}
+
+// chatAgent 返回处理当前工作空间对话的助手服务。目前助手只服务默认工作空间（请求能走到这里，
+// 说明工作空间已经由中间件确认存在）；#61 拆出按工作空间的 ChatStore 后改为按 currentWorkspace(r) 取依赖。
+func (s *Server) chatAgent(r *http.Request) *agent.Service {
+	_ = currentWorkspace(r)
+	return s.Agent
 }
 
 // agentFail 先映射助手的错误，其余交给 fail。
@@ -177,7 +191,8 @@ func (s *Server) updateAgentSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listChats(w http.ResponseWriter, r *http.Request) {
-	chats, err := s.Agent.Store.Chats(r.Context(), 200)
+	ag := s.chatAgent(r)
+	chats, err := ag.Store.Chats(r.Context(), 200)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -187,6 +202,7 @@ func (s *Server) listChats(w http.ResponseWriter, r *http.Request) {
 
 // createChat 新建对话；不指定模型时用默认模型。
 func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
+	ag := s.chatAgent(r)
 	var in struct {
 		ModelID string `json:"model_id"`
 	}
@@ -195,7 +211,7 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.ModelID == "" {
-		st, err := s.Agent.Store.Settings(r.Context())
+		st, err := ag.Store.Settings(r.Context())
 		if err != nil {
 			s.agentFail(w, r, err)
 			return
@@ -203,12 +219,12 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		in.ModelID = st.DefaultModel
 	}
 	if in.ModelID != "" {
-		if _, err := s.Agent.Store.Model(r.Context(), in.ModelID); err != nil {
+		if _, err := ag.Store.Model(r.Context(), in.ModelID); err != nil {
 			s.agentFail(w, r, err)
 			return
 		}
 	}
-	c, err := s.Agent.Store.CreateChat(r.Context(), in.ModelID)
+	c, err := ag.Store.CreateChat(r.Context(), in.ModelID)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -217,7 +233,8 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getChat(w http.ResponseWriter, r *http.Request) {
-	v, err := s.Agent.View(r.Context(), r.PathValue("id"))
+	ag := s.chatAgent(r)
+	v, err := ag.View(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -226,6 +243,7 @@ func (s *Server) getChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchChat(w http.ResponseWriter, r *http.Request) {
+	ag := s.chatAgent(r)
 	var in struct {
 		Title   *string     `json:"title"`
 		ModelID *string     `json:"model_id"`
@@ -235,7 +253,7 @@ func (s *Server) patchChat(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	c, err := s.Agent.Store.UpdateChat(r.Context(), r.PathValue("id"), in.Title, in.ModelID, in.Effort)
+	c, err := ag.Store.UpdateChat(r.Context(), r.PathValue("id"), in.Title, in.ModelID, in.Effort)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -245,12 +263,13 @@ func (s *Server) patchChat(w http.ResponseWriter, r *http.Request) {
 
 // deleteChat 删除对话；正在生成时返回 409，避免生成结束时写入已删除的对话。
 func (s *Server) deleteChat(w http.ResponseWriter, r *http.Request) {
+	ag := s.chatAgent(r)
 	id := r.PathValue("id")
-	if s.Agent.Running(id) {
+	if ag.Running(id) {
 		s.agentFail(w, r, agent.ErrBusy)
 		return
 	}
-	if err := s.Agent.Store.DeleteChat(r.Context(), id); err != nil {
+	if err := ag.Store.DeleteChat(r.Context(), id); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -258,12 +277,13 @@ func (s *Server) deleteChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
+	ag := s.chatAgent(r)
 	var in agent.SendInput
 	if err := decode(w, r, &in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	m, err := s.Agent.Send(r.Context(), r.PathValue("id"), in)
+	m, err := ag.Send(r.Context(), r.PathValue("id"), in)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -272,7 +292,8 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopChat(w http.ResponseWriter, r *http.Request) {
-	if err := s.Agent.Stop(r.Context(), r.PathValue("id")); err != nil {
+	ag := s.chatAgent(r)
+	if err := ag.Stop(r.Context(), r.PathValue("id")); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -280,6 +301,7 @@ func (s *Server) stopChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request) {
+	ag := s.chatAgent(r)
 	var in struct {
 		Approve bool `json:"approve"`
 	}
@@ -287,7 +309,7 @@ func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.Agent.Resolve(r.Context(), r.PathValue("id"), r.PathValue("callId"), in.Approve); err != nil {
+	if err := ag.Resolve(r.Context(), r.PathValue("id"), r.PathValue("callId"), in.Approve); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -297,8 +319,9 @@ func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request) {
 // chatStream 以 SSE 推送对话事件。第一条是状态快照；订阅被断开（客户端太慢）时结束响应，
 // EventSource 会自动重连，前端重连后重新拉取对话。
 func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
+	ag := s.chatAgent(r)
 	id := r.PathValue("id")
-	if _, err := s.Agent.Store.Chat(r.Context(), id); err != nil {
+	if _, err := ag.Store.Chat(r.Context(), id); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -309,7 +332,7 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no") // 让 nginx 不缓冲
 	w.WriteHeader(http.StatusOK)
 
-	events, unsubscribe := s.Agent.Subscribe(id)
+	events, unsubscribe := ag.Subscribe(id)
 	defer unsubscribe()
 	ping := time.NewTicker(s.SSEPingInterval)
 	defer ping.Stop()
