@@ -160,4 +160,4 @@
 - 验收反馈的 13 个问题（`docs/checklist/issues.md`，父 issue #16）拆成 ticket #17–#29，由子代理按指标选模型分三波修复，PR #30–#42 已合并（2026-11-08）。
 - 第二轮验收反馈的 10 个问题（第 14–23 条，父 issue #43）拆成 ticket #44–#47，PR #48–#51 已合并，另有 PR #52 修复手机面板里 Esc 连带关闭（2026-11-08）。
 
-下一步：按 `docs/checklist/issues.md` 的 A–M、N–T 项验收修复效果，人工验收 `docs/checklist/stage-2.md` 至 `stage-6.md`；全部通过后打 `v0.1.0` tag 发版。
+下一步：A–T 修复验收已全部通过（2026-11-08）；人工验收 `docs/checklist/stage-2.md` 至 `stage-6.md`；全部通过后打 `v0.1.0` tag 发版。
