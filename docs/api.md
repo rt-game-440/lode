@@ -87,7 +87,7 @@ type Change = {
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
-| GET | `/api/tree` | | `200 {"folders":string[],"notes":Note[],"seq":number}`；`seq` 是生成时的最新变更序号，可作为 `/api/changes?since=` 的起点 |
+| GET | `/api/tree` | | `200 {"folders":string[],"notes":Note[],"seq":number}`；`seq` 是生成时的最新变更序号，可作为 `/api/changes?since=` 的起点；只含附件、没有笔记的文件夹（如 `attachments/`）不出现在 `folders` 里 |
 | GET | `/api/notes?prefix=&recursive=` | `prefix` 文件夹路径；`recursive=false` 只列直接子项 | `200 {"notes":Note[]}` |
 | POST | `/api/notes` | `{"path":"a/b.md","content":"…","auto_rename":false}` | `201 NoteContent`；`auto_rename=true` 时路径被占用会自动加序号（如 `b 1.md`）；否则 `409 exists` |
 | GET | `/api/notes/{id}` | | `200 NoteContent` |
@@ -136,7 +136,7 @@ PATCH 的 `edits` 按顺序应用，每处 `old` 必须在当时的正文里恰�
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
-| POST | `/api/attachments` | `multipart/form-data`，字段 `file` | `201 {"path":"attachments/x.png","url":"/api/files/attachments/x.png"}` |
+| POST | `/api/attachments` | `multipart/form-data`，字段 `file` | `201 {"path":"attachments/x.png","url":"/api/files/attachments/x.png"}`；`attachments/` 只在有文件要写入时才创建，被拒绝或中断的上传不会留下空文件夹 |
 | GET | `/api/files/{path...}` | | 文件内容，支持 Range；带沙箱 CSP，防止上传的 SVG/HTML 执行脚本 |
 | GET | `/api/images` | | `200 {"images":[{"path","size","mtime"}]}`：笔记库里的 png/jpg/jpeg/gif/webp，按修改时间倒序，最多 500 个（阶段 5，助手选图用） |
 

@@ -36,6 +36,8 @@ func (s *Service) CreateFolder(ctx context.Context, p string) (string, error) {
 	if err := ensureFolders(ctx, s.db, dirs...); err != nil {
 		return "", err
 	}
+	a := actorFrom(ctx)
+	s.log.Info("文件夹已创建", "path", p, "device_id", a.DeviceID, "device", a.DeviceName)
 	return p, nil
 }
 
@@ -172,6 +174,8 @@ func (s *Service) DeleteFolder(ctx context.Context, p string) (int, error) {
 	} else if err := os.RemoveAll(abs); err != nil {
 		return 0, err
 	}
+	a := actorFrom(ctx)
+	s.log.Info("文件夹已删除", "path", p, "notes", len(rows), "device_id", a.DeviceID, "device", a.DeviceName)
 	return len(rows), deleteFolders(ctx, s.db, p)
 }
 
@@ -191,16 +195,15 @@ func hasFiles(dir string) bool {
 const AttachmentDir = "attachments"
 
 // SaveAttachment 把上传的文件保存到 vault/attachments，重名时自动加序号，返回相对路径。
+//
+// attachments/ 只在确实有文件要放进去时才创建：先把内容完整写到 vault 根目录下的隐藏临时文件，
+// 校验通过后再建目录并改名；上传被拒绝或中途失败都不会留下空文件夹。
 func (s *Service) SaveAttachment(ctx context.Context, name string, r io.Reader, maxBytes int64) (string, error) {
 	name = sanitizeFileName(name)
 	if strings.EqualFold(path.Ext(name), ".md") {
 		return "", fmt.Errorf("%w: 附件不能是 .md 文件", ErrInvalid)
 	}
-	if err := s.vault.Mkdir(AttachmentDir); err != nil {
-		return "", err
-	}
-	dir := s.vault.Abs(AttachmentDir)
-	tmp, err := os.CreateTemp(dir, ".lode-tmp-*")
+	tmp, err := os.CreateTemp(s.vault.Root(), ".lode-tmp-*")
 	if err != nil {
 		return "", err
 	}
@@ -218,6 +221,10 @@ func (s *Service) SaveAttachment(ctx context.Context, name string, r io.Reader, 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	createdDir := !s.vault.Exists(AttachmentDir)
+	if err := s.vault.Mkdir(AttachmentDir); err != nil {
+		return "", err
+	}
 	ext := path.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
 	for i := 0; ; i++ {
@@ -230,8 +237,13 @@ func (s *Service) SaveAttachment(ctx context.Context, name string, r io.Reader, 
 			continue
 		}
 		if err := os.Rename(tmpName, s.vault.Abs(rel)); err != nil {
+			if createdDir {
+				_ = os.Remove(s.vault.Abs(AttachmentDir)) // 只会删掉空目录
+			}
 			return "", err
 		}
+		a := actorFrom(ctx)
+		s.log.Info("附件已保存", "path", rel, "size", n, "device_id", a.DeviceID, "device", a.DeviceName, "created_dir", createdDir)
 		return rel, nil
 	}
 }
