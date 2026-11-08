@@ -18,6 +18,7 @@ import { sync } from '../../sync/engine'
 import { diffChangeSet, rebase } from '../../sync/textdiff'
 import { type EditorEnv, editorExtensions, remoteSync } from './cm/setup'
 import { editorRef, takeTitleFocus } from './editorRef'
+import { takeNoteScroll } from '../../lib/scrollMemory'
 import { useEditorPrefs } from '../../stores/editorPrefs'
 import { PanelToggleSlot } from '../shell/PanelToggle'
 import { FormatToolbar } from './FormatToolbar'
@@ -174,7 +175,10 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         isComposing: () => viewRef.current?.composing ?? false,
       })
       view.setState(EditorState.create({ doc: doc.content, extensions: editorRef.extensions }))
-      scrollRef.current?.scrollTo({ top: 0 })
+      // 从助手页返回同一篇笔记时回到进入前的滚动位置，其余情况回到顶部
+      const restore = takeNoteScroll(id)
+      scrollRef.current?.scrollTo({ top: restore ?? 0 })
+      if (restore !== null) requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: restore }))
       if (takeTitleFocus(id)) {
         titleRef.current?.focus()
         titleRef.current?.select()

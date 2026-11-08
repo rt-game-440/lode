@@ -6,6 +6,7 @@ import { Modal } from '../../components/Modal'
 import { openMenu } from '../../components/overlays'
 import { IconButton } from '../../components/ui'
 import { chatModel, enabledModels, useAgent } from '../../stores/agent'
+import { useAgentDraft } from '../../stores/agentDraft'
 import { useUI } from '../../stores/ui'
 import { findByPath, useVault } from '../../stores/vault'
 import { VaultImagePicker } from './VaultImagePicker'
@@ -113,11 +114,8 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
   const toast = useUI((s) => s.toast)
   const notes = useVault((s) => s.notes)
 
-  const [text, setText] = useState('')
-  /** 是否带上当前笔记（默认带上，发送后恢复） */
-  const [withContext, setWithContext] = useState(true)
-  const [mentions, setMentions] = useState<string[]>([])
-  const [attachments, setAttachments] = useState<Attachment[]>([])
+  // 草稿在全局：弹窗和助手页之间切换时带过去（见 stores/agentDraft）
+  const { text, withContext, mentions, attachments, setText, setWithContext, setMentions, setAttachments } = useAgentDraft()
   const [picker, setPicker] = useState(false)
   const [imagePicker, setImagePicker] = useState(false)
   const [sending, setSending] = useState(false)
@@ -147,10 +145,7 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
     const ok = await send(text.trim(), allMentions, attachments)
     setSending(false)
     if (ok) {
-      setText('')
-      setMentions([])
-      setAttachments([])
-      setWithContext(true)
+      useAgentDraft.getState().clear()
     }
   }
 

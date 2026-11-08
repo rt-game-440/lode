@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { agentBackAction, withAgentFrom, withoutAgentFrom } from '../lib/agentNav'
+import { rememberNoteScroll } from '../lib/scrollMemory'
 
 export type Route =
   | { view: 'home' }
@@ -106,6 +108,8 @@ interface UIState {
   setSidebarTab: (t: SidebarTab) => void
   /** 打开助手页面（侧栏底部的全局入口；弹窗里的“展开”也走这里）：先关掉笔记页上的助手弹窗 */
   openAgent: () => void
+  /** 助手页返回：回到进入前的页面；直接打开或刷新的助手页没有来源，回到列表 */
+  agentBack: () => void
 
   /** 笔记页上的助手弹窗（桌面是浮在编辑区上的面板，手机是底部半屏面板） */
   agentPopup: boolean
@@ -138,6 +142,8 @@ export const useUI = create<UIState>((set, get) => {
   }
   const layout = loadLayout()
   const initialRoute = parseRoute(location.pathname)
+  // 直接打开或刷新的助手页没有来源（刷新会保留 history.state，这里去掉）
+  if (initialRoute.view === 'agent' && history.state) history.replaceState(withoutAgentFrom(history.state), '')
   return {
     route: initialRoute,
     navigate: (r, replace = false) => {
@@ -172,7 +178,19 @@ export const useUI = create<UIState>((set, get) => {
       persistLayout()
     },
     setSidebarTab: (t) => set({ sidebarTab: t, sidebarOpen: true }),
-    openAgent: () => get().navigate({ view: 'agent' }),
+    openAgent: () => {
+      const { route, navigate } = get()
+      if (route.view === 'agent') return
+      const from = location.pathname + location.search
+      if (route.view === 'note') rememberNoteScroll(route.id)
+      navigate({ view: 'agent' })
+      // 记下来源：返回时回到它（见 lib/agentNav）
+      history.replaceState(withAgentFrom(history.state, from), '')
+    },
+    agentBack: () => {
+      if (agentBackAction(history.state) === 'history') history.back()
+      else get().navigate({ view: 'home' }, true)
+    },
 
     agentPopup: false,
     setAgentPopup: (open) => set({ agentPopup: open }),
