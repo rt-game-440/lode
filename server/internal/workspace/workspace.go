@@ -96,6 +96,8 @@ type Manager struct {
 	closed   bool
 
 	closeDBs sync.Once
+
+	beforeRemove func(id string) // 见 SetBeforeRemove
 }
 
 // New 创建 Manager，默认工作空间立即可用（但后台任务要等 Start）。

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"time"
 )
 
 // 工作空间的改名、排序和删除，见 docs/workspaces.md 第 9 节。
@@ -161,6 +163,11 @@ func (m *Manager) Remove(ctx context.Context, id string) (RemoveResult, error) {
 	delete(m.open, id)
 	m.order = slices.DeleteFunc(m.order, func(x string) bool { return x == id })
 	m.mu.Unlock()
+	// 工作空间已从 open 里摘掉（Get 返回 ErrNotFound），但后台任务和索引库还没动：这时通知外部停掉依赖它的东西
+	// TODO(#61)：合并助手按空间隔离后，在 main.go 注册 SetBeforeRemove(agentSvc.CloseWorkspace)
+	if fn := m.beforeRemove; fn != nil {
+		fn(id)
+	}
 	if w != nil {
 		if w.cancel != nil {
 			w.cancel()
@@ -230,8 +237,30 @@ func (m *Manager) moveToTrash(id, src string) (string, error) {
 	if _, err := os.Lstat(src); errors.Is(err, os.ErrNotExist) {
 		return TrashDirName + "/" + name, os.Mkdir(dst, 0o755)
 	}
-	if err := os.Rename(src, dst); err != nil {
+	if err := renameWithRetry(src, dst); err != nil {
 		return "", fmt.Errorf("移动工作空间目录: %w", err)
 	}
 	return TrashDirName + "/" + name, nil
+}
+
+// SetBeforeRemove 注册删除工作空间时的回调：Remove 在工作空间已不能再被访问（Get 返回 ErrNotFound）之后、
+// 停后台任务、关闭 index.db 和移走目录之前调用它，用来停掉依赖该工作空间索引库的东西
+// （例如 #61 的助手：main.go 里 workspaces.SetBeforeRemove(agentSvc.CloseWorkspace)）。
+// 要在服务开始处理请求之前调用；回调不应阻塞太久。
+func (m *Manager) SetBeforeRemove(fn func(id string)) { m.beforeRemove = fn }
+
+// renameWithRetry 重命名目录。Windows 上刚关闭的文件句柄（文件监听、SQLite）有时要过一会儿才真正释放，
+// 重命名会短暂失败（Access is denied），所以最多重试约 3 秒。
+func renameWithRetry(src, dst string) error {
+	var err error
+	for i := range 30 {
+		if err = os.Rename(src, dst); err == nil {
+			return nil
+		}
+		if i == 0 && runtime.GOOS != "windows" {
+			return err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
 }

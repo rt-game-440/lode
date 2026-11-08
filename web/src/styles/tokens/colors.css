@@ -94,7 +94,7 @@
     --color-accent-fill: #0071e3;
     --color-accent-fill-pressed: #0062c4;
     --color-on-accent: #ffffff;
-    --color-on-danger: #ffffff;
+    --color-on-danger: #1c1c1e;
     --color-focus-ring: rgba(77, 163, 255, 0.6);
     --color-text-selection: rgba(77, 163, 255, 0.3);
     --color-danger: #ff6961;
@@ -145,7 +145,7 @@
   --color-accent-fill: #0071e3;
   --color-accent-fill-pressed: #0062c4;
   --color-on-accent: #ffffff;
-  --color-on-danger: #ffffff;
+  --color-on-danger: #1c1c1e;
   --color-focus-ring: rgba(77, 163, 255, 0.6);
   --color-text-selection: rgba(77, 163, 255, 0.3);
   --color-danger: #ff6961;

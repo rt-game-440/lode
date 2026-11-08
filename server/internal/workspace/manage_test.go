@@ -302,3 +302,33 @@ func TestRemoveRacesWithGet(t *testing.T) {
 		}
 	}
 }
+
+// 回调在工作空间不可再访问之后、关库和移走目录之前调用。
+func TestBeforeRemoveHookOrder(t *testing.T) {
+	ctx := context.Background()
+	m, _, _ := newManager(t)
+	in, _ := m.Create(ctx, CreateOptions{Name: "钩子"})
+	w, err := m.Get(ctx, in.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := ""
+	m.SetBeforeRemove(func(id string) {
+		called = id
+		if _, err := m.Get(ctx, id); !errors.Is(err, ErrNotFound) {
+			t.Errorf("回调时应已不可访问：%v", err)
+		}
+		if _, err := w.Notes.NoteCount(ctx); err != nil {
+			t.Errorf("回调时索引库应仍可用：%v", err)
+		}
+		if _, err := os.Stat(PathsFor(m.dataDir, id, "").Root); err != nil {
+			t.Errorf("回调时目录应仍在原处：%v", err)
+		}
+	})
+	if _, err := m.Remove(ctx, in.ID); err != nil {
+		t.Fatal(err)
+	}
+	if called != in.ID {
+		t.Fatalf("回调参数 = %q", called)
+	}
+}

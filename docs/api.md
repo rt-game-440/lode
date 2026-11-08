@@ -129,12 +129,18 @@ RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直�
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
-| GET | `/api/workspaces` | | `200 {"workspaces":[Workspace]}`，按 `sort` 排序，默认工作空间在最前；不会打开任何工作空间 |
+| GET | `/api/workspaces` | | `200 {"workspaces":[Workspace]}`，按 `sort`（相同时按创建时间）排序；不会打开任何工作空间 |
 | POST | `/api/workspaces` | `{"name":"…"}` | `201 Workspace`；名称去掉首尾空白后为空、超过 64 个字符或含控制字符时 `400 bad_request`；带 `vault_dir`（外部目录）时 `400`（暂不支持） |
+| PATCH | `/api/workspaces/{id}` | `{"name"?:"…","sort"?:n}`，至少给一个 | `200 Workspace`。`name` 规则同新建，默认工作空间也可以改名；`sort` 是目标位置（从 0 开始，超出范围按两端处理），移动后所有工作空间的 `sort` 重新编号为 0、1、2…，默认工作空间也可以挪位置。两个都没给、名称不合法或 `sort` 为负数时 `400 bad_request` |
+| DELETE | `/api/workspaces/{id}` | | `200 {"trash":"trash-workspaces/<id>-<时间>","revoked_tokens":n}`；默认工作空间 `403 forbidden` |
 
-`Workspace`：`{"id":"k3f9a2","name":"工作","external":false,"sort":1,"created_at":1794142854549,"note_count":0}`。`id` 是 6 位小写字母或数字，创建后不变；`default` 是默认工作空间（名称“笔记”）。`vault_dir` 只对外部目录返回。`note_count` 是索引里的笔记数，还没打开过的工作空间读的是上次的索引。
+管理接口里工作空间不存在返回 `404 not_found`（不是 `workspace_not_found`，后者只用于 `/api/w/<id>/...` 的访问）。
+
+`Workspace`：`{"id":"k3f9a2","name":"工作","external":false,"sort":1,"created_at":1794142854549,"note_count":0,"path":"workspaces/k3f9a2/vault"}`。`path` 是笔记文件所在位置：内置空间相对数据目录，外部目录是绝对路径。`id` 是 6 位小写字母或数字，创建后不变；`default` 是默认工作空间（名称“笔记”）。`vault_dir` 只对外部目录返回。`note_count` 是索引里的笔记数，还没打开过的工作空间读的是上次的索引。
 
 新建的工作空间放在数据目录的 `workspaces/<id>/` 下（`index.db`、`vault/`、`trash/`），之后用 `/api/w/<id>/...` 访问。它在第一次被访问时才打开（建立文件监听、全量对账，直接放进 `vault/` 的文件这时进入索引），之后保持到服务退出。各工作空间的笔记、搜索、标签、反链、回收站、变更序号和 WebSocket 推送互不影响。
+
+删除内置工作空间时：先让它不能再被访问，停掉文件监听和后台任务、关闭 `index.db`，再把整个 `workspaces/<id>/` 目录移到数据目录的 `trash-workspaces/<id>-<yyyyMMdd-HHmmss>/`（不直接删除，可以在服务器上手动取回），从登记表移除，并删除绑定它的所有 API token（立即返回 401）。该空间上还没断开的 WebSocket 会被关闭。目录移动失败时整体回滚，空间保持可用。
 
 ## 笔记
 
@@ -233,9 +239,9 @@ PATCH 的 `edits` 按顺序应用，每处 `old` 必须在当时的正文里恰�
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
 | GET | `/api/tokens` | | `200 {"tokens":ApiToken[]}`，按创建时间倒序（吊销即删除，不再出现在列表里） |
-| POST | `/api/tokens` | `{"name":"…","scope":"read"\|"write"}` | `201 {"token":ApiToken,"secret":"lode_…"}`；名称为空、超过 64 个字符或权限不合法时 `400 bad_request` |
+| POST | `/api/tokens` | `{"name":"…","scope":"read"\|"write","workspace"?:"<id>"}`，`workspace` 省略时是 `default` | `201 {"token":ApiToken,"secret":"lode_…"}`；名称为空、超过 64 个字符、权限不合法或工作空间不存在时 `400 bad_request` |
 | DELETE | `/api/tokens/{id}` | | `204`；`404 not_found` |
-| GET | `/api/audit?limit=` | `limit` 默认 100，超过 1000 按 1000 处理；不是正整数时 `400 bad_request` | `200 {"entries":AuditEntry[]}`，按时间倒序 |
+| GET | `/api/audit?limit=&workspace=` | `limit` 默认 100，超过 1000 按 1000 处理；不是正整数时 `400 bad_request`；`workspace` 只返回该工作空间的记录，省略返回全部 | `200 {"entries":AuditEntry[]}`，按时间倒序 |
 | POST | `/mcp` | MCP JSON-RPC（Streamable HTTP） | 见 [docs/mcp.md](mcp.md) |
 
 ```ts
@@ -243,6 +249,7 @@ type ApiToken = {
   id: string
   name: string
   scope: 'read' | 'write'
+  workspace: string      // 绑定的工作空间 id，旧 token 是 'default'
   created_at: number
   last_used_at: number   // 0 表示从未使用
 }
@@ -251,6 +258,7 @@ type AuditEntry = {
   at: number
   token_id: string
   token_name: string
+  workspace: string      // 调用发生的工作空间 id
   tool: string
   target: string         // 工具涉及的路径或搜索词，可能为空
   ok: boolean

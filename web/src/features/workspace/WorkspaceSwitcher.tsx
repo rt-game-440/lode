@@ -1,7 +1,8 @@
-import { ChevronDown, Plus } from 'lucide-react'
+import { ChevronDown, Plus, Settings2 } from 'lucide-react'
 import { errorMessage } from '../../api/client'
 import { type MenuEntry, openMenu, promptDialog } from '../../components/overlays'
 import { useUI } from '../../stores/ui'
+import { openSettings } from '../settings/nav'
 import { useWorkspace, workspaceName } from '../../stores/workspace'
 import './workspace.css'
 
@@ -59,7 +60,11 @@ function openWorkspaceMenu(anchor: HTMLElement) {
       },
     })
   }
-  items.push('separator', { label: '新建工作空间…', icon: <Plus size={16} />, run: () => void promptCreateWorkspace() })
+  items.push(
+    'separator',
+    { label: '新建工作空间…', icon: <Plus size={16} />, run: () => void promptCreateWorkspace() },
+    { label: '管理工作空间…', icon: <Settings2 size={16} />, run: () => openSettings(['workspaces']) },
+  )
   // 打开时顺便刷新列表（笔记数等），已经显示的菜单不跟着变
   void useWorkspace.getState().load()
   openMenu(anchor, items)

@@ -165,7 +165,9 @@
 
 - #58 前端切换工作空间：侧栏顶部换成工作空间名（`features/workspace/WorkspaceSwitcher`），点开是工作空间列表（当前项打勾、笔记数）和“新建工作空间…”；命令面板输入“切换工作空间”或工作空间名列出其他工作空间，也有“新建工作空间…”。默认工作空间地址不变，其他用 `/w/<id>/...`，API 加 `/api/w/<id>`（`lib/workspace.ts`）。同步引擎按工作空间实例化（IndexedDB `lode` / `lode:<id>`），切换时销毁旧引擎和 WebSocket，写队列留在各自的库里，切回来补发；最近打开、展开状态、当前助手对话按工作空间存（`lode.recent:<id>` 等），主题、布局、字号、编辑器偏好仍是全局的。非默认工作空间打开助手时显示“这个工作空间暂时不能用助手”和切回“笔记”的按钮。顺带修了快速切换器的过滤（标题匹配不上时加权后仍是非负，所有笔记都会列出来）和菜单高亮项提示文字的对比度。测试：`web/src/lib/workspace.test.ts`、`web/src/sync/workspace.test.ts`、`web/e2e/ui-workspaces.spec.ts`；截图在 `docs/screenshots/stage-7/`。
 
-下一步：#59（设置里的工作空间管理、MCP token 选择工作空间）、#61（助手按工作空间）、#63 等。注意 `lode backup/restore` 还不包含 `data/workspaces/`。
+- #59 设置页管理工作空间、MCP token 绑定工作空间：`PATCH/DELETE /api/workspaces/{id}`（改名、排序；默认空间不能删，内置空间删除时停后台任务、关库，目录移到 `data/trash-workspaces/<id>-<时间>/`，登记和绑定的 token 一并移除）；`Manager.Rename/Reorder/Remove/SetBeforeRemove`；token 创建时可选 `workspace`（默认 `default`），`/mcp` 只访问 token 绑定空间的笔记，审计记录 `workspace`，`GET /api/audit?workspace=` 筛选。设置页新增“工作空间”分组（拖动或键盘排序、重命名、路径、删除确认），token 表单有工作空间下拉。测试：`internal/workspace/manage_test.go`、`internal/mcpserver/workspace_test.go`、`internal/api/workspaces_manage_test.go`、`internal/audit` 的 `TestListFiltersByWorkspace`、`web/e2e/ui-workspace-settings.spec.ts`。#61 合并后需在 `main.go` 注册 `workspaces.SetBeforeRemove(agentSvc.CloseWorkspace)`（已留 TODO）；#60 在 `disposeFiles` 里加外部目录分支。
+
+下一步：#61（助手按工作空间）、#60、#63 等。注意 `lode backup/restore` 还不包含 `data/workspaces/`。
 
 ## 发布前
 

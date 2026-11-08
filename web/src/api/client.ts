@@ -149,12 +149,19 @@ const globalApi = {
 
   workspaces: () => request<{ workspaces: WorkspaceInfo[] }>('GET', '/api/workspaces').then((r) => r.workspaces),
   createWorkspace: (name: string) => request<WorkspaceInfo>('POST', '/api/workspaces', { name }),
+  /** name：改名；sort：移到列表里的第几位（从 0 开始）。 */
+  updateWorkspace: (id: string, patch: { name?: string; sort?: number }) =>
+    request<WorkspaceInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}`, patch),
+  /** 删除工作空间：目录移到数据目录的 trash-workspaces/ 下，绑定它的 token 一并作废。 */
+  deleteWorkspace: (id: string) =>
+    request<{ trash: string; revoked_tokens: number }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}`),
 
   tokens: () => request<{ tokens: ApiToken[] }>('GET', '/api/tokens').then((r) => r.tokens),
-  createToken: (name: string, scope: TokenScope) =>
-    request<{ token: ApiToken; secret: string }>('POST', '/api/tokens', { name, scope }),
+  createToken: (name: string, scope: TokenScope, workspace: string) =>
+    request<{ token: ApiToken; secret: string }>('POST', '/api/tokens', { name, scope, workspace }),
   revokeToken: (id: string) => request<void>('DELETE', `/api/tokens/${encodeURIComponent(id)}`),
-  audit: (limit = 100) => request<{ entries: AuditEntry[] }>('GET', `/api/audit${q({ limit })}`).then((r) => r.entries),
+  audit: (limit = 100, workspace?: string) =>
+    request<{ entries: AuditEntry[] }>('GET', `/api/audit${q({ limit, workspace })}`).then((r) => r.entries),
 }
 
 /**

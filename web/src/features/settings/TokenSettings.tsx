@@ -5,7 +5,9 @@ import type { ApiToken, AuditEntry, TokenScope } from '../../api/types'
 import { ListItem, ListPresence } from '../../components/AnimatedList'
 import { confirmDialog } from '../../components/overlays'
 import { Button, EmptyState, IconButton, Spinner, TextField } from '../../components/ui'
+import { DEFAULT_WORKSPACE } from '../../lib/workspace'
 import { useUI } from '../../stores/ui'
+import { useWorkspace, workspaceName } from '../../stores/workspace'
 import { errorMessage } from '../actions'
 import { useSettingsData } from './data'
 import { settingsBack } from './nav'
@@ -31,6 +33,11 @@ function ScopeBadge({ scope }: { scope: TokenScope }) {
   return <span className={`scope-badge scope-${scope}`}>{SCOPE_LABEL[scope]}</span>
 }
 
+/** token 所属工作空间的名称（列表里没有时显示 id）。 */
+function useWorkspaceName(id: string) {
+  return useWorkspace((s) => workspaceName(s.list, id))
+}
+
 function lastUsed(t: ApiToken) {
   return t.last_used_at ? `最后使用 ${dateFmt.format(t.last_used_at)}` : '从未使用'
 }
@@ -45,6 +52,7 @@ export function McpPage({ sub }: { sub: string[] }) {
         footer={
           <>
             先在“API token”里创建 token，再在 agent 里添加这个地址，用 <code>Authorization: Bearer &lt;token&gt;</code> 请求头鉴权。
+            每个 token 绑定一个工作空间，agent 只能访问它绑定的那个。
           </>
         }
       >
@@ -68,7 +76,9 @@ export function TokensPage({ sub }: { sub: string[] }) {
 
   return (
     <SettingsPage sub={sub} title={SECTION_TITLE.tokens}>
-      <p className="settings-desc">每个 agent 用一个单独的 token，方便在调用记录里区分，也可以单独吊销。</p>
+      <p className="settings-desc">
+        每个 agent 用一个单独的 token，方便在调用记录里区分，也可以单独吊销。每个 token 绑定一个工作空间，只能访问那里的笔记。
+      </p>
       {reveal ? (
         <TokenReveal created={reveal} onDone={() => setCreated(null)} />
       ) : (
@@ -92,16 +102,7 @@ export function TokensPage({ sub }: { sub: string[] }) {
             <ListPresence>
               {tokens.map((t) => (
                 <ListItem key={t.id}>
-                  <NavRow
-                    to={['tokens', t.id]}
-                    label={
-                      <span className="token-name">
-                        {t.name}
-                        <ScopeBadge scope={t.scope} />
-                      </span>
-                    }
-                    meta={`创建于 ${dateFmt.format(t.created_at)} · ${lastUsed(t)}`}
-                  />
+                  <TokenRow token={t} />
                 </ListItem>
               ))}
             </ListPresence>
@@ -112,12 +113,35 @@ export function TokensPage({ sub }: { sub: string[] }) {
   )
 }
 
+function TokenRow({ token: t }: { token: ApiToken }) {
+  const ws = useWorkspaceName(t.workspace)
+  return (
+    <NavRow
+      to={['tokens', t.id]}
+      testId="token-row"
+      label={
+        <span className="token-name">
+          {t.name}
+          <ScopeBadge scope={t.scope} />
+        </span>
+      }
+      meta={`工作空间：${ws} · 创建于 ${dateFmt.format(t.created_at)} · ${lastUsed(t)}`}
+    />
+  )
+}
+
 function CreateTokenForm({ onCreated }: { onCreated: (c: { token: ApiToken; secret: string }) => void }) {
   const [name, setName] = useState('')
   const [scope, setScope] = useState<TokenScope>('read')
+  const workspaces = useWorkspace((s) => s.list)
+  const currentWs = useWorkspace((s) => s.current)
+  // 默认绑定当前工作空间；用户改过就保持他的选择（所选的被删除后回到默认工作空间）
+  const [picked, setPicked] = useState<string | null>(null)
+  const workspace = workspaces.some((w) => w.id === (picked ?? currentWs)) ? (picked ?? currentWs) : DEFAULT_WORKSPACE
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scopeLabelId = useId()
+  const workspaceId = useId()
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -128,7 +152,7 @@ function CreateTokenForm({ onCreated }: { onCreated: (c: { token: ApiToken; secr
     setBusy(true)
     setError(null)
     try {
-      onCreated(await api.createToken(name.trim(), scope))
+      onCreated(await api.createToken(name.trim(), scope, workspace))
       setName('')
     } catch (err) {
       setError(errorMessage(err))
@@ -150,6 +174,25 @@ function CreateTokenForm({ onCreated }: { onCreated: (c: { token: ApiToken; secr
           onChange={(e) => setName(e.target.value)}
           autoComplete="off"
         />
+        <div className="field">
+          <label className="field-label" htmlFor={workspaceId}>
+            工作空间
+          </label>
+          <select
+            id={workspaceId}
+            className="settings-select token-workspace"
+            value={workspace}
+            onChange={(e) => setPicked(e.target.value)}
+            data-testid="token-workspace"
+          >
+            {workspaces.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+          <p className="settings-meta">这个 token 只能访问所选工作空间里的笔记。</p>
+        </div>
         <div className="field">
           <span className="field-label" id={scopeLabelId}>
             权限
@@ -181,12 +224,13 @@ function CreateTokenForm({ onCreated }: { onCreated: (c: { token: ApiToken; secr
 }
 
 function TokenReveal({ created, onDone }: { created: { token: ApiToken; secret: string }; onDone: () => void }) {
+  const ws = useWorkspaceName(created.token.workspace)
   const command = `claude mcp add --transport http lode ${mcpEndpoint()} --header "Authorization: Bearer ${created.secret}"`
   return (
     <div className="settings-card token-reveal" role="status">
       <p className="token-reveal-title">
         <Check size={16} aria-hidden="true" />
-        已创建“{created.token.name}”（{SCOPE_LABEL[created.token.scope]}）
+        已创建“{created.token.name}”（{SCOPE_LABEL[created.token.scope]}，工作空间：{ws}）
       </p>
       <p className="settings-desc">token 只显示这一次，离开后无法再查看。请现在复制，保存到 agent 的配置里。</p>
       <CopyField value={created.secret} label="token" testId="token-secret" />
@@ -208,6 +252,7 @@ export function TokenPage({ sub, id }: { sub: string[]; id: string }) {
   const audit = useSettingsData((s) => s.audit)
   const removeToken = useSettingsData((s) => s.removeToken)
   const toast = useUI((s) => s.toast)
+  const workspaces = useWorkspace((s) => s.list)
   // 吊销后列表里已经没有它，但退出动画期间仍显示原来的内容
   const last = useRef<ApiToken | null>(null)
   const found = tokens?.find((t) => t.id === id) ?? null
@@ -252,10 +297,13 @@ export function TokenPage({ sub, id }: { sub: string[]; id: string }) {
 
   return (
     <SettingsPage sub={sub} title={t.name} testId="token-detail">
-      <Group footer={SCOPE_HINT[t.scope]}>
+      <Group footer={`${SCOPE_HINT[t.scope]}只能访问“${workspaceName(workspaces, t.workspace)}”这个工作空间。`}>
         <InfoRow label="名称">{t.name}</InfoRow>
         <InfoRow label="权限">
           <ScopeBadge scope={t.scope} />
+        </InfoRow>
+        <InfoRow label="工作空间">
+          <span data-testid="token-workspace-name">{workspaceName(workspaces, t.workspace)}</span>
         </InfoRow>
         <InfoRow label="创建于">{dateFmt.format(t.created_at)}</InfoRow>
         <InfoRow label="最后使用">{t.last_used_at ? dateFmt.format(t.last_used_at) : '从未使用'}</InfoRow>
@@ -303,7 +351,7 @@ export function AuditPage({ sub }: { sub: string[] }) {
         </IconButton>
       }
     >
-      <p className="settings-desc">agent 通过 MCP 调用工具的记录，保留最近 1000 条，这里显示最近 100 条。</p>
+      <p className="settings-desc">agent 通过 MCP 调用工具的记录（含调用发生的工作空间），保留最近 1000 条，这里显示最近 100 条。</p>
       <div className="settings-card">
         {!entries ? (
           <div className="view-loading">
@@ -320,6 +368,7 @@ export function AuditPage({ sub }: { sub: string[] }) {
 }
 
 function AuditTable({ entries, label, showToken }: { entries: AuditEntry[]; label: string; showToken: boolean }) {
+  const workspaces = useWorkspace((s) => s.list)
   return (
     <table className="audit-table" aria-label={label}>
       <thead>
@@ -335,7 +384,14 @@ function AuditTable({ entries, label, showToken }: { entries: AuditEntry[]; labe
         {entries.map((e) => (
           <tr key={e.id}>
             <td className="audit-time">{timeFmt.format(e.at)}</td>
-            {showToken && <td>{e.token_name}</td>}
+            {showToken && (
+              <td>
+                {e.token_name}
+                <span className="audit-ws" data-testid="audit-workspace">
+                  {workspaceName(workspaces, e.workspace)}
+                </span>
+              </td>
+            )}
             <td>
               <code>{e.tool}</code>
             </td>

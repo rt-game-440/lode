@@ -2,6 +2,16 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 23:10 #59 设置页管理工作空间，MCP token 绑定工作空间
+
+- **Manager 管理方法**：`Info(ctx,id)`、`Exists(ctx,id)`、`Rename(ctx,id,name)`、`Reorder(ctx,id,pos)`、`Remove(ctx,id) (RemoveResult{Trash,RevokedTokens}, error)`、`SetBeforeRemove(fn func(id string))`。锁 `createMu` 改名 `adminMu`（新建、改名、排序、删除互斥）。默认工作空间删除返回 `ErrProtected`（API 403 `forbidden`）；管理对象不存在返回 `404 not_found`，不用 `workspace_not_found`（前端收到后者会切回默认空间）。
+- **删除顺序**：标记 `removing`（`Get` 返回 `ErrNotFound`）→ 等进行中的打开 → 从 `open`/`order` 摘掉 → `beforeRemove` 回调 → 取消后台任务并等待、关库、关 `Gone()` 通道（WebSocket 据此退出）→ 一个事务里删 token 和登记行 → 移目录 → 提交（失败则 `undo` 把目录移回）。**#60 扩展点**：`disposeFiles(id, vaultDir)`，外部目录在这里加分支，只清 `data/workspaces/<id>/`，外部笔记文件不动。**#61 扩展点**：`SetBeforeRemove`，main.go 里有 TODO，合并后注册 `agentSvc.CloseWorkspace`；回调在锁外、库关闭前执行。
+- **回收目录**：`data/trash-workspaces/<id>-yyyyMMdd-HHmmss/`，重名加 `-2`；源目录不存在时建空占位。Windows 上刚关的监听和 SQLite 句柄会让 rename 短暂 Access is denied，`renameWithRetry` 最多重试约 3 秒（其他系统不重试）。
+- **sort 语义**：PATCH 的 `sort` 是目标位置（0 起），整表重新编号 0..n-1；默认工作空间也能排序和改名，列表不再强制默认在最前。
+- **token 绑定**：`api_tokens.workspace_id`（0006 已有）；`CreateToken(ctx,name,scope,workspace)` 空串等于 default；创建时校验空间存在（400）。`mcpserver.Options.Workspaces` 取代单一 `Tools`：验证 token 时解析所属空间的 `tools.Registry`，空间已不存在返回 `ErrInvalidToken`（401）。审计记录 `workspace`，`GET /api/audit?workspace=` 筛选。
+- **前端**：设置新增“工作空间”分组（列表页拖动或键盘排序，`Reorder.Group` + 仅把手可拖；详情页重命名、路径、切换、删除）。`stores/workspace` 加 `rename/reorder/remove/setList`，`listSeq` 防止过期的列表请求把已删除的空间加回来；删除当前空间先 `switchTo(default)` 再请求删除。token 创建表单有工作空间下拉（默认当前空间），列表和详情显示所属空间。
+- **深色危险按钮**：深色模式 `--color-on-danger` 改为 `#1c1c1e`，否则 `.btn-danger` 的对比度不过 axe。
+
 ## 2026-11-08 21:35 #58 前端切换工作空间
 
 - **当前工作空间**：`lib/workspace.ts` 是唯一来源。`currentWorkspace()` / `setCurrentWorkspace(ws)`（模块加载时从 `location.pathname` 解析），纯函数 `apiPrefix(ws)`（`/api` 或 `/api/w/<id>`）、`routePrefix` / `workspacePath(ws, path)` / `splitWorkspacePath(pathname)`（默认空间不加前缀，其他是 `/w/<id>`，首页是 `/w/<id>`）、`storageKey(base, ws)`（默认原键名，其他加 `:<id>`）、`WORKSPACE_STORAGE`（recent、expanded、agentChat）、`localDbName(ws)`。`stores/ui` 的 `parseRoute` / `routePath` 仍是不带前缀的路径，`navigate` 和 `syncFromLocation` 负责加减前缀；设置页的 `lodeFrom` 存不带前缀的路径。

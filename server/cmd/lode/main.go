@@ -117,6 +117,8 @@ func serve(cfg config.Config, log *slog.Logger) error {
 		Logger:  log,
 	})
 	def := workspaces.Default()
+	// TODO(#61)：agentSvc 按工作空间隔离后，在它创建之后调用 workspaces.SetBeforeRemove(agentSvc.CloseWorkspace)，
+	// 让删除工作空间时先停掉它的助手对话，再关闭 index.db、移走目录。
 	authSvc := auth.New(database)
 
 	auditLog := audit.New(database)

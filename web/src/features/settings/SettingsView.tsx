@@ -1,8 +1,9 @@
-import { EyeOff, Fingerprint, History, KeyRound, Keyboard, Palette, PenLine, Plug, Sparkles } from 'lucide-react'
+import { EyeOff, Fingerprint, History, KeyRound, Keyboard, Layers, Palette, PenLine, Plug, Sparkles } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { EmptyState } from '../../components/ui'
 import { useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
+import { useWorkspace, workspaceName } from '../../stores/workspace'
 import { useEditorPrefs } from '../../stores/editorPrefs'
 import { passkeyAvailable } from '../../lib/webauthn'
 import { AgentPage, ProviderPage, agentSummary } from './AgentSettings'
@@ -13,6 +14,7 @@ import { useSettingsData } from './data'
 import { settingsBack } from './nav'
 import { Group, NavRow, RowIcon, SettingsContext, SettingsPage } from './parts'
 import { AuditPage, McpPage, TokenPage, TokensPage } from './TokenSettings'
+import { WorkspacePage, WorkspacesPage } from './WorkspaceSettings'
 import { ROOT_TITLE, SECTION_TITLE, settingsPage } from './stack'
 import './settings.css'
 
@@ -44,6 +46,7 @@ function useSettingsSync() {
   useEffect(() => {
     const load = () => {
       void useAgent.getState().loadConfig()
+      void useWorkspace.getState().load()
       void useSettingsData.getState().loadTokens()
       if (passkeyAvailable()) {
         void useSettingsData.getState().loadPasskeys()
@@ -71,6 +74,10 @@ function Page({ sub }: { sub: string[] }) {
       return <KeyboardPage sub={sub} />
     case 'passkeys':
       return <PasskeysPage sub={sub} />
+    case 'workspaces':
+      return <WorkspacesPage sub={sub} />
+    case 'workspace':
+      return <WorkspacePage sub={sub} id={page.param!} />
     case 'agent':
       return <AgentPage sub={sub} />
     case 'provider':
@@ -100,6 +107,8 @@ function SettingsHome() {
   const tokens = useSettingsData((s) => s.tokens)
   const passkeys = useSettingsData((s) => s.passkeys)
   const audit = useSettingsData((s) => s.audit)
+  const workspaceCount = useWorkspace((s) => s.list.length)
+  const currentName = useWorkspace((s) => workspaceName(s.list, s.current))
   const latest = audit?.[0]
   return (
     <SettingsPage sub={[]} title={ROOT_TITLE} testId="settings-home">
@@ -163,6 +172,23 @@ function SettingsHome() {
           </ul>
         </Group>
       )}
+      <Group title="工作空间" footer="每个工作空间是一套互相独立的笔记库：笔记、搜索、标签、回收站和助手对话互不影响。">
+        <ul className="settings-list">
+          <li>
+            <NavRow
+              to={['workspaces']}
+              icon={
+                <RowIcon tone="azure">
+                  <Layers size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.workspaces}
+              value={workspaceCount > 1 ? `${workspaceCount} 个` : currentName}
+              testId="settings-workspaces"
+            />
+          </li>
+        </ul>
+      </Group>
       <Group title="助手" footer="模型供应商、模型、API key 和默认选项。">
         <ul className="settings-list">
           <li>
