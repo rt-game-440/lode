@@ -820,8 +820,12 @@
 }
 .passkey-text {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
+}
+.passkey-row .btn {
+  flex: none;
 }
 .passkey-name {
   font-weight: var(--weight-medium);

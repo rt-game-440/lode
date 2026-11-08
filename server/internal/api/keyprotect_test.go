@@ -141,7 +141,7 @@ func wantCode(t *testing.T, what string, st int, body map[string]any, wantSt int
 }
 
 func TestKeyProtectionLifecycle(t *testing.T) {
-	const key = "sk-api-keyprotect-a1b2"
+	const key = "sk-mock-e2e-1234"
 	llmSrv := fakeOpenAI(t, key)
 	e := newKPEnv(t, "")
 
@@ -204,7 +204,7 @@ func TestKeyProtectionLifecycle(t *testing.T) {
 	if msg, _ := body["message"].(string); !strings.Contains(msg, "锁定") || !strings.Contains(msg, "通行密钥") {
 		t.Fatalf("锁定时的提示应说明原因和解法：%q", msg)
 	}
-	st, body, _ = c.call("PUT", "/api/agent/providers/"+pid, "", map[string]any{"name": "本地", "kind": "openai", "base_url": llmSrv.URL + "/v1", "api_key": "sk-other-0000"}, nil, nil)
+	st, body, _ = c.call("PUT", "/api/agent/providers/"+pid, "", map[string]any{"name": "本地", "kind": "openai", "base_url": llmSrv.URL + "/v1", "api_key": key + "-x"}, nil, nil)
 	if st != 400 || !strings.Contains(body["message"].(string), "已锁定") {
 		t.Fatalf("锁定时保存 key 应给出明确提示：%d %v", st, body)
 	}
@@ -297,7 +297,7 @@ func TestKeyProtectionLifecycle(t *testing.T) {
 }
 
 func TestKeyProtectionDisable(t *testing.T) {
-	const key = "sk-api-keyprotect-c3d4"
+	const key = "sk-mock-e2e-1234"
 	llmSrv := fakeOpenAI(t, key)
 	e := newKPEnv(t, "")
 	c := newPasskeyClient(t, e.option())
@@ -338,7 +338,7 @@ func TestKeyProtectionDisable(t *testing.T) {
 }
 
 func TestKeyProtectionUnavailableWithEnvKey(t *testing.T) {
-	e := newKPEnv(t, "env-master-key-for-test")
+	e := newKPEnv(t, "e2e-only-secret-key")
 	c := newPasskeyClient(t, e.option())
 	c.setup()
 	a := passkeytest.New()

@@ -114,6 +114,18 @@ docker compose cp lode:/data/lode-$(date +%F).tar.gz .
 
 如果你用环境变量 `LODE_SECRET_KEY` 提供主密钥（它优先于 `secret.key`），那它不在备份里，要单独保存；恢复到新机器时用同一个值，否则 API key 需要重新填写。
 
+### 用通行密钥保护 API key（可选）
+
+不想让数据目录和备份里有能直接解开 API key 的东西，可以在“设置 → 通行密钥”里打开“保护 API key”（没有设置 `LODE_SECRET_KEY` 时可用）。开启后：
+
+- 数据目录里不再有 `secret.key`；主密钥由每个加入保护的通行密钥用 WebAuthn PRF 扩展各包一份存在数据库里，单独拿到数据目录或备份文件解不开 API key。开启时会换一个新的主密钥，旧的 `secret.key` 和以前的备份解不开开启后保存的 key。
+- 服务每次重启后处于锁定状态：用加入保护的通行密钥登录一次（或在设置里点“用通行密钥解锁”）后，助手才能使用 API key。锁定时助手和“测试连接”会提示先解锁。
+- 需要通行密钥支持 PRF：较新的 Chrome / Edge（Google 密码管理器、Windows 11 的 Windows Hello）、Safari 18 及以上（iCloud 钥匙串）、1Password、支持 hmac-secret 的安全密钥等。不支持的通行密钥照常可以登录，但不能用来解锁。
+- 新登记的通行密钥要在已解锁时登记（登记后可能还要再验证一次“加入保护”），才能用来解锁。删除最后一个能解锁的通行密钥前会提示：已解锁时自动关闭保护（主密钥写回 `secret.key`），锁定时已保存的 API key 会被清除。
+- 关闭保护时主密钥写回 `secret.key`，已保存的 key 不受影响；锁定状态下只能选择放弃已保存的 key 再关闭。
+
+备份与恢复：开启保护时备份里没有 `secret.key`（`lode backup` 会提示），备份里的 API key 只能用备份时加入保护的通行密钥解锁——恢复后照常用通行密钥登录即可。恢复这种备份时，数据目录里现有的 `secret.key` 会和其它原有数据一起移到 `pre-restore-<时间>/`。通行密钥都丢了时，只能在设置里放弃已保存的 key（或用 `reset-password --clear-passkeys`，见下）后重新填写。
+
 定时备份可以用 root 的 cron，例如每天凌晨备份到 `/srv/backup`（要对 `lode` 用户可写）并保留 14 天：
 
 ```cron
@@ -159,6 +171,8 @@ docker compose exec lode lode reset-password                           # Docker
 sudo -u lode env LODE_DATA_DIR=/var/lib/lode lode reset-password --clear-passkeys
 docker compose exec lode lode reset-password --clear-passkeys
 ```
+
+开启了“用通行密钥保护 API key”时，`--clear-passkeys` 会一并关闭保护：已保存的 API key 没有通行密钥能解开了，会被清除，启动后重新填写。这一步要在服务停止时执行；服务正在运行（例如 `docker compose exec`）时只删除通行密钥，并提示到“设置 → 通行密钥”里关闭保护（选择放弃已保存的 key），或停止服务后再执行一次。
 
 也可以登录后在“设置 → 通行密钥”里逐个删除。通行密钥只在 HTTPS 或 localhost 下可用，并且要通过域名访问（不能用 IP 地址）；通过 `http://局域网 IP` 访问时界面不显示通行密钥选项，用密码登录。
 

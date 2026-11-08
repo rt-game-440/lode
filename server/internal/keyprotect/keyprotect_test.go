@@ -21,7 +21,7 @@ import (
 )
 
 // 只在测试里使用的假 key
-const apiKey = "sk-keyprotect-test-0123456789"
+const apiKey = "sk-mock-e2e-1234"
 
 // env 是一个实例：数据目录、数据库，以及按“启动”构造的 Keeper、助手存储和保护服务。重启就是重新调用 boot。
 type env struct {
@@ -229,7 +229,7 @@ func TestEnableRestartUnlockDisable(t *testing.T) {
 	if _, err := e.key(pid); !errors.Is(err, secret.ErrLocked) {
 		t.Fatalf("锁定时应返回 ErrLocked：%v", err)
 	}
-	k2 := "sk-another-key-0123456789"
+	k2 := "sk-mock-e2e-1234-x"
 	if _, err := e.store.CreateProvider(ctx, agent.ProviderInput{Name: "x", Kind: llm.KindOpenAI, APIKey: &k2}); !errors.Is(err, agent.ErrInvalid) || !strings.Contains(err.Error(), "已锁定") {
 		t.Fatalf("锁定时保存 key 应给出明确提示：%v", err)
 	}
@@ -334,7 +334,7 @@ func TestDisableWhileLocked(t *testing.T) {
 
 func TestUnavailableWithEnvKey(t *testing.T) {
 	ctx := context.Background()
-	e := newEnv(t, "env-master-key")
+	e := newEnv(t, "e2e-only-secret-key")
 	a := passkeytest.New()
 	e.register(a, "a")
 	if st := e.status(); st.Available || st.Reason != "env" {

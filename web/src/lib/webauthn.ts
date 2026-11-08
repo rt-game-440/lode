@@ -3,8 +3,8 @@
  * 服务端按 go-webauthn 的 JSON 格式给出选项（二进制字段是 base64url），这里转成 navigator.credentials
  * 需要的 ArrayBuffer，调用后再把结果转回服务端期望的 JSON。
  *
- * 之后加 PRF 扩展（issue #29）：选项里的 extensions.prf 原样传给浏览器，结果在
- * credential.getClientExtensionResults() 里，这里的 toJSON 已经把 clientExtensionResults 一并带上。
+ * PRF 扩展（#29，用通行密钥保护 API key）：选项里 extensions.prf 的盐是 base64url，转成字节交给浏览器；
+ * 结果 clientExtensionResults.prf.results 里的 ArrayBuffer 再转回 base64url（直接 JSON 序列化会变成 {}）。
  */
 
 export function b64urlToBytes(s: string): Uint8Array<ArrayBuffer> {
@@ -55,6 +55,39 @@ function descriptors(list: JsonDescriptor[] | undefined): PublicKeyCredentialDes
   return list?.map((d) => ({ ...d, id: b64urlToBytes(d.id) }))
 }
 
+type JsonPRFValues = { first: string; second?: string }
+
+function prfValues(v: JsonPRFValues): { first: Uint8Array<ArrayBuffer>; second?: Uint8Array<ArrayBuffer> } {
+  return v.second === undefined ? { first: b64urlToBytes(v.first) } : { first: b64urlToBytes(v.first), second: b64urlToBytes(v.second) }
+}
+
+/** 把选项里 extensions.prf 的 eval / evalByCredential 转成字节；其余扩展原样保留。 */
+export function extensionInputs(ext: Record<string, any> | undefined): Record<string, any> | undefined {
+  const prf = ext?.prf as { eval?: JsonPRFValues; evalByCredential?: Record<string, JsonPRFValues> } | undefined
+  if (!ext || !prf) return ext
+  const out: Record<string, any> = {}
+  if (prf.eval) out.eval = prfValues(prf.eval)
+  if (prf.evalByCredential) {
+    out.evalByCredential = Object.fromEntries(Object.entries(prf.evalByCredential).map(([id, v]) => [id, prfValues(v)]))
+  }
+  return { ...ext, prf: out }
+}
+
+/** clientExtensionResults 转成服务端期望的 JSON：prf.results 里的 ArrayBuffer 转成 base64url。 */
+export function extensionOutputs(res: AuthenticationExtensionsClientOutputs): Record<string, unknown> {
+  const { prf, ...rest } = res as AuthenticationExtensionsClientOutputs & {
+    prf?: { enabled?: boolean; results?: { first: BufferSource; second?: BufferSource } }
+  }
+  if (!prf) return rest
+  const out: Record<string, unknown> = {}
+  if (prf.enabled !== undefined) out.enabled = prf.enabled
+  if (prf.results) {
+    const enc = (b: BufferSource) => bytesToB64url(b instanceof ArrayBuffer ? b : new Uint8Array(b.buffer, b.byteOffset, b.byteLength))
+    out.results = prf.results.second === undefined ? { first: enc(prf.results.first) } : { first: enc(prf.results.first), second: enc(prf.results.second) }
+  }
+  return { ...rest, prf: out }
+}
+
 /** 服务端返回的 {publicKey: {...}}（登记）。 */
 export function creationOptions(json: { publicKey: Record<string, any> }): CredentialCreationOptions {
   const pk = json.publicKey
@@ -64,6 +97,7 @@ export function creationOptions(json: { publicKey: Record<string, any> }): Crede
       challenge: b64urlToBytes(pk.challenge),
       user: { ...pk.user, id: b64urlToBytes(pk.user.id) },
       excludeCredentials: descriptors(pk.excludeCredentials),
+      extensions: extensionInputs(pk.extensions),
     } as unknown as PublicKeyCredentialCreationOptions,
   }
 }
@@ -76,6 +110,7 @@ export function requestOptions(json: { publicKey: Record<string, any> }): Creden
       ...pk,
       challenge: b64urlToBytes(pk.challenge),
       allowCredentials: descriptors(pk.allowCredentials),
+      extensions: extensionInputs(pk.extensions),
     } as unknown as PublicKeyCredentialRequestOptions,
   }
 }
@@ -99,7 +134,7 @@ export async function createPasskey(json: { publicKey: Record<string, any> }): P
       attestationObject: bytesToB64url(r.attestationObject),
       transports: r.getTransports?.() ?? [],
     },
-    clientExtensionResults: cred.getClientExtensionResults(),
+    clientExtensionResults: extensionOutputs(cred.getClientExtensionResults()),
   }
 }
 
@@ -118,6 +153,6 @@ export async function getPasskey(json: { publicKey: Record<string, any> }): Prom
       signature: bytesToB64url(r.signature),
       userHandle: r.userHandle ? bytesToB64url(r.userHandle) : undefined,
     },
-    clientExtensionResults: cred.getClientExtensionResults(),
+    clientExtensionResults: extensionOutputs(cred.getClientExtensionResults()),
   }
 }

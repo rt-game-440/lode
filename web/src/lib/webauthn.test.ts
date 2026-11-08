@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { b64urlToBytes, bytesToB64url, creationOptions, isIpHost, passkeyAvailable, requestOptions } from './webauthn'
+import {
+  b64urlToBytes,
+  bytesToB64url,
+  creationOptions,
+  extensionInputs,
+  extensionOutputs,
+  isIpHost,
+  passkeyAvailable,
+  requestOptions,
+} from './webauthn'
 
 describe('base64url', () => {
   it('与字节互逆，不带填充，用 - 和 _', () => {
@@ -58,5 +67,43 @@ describe('选项转换', () => {
     expect([...(out.challenge as Uint8Array)]).toEqual([1, 2, 3])
     expect(out.allowCredentials).toBeUndefined()
     expect(out.rpId).toBe('localhost')
+  })
+})
+
+describe('PRF 扩展', () => {
+  it('登记时只探测（prf: {}）原样保留，其他扩展不受影响', () => {
+    const out = creationOptions({
+      publicKey: { challenge: 'AQID', rp: { id: 'localhost' }, user: { id: 'BAUG' }, extensions: { prf: {}, credProps: true } },
+    }).publicKey!
+    expect(out.extensions).toEqual({ prf: {}, credProps: true })
+    expect(extensionInputs(undefined)).toBeUndefined()
+  })
+
+  it('验证选项里的盐（eval、evalByCredential）转成字节', () => {
+    const out = requestOptions({
+      publicKey: {
+        challenge: 'AQID',
+        allowCredentials: [{ id: 'Bwg', type: 'public-key' }],
+        extensions: { prf: { eval: { first: 'CQkJ' }, evalByCredential: { Bwg: { first: 'AQ', second: 'Ag' } } } },
+      },
+    }).publicKey!
+    const prf = (out.extensions as any).prf
+    expect([...prf.eval.first]).toEqual([9, 9, 9])
+    expect(prf.eval.second).toBeUndefined()
+    expect([...prf.evalByCredential.Bwg.first]).toEqual([1])
+    expect([...prf.evalByCredential.Bwg.second]).toEqual([2])
+  })
+
+  it('结果里的 ArrayBuffer 转成 base64url，enabled 和其他扩展结果原样带上', () => {
+    const first = new Uint8Array(32).fill(7)
+    const res = extensionOutputs({ credProps: { rk: true }, prf: { enabled: true, results: { first: first.buffer } } } as any)
+    expect(res).toEqual({ credProps: { rk: true }, prf: { enabled: true, results: { first: bytesToB64url(first) } } })
+    // 视图（Uint8Array 的一段）也按实际范围编码
+    const view = new Uint8Array([0, 1, 2, 3]).subarray(1, 3)
+    expect(extensionOutputs({ prf: { results: { first: view } } } as any)).toEqual({ prf: { results: { first: bytesToB64url(new Uint8Array([1, 2])) } } })
+    expect(extensionOutputs({ prf: { enabled: false } } as any)).toEqual({ prf: { enabled: false } })
+    expect(extensionOutputs({})).toEqual({})
+    // 直接 JSON 序列化 ArrayBuffer 会丢掉内容，所以必须转换
+    expect(JSON.stringify(res)).toContain(bytesToB64url(first))
   })
 })

@@ -45,7 +45,10 @@ function useSettingsSync() {
     const load = () => {
       void useAgent.getState().loadConfig()
       void useSettingsData.getState().loadTokens()
-      if (passkeyAvailable()) void useSettingsData.getState().loadPasskeys()
+      if (passkeyAvailable()) {
+        void useSettingsData.getState().loadPasskeys()
+        void useSettingsData.getState().loadKeyProtection()
+      }
       void useSettingsData.getState().loadAudit()
     }
     load()
