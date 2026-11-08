@@ -555,23 +555,31 @@ button.mention-chip:not(:disabled):hover {
   cursor: pointer;
 }
 
-/* 输入框 */
+/*
+ * 输入框：只有外层一圈边框，聚焦体现在外层（:focus-within），内部文本框没有可见边框。
+ * 圆角同心：外层 --radius-xl，内边距 --space-2，里面的标签、按钮、模型按钮统一 --radius-md（16 - 8 = 8）。
+ */
 .composer {
+  position: relative;
   flex: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
   margin: 0 var(--space-2) var(--space-2);
   padding: var(--space-2);
-  padding-bottom: var(--space-1);
   border: 1px solid var(--color-separator-strong);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--color-bg);
   box-shadow: var(--shadow-sm);
-  transition: border-color var(--duration-fast) var(--ease-out);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 .composer:focus-within {
   border-color: var(--color-accent);
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px color-mix(in srgb, var(--color-focus-ring) 28%, transparent);
 }
 .agent.is-page .composer {
   width: min(var(--editor-max-width), calc(100% - 2 * var(--space-3)));
@@ -582,20 +590,34 @@ button.mention-chip:not(:disabled):hover {
   flex-wrap: wrap;
   gap: var(--space-1);
 }
+.composer .mention-chip {
+  border-radius: var(--radius-md);
+}
+.composer .chip-x {
+  border-radius: var(--radius-sm);
+}
 .composer-input {
   width: 100%;
   min-height: 1.6em;
   max-height: 12rem;
   field-sizing: content;
   resize: none;
-  padding: var(--space-1) var(--space-1);
+  padding: var(--space-1);
   border: 0;
+  border-radius: var(--radius-md);
   outline: none;
+  box-shadow: none;
   background: transparent;
   font: inherit;
   font-size: var(--text-subhead);
   line-height: var(--leading-ui);
   color: var(--color-label);
+}
+/* 全局的键盘焦点环不画在文本框上：焦点由外层容器的高亮表达 */
+.composer .composer-input:focus,
+.composer .composer-input:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 .composer-input::placeholder {
   color: var(--color-label-tertiary);
@@ -606,31 +628,54 @@ button.mention-chip:not(:disabled):hover {
   gap: var(--space-0-5);
   min-width: 0;
 }
+.composer-bar .icon-btn {
+  border-radius: var(--radius-md);
+}
 .composer-attach {
   display: inline-flex;
 }
-.composer-select {
+/* 模型选择：轻量的文字按钮，展开的菜单见 components/overlays 的 MenuHost */
+.composer-model {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0-5);
   min-width: 0;
-  max-width: 11rem;
+  max-width: 12rem;
   height: 1.75rem;
   padding: 0 var(--space-1-5);
   border: 0;
-  border-radius: var(--radius-sm);
-  background: var(--color-fill);
+  border-radius: var(--radius-md);
+  background: transparent;
   font: inherit;
   font-size: var(--text-caption);
   color: var(--color-label-secondary);
-  text-overflow: ellipsis;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
-.composer-select:hover:not(:disabled) {
+.composer-model svg {
+  flex: none;
+}
+.composer-model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-model:hover:not(:disabled),
+.composer-model[aria-expanded='true'] {
+  background: var(--color-fill);
   color: var(--color-label);
+}
+.composer-model:disabled {
+  color: var(--color-label-tertiary);
 }
 .composer-spacer {
   flex: 1;
 }
 .composer-send {
   flex: none;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--color-accent-fill);
   color: var(--color-on-accent);
 }
@@ -647,8 +692,72 @@ button.mention-chip:not(:disabled):hover {
   color: var(--color-bg);
 }
 
-/* 选择笔记 */
-.note-picker,
+/* @ 补全：紧贴输入框上方，没有遮罩，焦点留在输入框 */
+.mention-menu {
+  position: absolute;
+  z-index: var(--z-popover);
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--space-1-5));
+  max-height: min(16rem, 45vh);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-popover);
+  -webkit-backdrop-filter: var(--material-blur-thick);
+  backdrop-filter: var(--material-blur-thick);
+  box-shadow: var(--shadow-md);
+  transform-origin: 50% 100%;
+}
+.mention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+}
+.mention-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-subhead);
+  cursor: pointer;
+}
+.mention-list li.is-selected {
+  background: var(--color-fill-selected);
+}
+.mention-list li.is-selected .mention-path {
+  color: var(--color-label-secondary);
+}
+.mention-title {
+  flex: none;
+  max-width: 60%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mention-path {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-caption);
+  color: var(--color-label-tertiary);
+}
+.mention-empty {
+  margin: 0;
+  padding: var(--space-2);
+  text-align: center;
+  font-size: var(--text-subhead);
+  color: var(--color-label-tertiary);
+}
+
+/* 选择笔记库里的图片 */
 .image-picker {
   width: min(32rem, 100%);
   max-height: min(30rem, 75vh);
@@ -662,60 +771,6 @@ button.mention-chip:not(:disabled):hover {
   box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
-.note-picker-input {
-  flex: none;
-  height: 3rem;
-  padding: 0 var(--space-4);
-  border: 0;
-  border-bottom: 1px solid var(--color-separator);
-  outline: none;
-  background: transparent;
-  font: inherit;
-  font-size: var(--text-body);
-  color: var(--color-label);
-}
-.note-picker-list {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-1);
-  overflow-y: auto;
-}
-.note-picker-list li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--hit-target);
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--text-subhead);
-  cursor: pointer;
-}
-.note-picker-list li.is-selected {
-  background: var(--color-fill-selected);
-}
-.note-picker-title {
-  flex: none;
-  max-width: 60%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.note-picker-path {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: var(--text-caption);
-  color: var(--color-label-tertiary);
-}
-.note-picker-list li.note-picker-empty {
-  justify-content: center;
-  color: var(--color-label-tertiary);
-  cursor: default;
-}
-
-/* 选择笔记库里的图片 */
 .image-picker {
   width: min(40rem, 100%);
   padding: var(--space-4);
@@ -770,10 +825,13 @@ button.mention-chip:not(:disabled):hover {
   right: var(--space-2);
 }
 
-/* 触控设备上下拉框保持 44px 高的可点区域 */
+/* 触控设备上模型按钮和补全项保持 44px 高的可点区域 */
 @media (pointer: coarse) {
-  .composer-select {
+  .composer-model {
     height: var(--hit-target);
+  }
+  .mention-list li {
+    min-height: var(--hit-target);
   }
 }
 

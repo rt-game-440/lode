@@ -1,16 +1,19 @@
 import { ArrowUp, AtSign, FileText, Image, Paperclip, Square, X } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { type Attachment, EFFORT_LABEL, type Effort, type Modality } from '../../api/agent'
-import type { Note } from '../../api/types'
-import { Modal } from '../../components/Modal'
+import type { Attachment, Modality } from '../../api/agent'
 import { openMenu } from '../../components/overlays'
 import { IconButton } from '../../components/ui'
-import { chatModel, enabledModels, useAgent } from '../../stores/agent'
+import { usePop } from '../../components/usePop'
+import { chatModel, useAgent } from '../../stores/agent'
 import { useAgentDraft } from '../../stores/agentDraft'
 import { useUI } from '../../stores/ui'
 import { findByPath, useVault } from '../../stores/vault'
+import { springSnappy } from '../../styles/tokens/motion'
+import { ModelPicker } from './ModelPicker'
 import { VaultImagePicker } from './VaultImagePicker'
 import { fileToAttachment } from './attachments'
+import { filterNotes, findMention, resolveMentions, sentMentions } from './mention'
 
 const MAX_ATTACH = 20 << 20
 
@@ -30,100 +33,31 @@ function modalityOf(mime: string): Modality | null {
 /** base64 的原始字节数。 */
 const rawSize = (a: Attachment) => Math.floor((a.data.length * 3) / 4)
 
-/** 选择要 @ 的笔记：按标题和路径过滤，方向键选择，回车确认。 */
-function NotePicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (n: Note) => void }) {
-  const notes = useVault((s) => s.notes)
-  const [q, setQ] = useState('')
-  const [sel, setSel] = useState(0)
-  const listId = useId()
-  const items = useMemo(() => {
-    const all = Object.values(notes)
-    const k = q.trim().toLowerCase()
-    const hit = k ? all.filter((n) => n.title.toLowerCase().includes(k) || n.path.toLowerCase().includes(k)) : all
-    return hit.sort((a, b) => b.mtime - a.mtime).slice(0, 30)
-  }, [notes, q])
-  useEffect(() => {
-    if (open) {
-      setQ('')
-      setSel(0)
-    }
-  }, [open])
-  const pick = (n?: Note) => {
-    if (!n) return
-    onPick(n)
-    onClose()
-  }
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setSel((i) => Math.min(items.length - 1, i + 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setSel((i) => Math.max(0, i - 1))
-    } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      pick(items[sel])
-    }
-  }
-  return (
-    <Modal open={open} onClose={onClose} label="选择要附上的笔记" className="note-picker">
-      <input
-        className="note-picker-input"
-        placeholder="搜索笔记标题或路径"
-        value={q}
-        autoFocus
-        role="combobox"
-        aria-expanded="true"
-        aria-controls={listId}
-        aria-activedescendant={items[sel] ? `${listId}-${sel}` : undefined}
-        onChange={(e) => {
-          setQ(e.target.value)
-          setSel(0)
-        }}
-        onKeyDown={onKey}
-      />
-      <ul className="note-picker-list" id={listId} role="listbox" aria-label="笔记">
-        {items.map((n, i) => (
-          <li
-            key={n.id}
-            id={`${listId}-${i}`}
-            role="option"
-            aria-selected={i === sel}
-            className={i === sel ? 'is-selected' : ''}
-            onMouseEnter={() => setSel(i)}
-            onClick={() => pick(n)}
-          >
-            <FileText size={14} aria-hidden="true" />
-            <span className="note-picker-title">{n.title}</span>
-            <span className="note-picker-path">{n.path}</span>
-          </li>
-        ))}
-        {!items.length && <li className="note-picker-empty">没有找到笔记</li>}
-      </ul>
-    </Modal>
-  )
-}
-
 export function Composer({ contextPath, mobile, autoFocus }: { contextPath: string | null; mobile: boolean; autoFocus?: boolean }) {
   const config = useAgent((s) => s.config)
   const current = useAgent((s) => s.current)
   const send = useAgent((s) => s.send)
   const stop = useAgent((s) => s.stop)
-  const setModel = useAgent((s) => s.setModel)
-  const setEffort = useAgent((s) => s.setEffort)
   const toast = useUI((s) => s.toast)
   const notes = useVault((s) => s.notes)
 
   // 草稿在全局：弹窗和助手页之间切换时带过去（见 stores/agentDraft）
-  const { text, withContext, mentions, attachments, setText, setWithContext, setMentions, setAttachments } = useAgentDraft()
-  const [picker, setPicker] = useState(false)
+  const { text, mentions, attachments, suppressed, setText, setMentions, setAttachments } = useAgentDraft()
   const [imagePicker, setImagePicker] = useState(false)
   const [sending, setSending] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
+  // @ 补全：光标位置、输入框是否有焦点、被 Esc 关掉的那个 @ 的位置、高亮项
+  const [caret, setCaret] = useState(0)
+  const [focused, setFocused] = useState(false)
+  const [dismissed, setDismissed] = useState<number | null>(null)
+  const [sel, setSel] = useState(0)
+  const pendingCaret = useRef<number | null>(null)
+  const listId = useId()
+  const pop = usePop({ scale: 0.97, y: 4 })
+
   const model = chatModel(config, current?.chat)
-  const models = enabledModels(config)
   const running = current?.running ?? false
   const contextNote = contextPath ? findByPath(notes, contextPath) : undefined
   const accepts = (model?.modalities ?? []).filter((m): m is Exclude<Modality, 'text'> => m !== 'text')
@@ -136,8 +70,37 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
     el.style.height = `${el.scrollHeight}px`
   }, [text])
 
-  const allMentions = [...(withContext && contextNote ? [contextNote.path] : []), ...mentions.filter((p) => p !== contextNote?.path || !withContext)]
+  // 插入文字 / 选中补全项后，把光标放到约定的位置
+  useLayoutEffect(() => {
+    const pos = pendingCaret.current
+    const el = input.current
+    if (pos === null || !el) return
+    pendingCaret.current = null
+    el.focus()
+    el.setSelectionRange(pos, pos)
+    setCaret(pos)
+  }, [text])
+
+  // 当前笔记只在第一次发送时自动附上；用户移除过、或之前的消息已经附过，就不再自动附上（#44）
+  const sent = useMemo(() => sentMentions(current?.messages), [current?.messages])
+  const { all: allMentions } = resolveMentions({ contextPath: contextNote?.path, mentions, suppressed, sent })
   const canSend = !running && !sending && (text.trim() !== '' || attachments.length > 0) && !!model
+
+  const mention = findMention(text, Math.min(caret, text.length))
+  const listOpen = focused && !!mention && mention.start !== dismissed
+  const attachedKey = allMentions.join('\n')
+  const query = mention?.query
+  const items = useMemo(() => (listOpen && query !== undefined ? filterNotes(notes, query, attachedKey ? attachedKey.split('\n') : []) : []), [listOpen, query, notes, attachedKey])
+  const activeIndex = Math.min(sel, Math.max(0, items.length - 1))
+  const optionId = (i: number) => `${listId}-${i}`
+
+  useEffect(() => {
+    if (!mention) setDismissed(null)
+  }, [mention])
+  useEffect(() => setSel(0), [query])
+  useEffect(() => {
+    if (listOpen) document.getElementById(`${listId}-${activeIndex}`)?.scrollIntoView({ block: 'nearest' })
+  }, [listOpen, activeIndex, listId])
 
   const submit = async () => {
     if (!canSend) return
@@ -145,12 +108,51 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
     const ok = await send(text.trim(), allMentions, attachments)
     setSending(false)
     if (ok) {
+      // 这一轮附过的笔记不再自动附上
+      useAgentDraft.getState().suppress(allMentions)
       useAgentDraft.getState().clear()
     }
   }
 
+  const pick = (path: string) => {
+    if (!mention) return
+    const before = text.slice(0, mention.start)
+    let after = text.slice(caret)
+    // @ 前后都是空格时去掉一个，免得留下双空格
+    if (before.endsWith(' ') && after.startsWith(' ')) after = after.slice(1)
+    pendingCaret.current = before.length
+    setText(before + after)
+    setMentions((m) => (m.includes(path) ? m : [...m, path]))
+  }
+
+  const removeMention = (path: string) => {
+    setMentions((m) => m.filter((x) => x !== path))
+    useAgentDraft.getState().suppress([path])
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return
+    if (listOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (items.length) {
+          e.preventDefault()
+          setSel((activeIndex + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
+        }
+        return
+      }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && items.length) {
+        e.preventDefault()
+        pick(items[activeIndex].path)
+        return
+      }
+      if (e.key === 'Escape' && mention) {
+        // 只关补全；弹窗的 Esc 处理会跳过已 preventDefault 的按键
+        e.preventDefault()
+        e.stopPropagation()
+        setDismissed(mention.start)
+        return
+      }
+    }
     // 桌面回车发送、Shift+回车换行；手机回车换行，用发送按钮发送
     if (e.key === 'Enter' && !e.shiftKey && !mobile) {
       e.preventDefault()
@@ -158,16 +160,20 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
     }
   }
 
-  const onChange = (v: string) => {
-    // 在行首或空白后输入 @ 时打开笔记选择
+  // 点 @ 按钮等同于在光标处输入一个 @（前面不是空白时先补一个空格）
+  const insertAt = () => {
     const el = input.current
-    const pos = el?.selectionStart ?? v.length
-    if (v.length === text.length + 1 && v[pos - 1] === '@' && (pos === 1 || /\s/.test(v[pos - 2]))) {
-      setText(v.slice(0, pos - 1) + v.slice(pos))
-      setPicker(true)
+    if (!el) return
+    if (listOpen && mention) {
+      setDismissed(mention.start)
+      el.focus()
       return
     }
-    setText(v)
+    const pos = el.selectionStart ?? text.length
+    const before = text.slice(0, pos)
+    const ins = (before && !/\s$/.test(before) ? ' ' : '') + '@'
+    pendingCaret.current = pos + ins.length
+    setText(before + ins + text.slice(pos))
   }
 
   const addFiles = async (files: FileList | File[]) => {
@@ -209,36 +215,67 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
     ])
   }
 
+  const showGhost = !!contextNote && !allMentions.includes(contextNote.path)
+
   return (
     <div className="composer">
-      {(allMentions.length > 0 || attachments.length > 0 || (contextNote && !withContext)) && (
+      <AnimatePresence>
+        {listOpen && mention && (
+          <motion.div
+            className="mention-menu"
+            data-testid="mention-menu"
+            {...pop}
+            transition={springSnappy}
+            // 点列表时输入框不失焦，焦点始终留在输入框
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {items.length > 0 ? (
+              <ul id={listId} role="listbox" aria-label="笔记" className="mention-list">
+                {items.map((n, i) => (
+                  <li
+                    key={n.id}
+                    id={optionId(i)}
+                    role="option"
+                    aria-selected={i === activeIndex}
+                    className={i === activeIndex ? 'is-selected' : ''}
+                    onMouseEnter={() => setSel(i)}
+                    onClick={() => pick(n.path)}
+                  >
+                    <FileText size={14} aria-hidden="true" />
+                    <span className="mention-title">{n.title}</span>
+                    <span className="mention-path">{n.path}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mention-empty">没有找到笔记</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {(allMentions.length > 0 || attachments.length > 0 || showGhost) && (
         <div className="composer-chips">
-          {withContext && contextNote && (
-            <span className="mention-chip is-context" title={`${contextNote.path}（当前笔记）`}>
-              <FileText size={12} aria-hidden="true" />
-              {contextNote.title}
-              <button type="button" className="chip-x" aria-label={`不附上“${contextNote.title}”`} onClick={() => setWithContext(false)}>
-                <X size={12} />
-              </button>
-            </span>
-          )}
-          {mentions
-            .filter((p) => p !== contextNote?.path || !withContext)
-            .map((p) => {
-              const n = findByPath(notes, p)
-              const title = n?.title ?? p
-              return (
-                <span key={p} className="mention-chip" title={p}>
-                  <FileText size={12} aria-hidden="true" />
-                  {title}
-                  <button type="button" className="chip-x" aria-label={`不附上“${title}”`} onClick={() => setMentions((m) => m.filter((x) => x !== p))}>
-                    <X size={12} />
-                  </button>
-                </span>
-              )
-            })}
-          {contextNote && !withContext && (
-            <button type="button" className="mention-chip is-ghost" onClick={() => setWithContext(true)}>
+          {allMentions.map((p) => {
+            const n = findByPath(notes, p)
+            const title = n?.title ?? p
+            const isContext = p === contextNote?.path
+            return (
+              <span key={p} className={`mention-chip${isContext ? ' is-context' : ''}`} title={isContext ? `${p}（当前笔记）` : p}>
+                <FileText size={12} aria-hidden="true" />
+                {title}
+                <button type="button" className="chip-x" aria-label={`不附上“${title}”`} onClick={() => removeMention(p)}>
+                  <X size={12} />
+                </button>
+              </span>
+            )
+          })}
+          {showGhost && contextNote && (
+            <button
+              type="button"
+              className="mention-chip is-ghost"
+              title={`${contextNote.path}（当前笔记）`}
+              onClick={() => setMentions((m) => (m.includes(contextNote.path) ? m : [...m, contextNote.path]))}
+            >
               <FileText size={12} aria-hidden="true" />
               附上当前笔记
             </button>
@@ -260,8 +297,17 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
         rows={1}
         placeholder={model ? '问助手，@ 附上笔记' : '先在设置里添加模型'}
         aria-label="给助手的消息"
+        aria-autocomplete="list"
+        aria-controls={listOpen && items.length ? listId : undefined}
+        aria-activedescendant={listOpen && items.length ? optionId(activeIndex) : undefined}
         value={text}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value)
+          setCaret(e.target.selectionStart ?? e.target.value.length)
+        }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         onKeyDown={onKeyDown}
         onPaste={(e) => {
           if (e.clipboardData.files.length) {
@@ -273,7 +319,8 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
         data-testid="agent-input"
       />
       <div className="composer-bar">
-        <IconButton label="附上笔记（@）" size="sm" onClick={() => setPicker(true)}>
+        {/* mousedown 不夺走输入框的焦点（手机上软键盘不收起） */}
+        <IconButton label="附上笔记（@）" size="sm" onMouseDown={(e) => e.preventDefault()} onClick={insertAt} data-testid="agent-at">
           <AtSign size={16} />
         </IconButton>
         <span className="composer-attach" title={accepts.length ? undefined : attachLabel}>
@@ -292,41 +339,7 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
             e.target.value = ''
           }}
         />
-        {models.length > 0 && (
-          <select
-            className="composer-select"
-            aria-label="模型"
-            value={model?.id ?? ''}
-            disabled={running}
-            onChange={(e) => void setModel(e.target.value)}
-            data-testid="model-select"
-          >
-            {!model && <option value="">选择模型</option>}
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name || m.model}
-                {models.some((x) => x.provider.id !== m.provider.id) ? ` · ${m.provider.name}` : ''}
-              </option>
-            ))}
-          </select>
-        )}
-        {model?.reasoning && (
-          <select
-            className="composer-select"
-            aria-label="推理强度"
-            value={current?.chat.effort ?? ''}
-            disabled={running}
-            onChange={(e) => void setEffort(e.target.value as Effort | '')}
-            data-testid="effort-select"
-          >
-            <option value="">推理：{EFFORT_LABEL[model.effort]}（默认）</option>
-            {(Object.keys(EFFORT_LABEL) as Effort[]).map((k) => (
-              <option key={k} value={k}>
-                推理：{EFFORT_LABEL[k]}
-              </option>
-            ))}
-          </select>
-        )}
+        <ModelPicker />
         <span className="composer-spacer" />
         {running ? (
           <IconButton label="停止" className="composer-send is-stop" onClick={() => void stop()} data-testid="agent-stop">
@@ -338,17 +351,6 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
           </IconButton>
         )}
       </div>
-      <NotePicker
-        open={picker}
-        onClose={() => {
-          setPicker(false)
-          input.current?.focus()
-        }}
-        onPick={(n) => {
-          if (n.path === contextNote?.path) setWithContext(true)
-          else setMentions((m) => (m.includes(n.path) ? m : [...m, n.path]))
-        }}
-      />
       <VaultImagePicker
         open={imagePicker}
         onClose={() => setImagePicker(false)}

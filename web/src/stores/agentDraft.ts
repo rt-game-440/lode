@@ -10,25 +10,33 @@ const apply = <T>(u: Update<T>, prev: T): T => (typeof u === 'function' ? (u as 
 
 interface DraftState {
   text: string
-  /** 是否带上当前笔记（默认带上，发送后恢复） */
-  withContext: boolean
+  /** 用户明确附上的笔记（@ 补全、点“附上当前笔记”） */
   mentions: string[]
   attachments: Attachment[]
+  /**
+   * 不再自动附上的笔记：用户在本次会话里移除过的，以及已经随消息发出的。
+   * “当前笔记”只在第一次发送时自动附上，之后要用户点一下才附（#44）。
+   * 换会话或新建会话时清空（见 stores/agent 的 open）。
+   */
+  suppressed: string[]
   setText: (u: Update<string>) => void
-  setWithContext: (u: Update<boolean>) => void
   setMentions: (u: Update<string[]>) => void
   setAttachments: (u: Update<Attachment[]>) => void
+  suppress: (paths: string[]) => void
+  /** 发送成功后清空草稿；suppressed 保留 */
   clear: () => void
+  resetSuppressed: () => void
 }
 
 export const useAgentDraft = create<DraftState>((set) => ({
   text: '',
-  withContext: true,
   mentions: [],
   attachments: [],
+  suppressed: [],
   setText: (u) => set((s) => ({ text: apply(u, s.text) })),
-  setWithContext: (u) => set((s) => ({ withContext: apply(u, s.withContext) })),
   setMentions: (u) => set((s) => ({ mentions: apply(u, s.mentions) })),
   setAttachments: (u) => set((s) => ({ attachments: apply(u, s.attachments) })),
-  clear: () => set({ text: '', withContext: true, mentions: [], attachments: [] }),
+  suppress: (paths) => set((s) => ({ suppressed: [...new Set([...s.suppressed, ...paths])] })),
+  clear: () => set({ text: '', mentions: [], attachments: [] }),
+  resetSuppressed: () => set((s) => (s.suppressed.length ? { suppressed: [] } : s)),
 }))
