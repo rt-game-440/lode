@@ -10,6 +10,7 @@ import { useVault } from '../../stores/vault'
 import { openNote } from '../actions'
 import { revealLine } from '../editor/editorRef'
 import { AgentPanel } from '../agent/AgentPanel'
+import { PanelToggleAnchor } from '../shell/PanelToggle'
 import './right.css'
 
 const TABS: { id: RightTab; label: string; icon: typeof Link }[] = [
@@ -114,6 +115,8 @@ export function RightPanel({ id, onClose, allowAgent = true }: { id: string | nu
   return (
     <aside className="right-panel" aria-label="笔记信息">
       <header className="right-head">
+        {/* 桌面端的收起按钮浮在这里，紧贴右栏左缘（见 shell/PanelToggle） */}
+        <PanelToggleAnchor side="right" />
         <div className="right-tabs" role="tablist" aria-label="笔记信息">
           {TABS.filter((t) => allowAgent || t.id !== 'agent').map((t) => (
             <button

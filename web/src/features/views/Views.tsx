@@ -1,4 +1,4 @@
-import { ArrowLeft, FilePlus, FileText, Hash, PanelLeft, RotateCcw, Trash, X } from 'lucide-react'
+import { ArrowLeft, FilePlus, FileText, Hash, RotateCcw, Trash, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../../api/client'
 import type { Note, TrashItem } from '../../api/types'
@@ -10,11 +10,10 @@ import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import { sync } from '../../sync/engine'
 import { errorMessage, newNote, openNote } from '../actions'
+import { PanelToggleSlot } from '../shell/PanelToggle'
 import './views.css'
 
 export function ViewBar({ title, mobile }: { title: string; mobile: boolean }) {
-  const sidebarOpen = useUI((s) => s.sidebarOpen)
-  const toggleSidebar = useUI((s) => s.toggleSidebar)
   const navigate = useUI((s) => s.navigate)
   return (
     <header className="view-bar">
@@ -23,11 +22,8 @@ export function ViewBar({ title, mobile }: { title: string; mobile: boolean }) {
           <ArrowLeft size={20} />
         </IconButton>
       ) : (
-        !sidebarOpen && (
-          <IconButton label="显示侧栏 (Ctrl+\)" onClick={() => toggleSidebar(true)}>
-            <PanelLeft size={18} />
-          </IconButton>
-        )
+        // 桌面端侧栏收起后，展开按钮停在左上角，这里给它让位（见 shell/PanelToggle）
+        <PanelToggleSlot side="left" />
       )}
       <h1 className="view-title">{title}</h1>
     </header>

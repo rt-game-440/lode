@@ -1,4 +1,4 @@
-import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, PanelLeft, Search, Settings, Sparkles, Sun, Trash } from 'lucide-react'
+import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, Search, Settings, Sparkles, Sun, Trash } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { confirmDialog } from '../../components/overlays'
 import { EmptyState, IconButton } from '../../components/ui'
@@ -7,6 +7,7 @@ import { type SidebarTab, type Theme, useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import { useSync } from '../../sync/engine'
 import { newFolder, newNote } from '../actions'
+import { PanelToggleAnchor } from '../shell/PanelToggle'
 import { FileTree } from './FileTree'
 import { SearchPanel } from './SearchPanel'
 import { SyncIndicator } from './SyncIndicator'
@@ -61,10 +62,10 @@ const TABS: { id: SidebarTab; label: string }[] = [
   { id: 'tags', label: '标签' },
 ]
 
-export function Sidebar({ mobile }: { mobile?: boolean }) {
+/** mobile：手机单栏布局里的侧栏。收起按钮由桌面三栏统一提供（PanelToggleAnchor 只在桌面三栏里占位），两种布局的内容相同。 */
+export function Sidebar(_props: { mobile?: boolean }) {
   const tab = useUI((s) => s.sidebarTab)
   const setTab = useUI((s) => s.setSidebarTab)
-  const toggleSidebar = useUI((s) => s.toggleSidebar)
   const theme = useUI((s) => s.theme)
   const setTheme = useUI((s) => s.setTheme)
   const route = useUI((s) => s.route)
@@ -96,11 +97,6 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
   return (
     <nav className="sidebar" aria-label="侧栏">
       <header className="sidebar-head">
-        {!mobile && (
-          <IconButton label="隐藏侧栏 (Ctrl+\)" onClick={() => toggleSidebar(false)}>
-            <PanelLeft size={18} />
-          </IconButton>
-        )}
         <span className="sidebar-brand">Lode</span>
         <span className="spacer" />
         <IconButton label="新建文件夹" onClick={() => void newFolder('')}>
@@ -109,6 +105,8 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
         <IconButton label="新建笔记" onClick={() => void newNote('')} data-testid="new-note">
           <FilePlus size={18} />
         </IconButton>
+        {/* 桌面端的收起按钮浮在这里，紧贴侧栏右缘（见 shell/PanelToggle） */}
+        <PanelToggleAnchor side="left" />
       </header>
 
       <div className="segmented" role="tablist" aria-label="侧栏视图">

@@ -1,6 +1,6 @@
 import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { ArrowLeft, Ellipsis, FileText, PanelLeft, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
+import { ArrowLeft, Ellipsis, FileText, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { openMenu } from '../../components/overlays'
@@ -19,6 +19,7 @@ import { diffChangeSet, rebase } from '../../sync/textdiff'
 import { type EditorEnv, editorExtensions, remoteSync } from './cm/setup'
 import { editorRef, takeTitleFocus } from './editorRef'
 import { useEditorPrefs } from '../../stores/editorPrefs'
+import { PanelToggleSlot } from '../shell/PanelToggle'
 import { FormatToolbar } from './FormatToolbar'
 import { MobileToolbar } from './MobileToolbar'
 import './editor.css'
@@ -43,9 +44,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   const error = useEditor((s) => s.error)
   const note = useVault((s) => s.notes[id])
   const notes = useVault((s) => s.notes)
-  const sidebarOpen = useUI((s) => s.sidebarOpen)
   const rightOpen = useUI((s) => s.rightOpen)
-  const toggleSidebar = useUI((s) => s.toggleSidebar)
   const toggleRight = useUI((s) => s.toggleRight)
   const navigate = useUI((s) => s.navigate)
   const toast = useUI((s) => s.toast)
@@ -220,11 +219,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
             <ArrowLeft size={20} />
           </IconButton>
         ) : (
-          !sidebarOpen && (
-            <IconButton label="显示侧栏 (Ctrl+\)" onClick={() => toggleSidebar(true)}>
-              <PanelLeft size={18} />
-            </IconButton>
-          )
+          // 桌面端的侧栏、右栏收起按钮浮在三栏之上，收起后停在标题栏两角，这里给它们让位（见 shell/PanelToggle）
+          <PanelToggleSlot side="left" />
         )}
         <div className="editor-crumb">{note && dirname(note.path) ? dirname(note.path).split('/').join(' / ') : ''}</div>
         <span className="spacer" />
@@ -232,9 +228,11 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         <IconButton label="助手" onClick={() => useUI.getState().openAgent()}>
           <Sparkles size={18} />
         </IconButton>
-        <IconButton label={rightOpen ? '隐藏右栏' : '显示右栏'} active={rightOpen} onClick={() => toggleRight()}>
-          <PanelRight size={18} />
-        </IconButton>
+        {mobile && (
+          <IconButton label={rightOpen ? '隐藏右栏' : '显示右栏'} active={rightOpen} onClick={() => toggleRight()}>
+            <PanelRight size={18} />
+          </IconButton>
+        )}
         {note && (
           <IconButton
             label="更多操作"
@@ -255,6 +253,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
             <Ellipsis size={18} />
           </IconButton>
         )}
+        {!mobile && <PanelToggleSlot side="right" />}
       </header>
 
       {!mobile && showToolbar && view && showEditor && (
