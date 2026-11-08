@@ -1,0 +1,54 @@
+/* 底部面板（手机）：渲染在手机外壳（.shell.is-mobile）里，外壳高度已跟随可视区域（软键盘弹出时缩短），
+   所以层铺满外壳，面板贴在层的底部，不会被键盘挡住 */
+.sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  pointer-events: none;
+}
+.sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--color-scrim);
+  pointer-events: auto;
+  touch-action: none;
+}
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* 完全展开时顶部留出一条遮罩，看得出它是浮在笔记上的 */
+  height: calc(100% - max(env(safe-area-inset-top), var(--space-6)));
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  outline: none;
+  pointer-events: auto;
+}
+.sheet:focus-visible {
+  outline: none;
+}
+.sheet-grip {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: var(--space-5);
+}
+.sheet-grip span {
+  width: var(--space-10);
+  height: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--color-label-quaternary);
+}
+/* 抓手和标题栏的纵向拖动交给脚本；内容区仍然自己滚动 */
+.sheet [data-sheet-drag],
+.sheet [data-sheet-drag] * {
+  touch-action: none;
+}

@@ -1,4 +1,4 @@
-/* 助手：右栏标签页或手机全屏页面。颜色、间距、时长全部来自 tokens。 */
+/* 助手：笔记页上的弹窗（agent-popup.css）或整页。颜色、间距、时长全部来自 tokens。 */
 .agent {
   display: flex;
   flex-direction: column;
@@ -775,11 +775,6 @@ button.mention-chip:not(:disabled):hover {
   .composer-select {
     height: var(--hit-target);
   }
-}
-
-/* 平板抽屉里显示助手时加宽 */
-.drawer:has(.right-body.is-agent) {
-  width: min(var(--rightbar-width-agent), 92vw);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -15,6 +15,7 @@ import { QuickSwitcher } from '../switcher/QuickSwitcher'
 import { SettingsView } from '../settings/SettingsView'
 import { HomeView, TagView, TrashView } from '../views/Views'
 import { AgentPanel } from '../agent/AgentPanel'
+import { AgentPopup } from '../agent/AgentPopup'
 import { ShortcutsDialog, isTypingTarget } from './ShortcutsDialog'
 import { MobileStack } from './MobileStack'
 import { SidebarResizer } from './SidebarResizer'
@@ -25,8 +26,6 @@ import './shell.css'
 
 // 与 tokens 中 --rightbar-width 一致
 const RIGHT_W = 300
-// 右栏显示助手时更宽，与 tokens 中 --rightbar-width-agent 一致
-const AGENT_W = 380
 /** 手机笔记页的编辑区：右缘左滑拉出右侧栏的起手区域（touch-action 见 shell.css） */
 const MOBILE_NOTE_ZONE = '.mobile-layer.is-detail .editor-scroll'
 
@@ -103,7 +102,6 @@ export function AppShell() {
   const syncFromLocation = useUI((s) => s.syncFromLocation)
   const route = useUI((s) => s.route)
   const rightOpen = useUI((s) => s.rightOpen)
-  const rightTab = useUI((s) => s.rightTab)
   const toggleRight = useUI((s) => s.toggleRight)
   const mobilePane = useUI((s) => s.mobilePane)
   const mobile = useMedia('(max-width: 767px)')
@@ -143,9 +141,7 @@ export function AppShell() {
   // 右栏收起动画期间继续显示原来那篇笔记的内容
   const lastNoteId = useRef(noteId)
   if (noteId) lastNoteId.current = noteId
-  // 助手不依赖打开的笔记；全屏助手页面上不再在右栏重复显示
-  const agentTab = rightTab === 'agent' && !mobile
-  const showRight = rightOpen && (agentTab ? route.view !== 'agent' : noteId !== null)
+  const showRight = rightOpen && noteId !== null
   const closeRight = () => toggleRight(false)
 
   const overlays = (
@@ -170,8 +166,10 @@ export function AppShell() {
           // 笔记页从屏幕右缘向左滑拉出右侧栏，起手区是编辑区（顶栏、底部工具栏不算）
           edgeSwipe={noteDetail ? { zone: MOBILE_NOTE_ZONE, onOpen: () => toggleRight(true) } : undefined}
         >
-          <RightPanel id={lastNoteId.current} onClose={closeRight} allowAgent={false} />
+          <RightPanel id={lastNoteId.current} onClose={closeRight} />
         </Drawer>
+        {/* 笔记页上的助手：底部半屏面板。笔记页留在下面，关闭后原样回到笔记 */}
+        {noteDetail && <AgentPopup mobile contextNoteId={lastNoteId.current} />}
         {overlays}
       </div>
     )
@@ -196,7 +194,6 @@ export function AppShell() {
  * 不会在动画开始或结束时一次性跳变。主区域本身不加 transform（CodeMirror 的 fixed 提示框按视口定位）。
  */
 function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInline: boolean; rightId: string | null }) {
-  const rightTab = useUI((s) => s.rightTab)
   const sidebarOpen = useUI((s) => s.sidebarOpen)
   const storedWidth = useUI((s) => s.sidebarWidth)
   const sbW = useMotionValue(storedWidth)
@@ -212,17 +209,7 @@ function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInli
     }
     sbW.set(storedWidth)
   }, [sidebarOpen, storedWidth, sbW, left.progress, reduced])
-  const rTarget = rightTab === 'agent' ? AGENT_W : RIGHT_W
-  const rW = useMotionValue(rTarget)
-  // 切换到助手时右栏加宽：宽度用弹簧过渡，主区域随之让出空间
-  useEffect(() => {
-    if (!rightInline || reduced) {
-      rW.set(rTarget)
-      return
-    }
-    const c = animate(rW, rTarget, springPanel)
-    return () => c.stop()
-  }, [rTarget, rightInline, reduced, rW])
+  const rW = useMotionValue(RIGHT_W)
   const right = usePanelMotion(rightInline, rW)
 
   const sbX = useTransform(() => left.edge.get() - sbW.get())
@@ -264,6 +251,8 @@ function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInli
           </PanelToggle>
           <motion.main className="shell-main" style={{ left: left.edge, right: right.edge }}>
             <MainView mobile={false} route={route} contextNoteId={rightId} />
+            {/* 助手弹窗浮在编辑区右上方；只在笔记页出现（离开笔记时 navigate 会关掉它） */}
+            {route.view === 'note' && <AgentPopup mobile={false} contextNoteId={rightId} />}
           </motion.main>
           {/* 放在主区域和右栏之间：Tab 顺序上紧挨右栏标签之前 */}
           {hasRightToggle && (

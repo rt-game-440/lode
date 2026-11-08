@@ -1,4 +1,4 @@
-import { AlertCircle, ChevronLeft, History, MessageSquarePlus, Settings, Sparkles, Trash2 } from 'lucide-react'
+import { AlertCircle, ChevronLeft, History, Maximize2, MessageSquarePlus, Settings, Sparkles, Trash2, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { confirmDialog } from '../../components/overlays'
 import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
@@ -151,11 +151,32 @@ function NoModels({ secretKeySet }: { secretKeySet: boolean }) {
   )
 }
 
+/** 弹窗里的助手：标题栏多出“展开”和“关闭”两个按钮 */
+export interface AgentPopupActions {
+  /** 展开到助手页面，接着同一个会话继续 */
+  onExpand: () => void
+  onClose: () => void
+}
+
 /**
- * 助手：会话列表、消息流和输入框。桌面放在右栏的“助手”标签页，手机上是全屏页面。
+ * 助手：会话列表、消息流和输入框。笔记页上在弹窗里打开（popup），侧栏底部的全局入口是整页（page）。
  * contextNoteId 是“当前笔记”，默认作为 @ 附上。
+ * popup 在手机上是底部面板：标题栏同时是面板的拖动区域（data-sheet-drag）。
  */
-export function AgentPanel({ contextNoteId, mobile, page }: { contextNoteId: string | null; mobile: boolean; page?: boolean }) {
+export function AgentPanel({
+  contextNoteId,
+  mobile,
+  page,
+  popup,
+  focusInput,
+}: {
+  contextNoteId: string | null
+  mobile: boolean
+  page?: boolean
+  popup?: AgentPopupActions
+  /** 打开后把焦点放进输入框（桌面弹窗；手机上会弹出软键盘，不用） */
+  focusInput?: boolean
+}) {
   const config = useAgent((s) => s.config)
   const current = useAgent((s) => s.current)
   const activeId = useAgent((s) => s.activeId)
@@ -180,8 +201,8 @@ export function AgentPanel({ contextNoteId, mobile, page }: { contextNoteId: str
   const title = listOpen ? '对话' : chat?.title || '新对话'
 
   return (
-    <section className={`agent${page ? ' is-page' : ''}`} aria-label="助手" data-testid="agent-panel">
-      <header className="agent-head">
+    <section className={`agent${page ? ' is-page' : ''}${popup ? ' is-popup' : ''}`} aria-label="助手" data-testid="agent-panel">
+      <header className="agent-head" data-sheet-drag={popup && mobile ? '' : undefined}>
         {page && mobile && (
           <IconButton label="返回" onClick={() => navigate({ view: 'home' })}>
             <ChevronLeft size={22} />
@@ -215,6 +236,16 @@ export function AgentPanel({ contextNoteId, mobile, page }: { contextNoteId: str
         >
           <MessageSquarePlus size={18} />
         </IconButton>
+        {popup && (
+          <>
+            <IconButton label="展开到助手页" onClick={popup.onExpand} data-testid="agent-expand">
+              <Maximize2 size={17} />
+            </IconButton>
+            <IconButton label="关闭助手" onClick={popup.onClose} data-testid="agent-popup-close">
+              <X size={18} />
+            </IconButton>
+          </>
+        )}
       </header>
       {listOpen ? (
         <div className="agent-thread">
@@ -229,7 +260,7 @@ export function AgentPanel({ contextNoteId, mobile, page }: { contextNoteId: str
       ) : (
         <>
           <Thread />
-          <Composer contextPath={contextPath} mobile={mobile} />
+          <Composer contextPath={contextPath} mobile={mobile} autoFocus={focusInput} />
         </>
       )}
     </section>

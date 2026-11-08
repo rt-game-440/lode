@@ -152,6 +152,9 @@ async function startSampling(p: Page, ms = 900) {
       requestAnimationFrame(tick)
     })
   }, ms)
+  // 等采样真正跑起来（至少两帧静止画面）再返回：机器负载高时第一帧可能比后面的键盘 / 点击还晚，
+  // 动画就会在第一帧之前开始，起点帧已经在半路上
+  await p.waitForFunction(() => (window as unknown as { __frames: unknown[] }).__frames.length >= 2)
 }
 
 async function collect(p: Page): Promise<Frame[]> {
