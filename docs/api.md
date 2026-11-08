@@ -76,12 +76,31 @@ type Change = {
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
 | GET | `/api/health` | | `200 {"status":"ok","version":"…"}` |
-| GET | `/api/auth/status` | | `200 {"initialized":bool,"authenticated":bool}` |
+| GET | `/api/auth/status` | | `200 {"initialized":bool,"authenticated":bool,"passkey":bool}`；`passkey` 表示当前访问的域名下是否登记了通行密钥（登录页据此显示通行密钥按钮） |
 | POST | `/api/auth/setup` | `{"password":"…"}` | `204` 并写入会话 cookie；`400 weak_password`；`409 already_initialized` |
 | POST | `/api/auth/login` | `{"password":"…"}` | `204` 并写入会话 cookie；`401 wrong_password`；`409 not_initialized`；`429 rate_limited` |
 | POST | `/api/auth/logout` | | `204`，删除会话并清除 cookie |
 
 密码用 argon2id 哈希；会话 30 天有效，每次使用顺延。限流按客户端 IP 计数（1 分钟内 5 次错误锁定 60 秒），锁定期间即使密码正确也返回 429。
+
+### 通行密钥（WebAuthn）
+
+通行密钥是密码之外的另一种登录方式，两者并存。浏览器只在 HTTPS 或 localhost 下提供 WebAuthn，且通行密钥绑定域名：通过 IP 地址访问时（包括 `127.0.0.1`）begin 接口返回 `400 passkey_unsupported`，界面不显示通行密钥选项。
+
+RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直连方在 `LODE_TRUSTED_PROXIES` 里时优先取 `X-Forwarded-Host`，协议取 `X-Forwarded-Proto`。所以反向代理要保持浏览器看到的域名（Nginx：`proxy_set_header Host $host;`），改写 Host 时必须同时传 `X-Forwarded-Host`。
+
+登记和登录都是两步：`begin` 返回 `{"ceremony":"…","options":{"publicKey":{…}}}`（选项是 WebAuthn 的 JSON 形式，二进制字段为 base64url，可直接交给 `navigator.credentials.create/get`），浏览器完成后把 `PublicKeyCredential` 的 JSON 作为请求体 POST 到 `finish?ceremony=…`。仪式 5 分钟内有效、只能完成一次。
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| POST | `/api/auth/passkey/begin` | | 登录第一步；`200` 同上；`400 passkey_unsupported`；`429 rate_limited` |
+| POST | `/api/auth/passkey/finish?ceremony=` | `PublicKeyCredential` JSON | `204` 并写入会话 cookie；`401 passkey_failed`（计入登录失败限流，和密码登录共用同一个计数）；`400 ceremony_expired`；`429 rate_limited` |
+| GET | `/api/passkeys` | | `200 {"passkeys":[{"id","name","created_at","last_used_at"}]}`，`last_used_at` 为 0 表示从未使用（需要会话） |
+| POST | `/api/passkeys/begin` | `{"name":"…"}` | 登记第一步；名称 1 到 64 个字符，否则 `400 bad_request`；要求可发现凭据和用户验证，已登记的凭据列入排除列表（需要会话） |
+| POST | `/api/passkeys/finish?ceremony=` | `PublicKeyCredential` JSON | `201 {"passkey":{…}}`；`400 passkey_failed` / `ceremony_expired`（需要会话） |
+| DELETE | `/api/passkeys/{id}` | | `204`；`404 not_found`（需要会话）。删除后不能再用它登录 |
+
+`lode reset-password` 默认保留通行密钥（见 [deploy.md](deploy.md) 的“忘记密码”）。
 
 ## 笔记
 

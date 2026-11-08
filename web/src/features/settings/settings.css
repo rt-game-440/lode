@@ -810,3 +810,20 @@
     border: 1px solid var(--color-separator);
   }
 }
+
+/* 通行密钥列表 */
+.passkey-list {
+  position: relative;
+}
+.passkey-row {
+  justify-content: space-between;
+}
+.passkey-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.passkey-name {
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}

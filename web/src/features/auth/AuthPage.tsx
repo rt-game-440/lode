@@ -1,7 +1,9 @@
+import { KeyRound } from 'lucide-react'
 import { motion } from 'motion/react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { Button, TextField } from '../../components/ui'
+import { isCancelled, passkeyAvailable } from '../../lib/webauthn'
 import { useSession } from '../../stores/session'
 import { springDefault } from '../../styles/tokens/motion'
 import './auth.css'
@@ -10,10 +12,45 @@ import './auth.css'
 export function AuthPage({ mode }: { mode: 'setup' | 'login' }) {
   const setup = useSession((s) => s.setup)
   const login = useSession((s) => s.login)
+  const loginWithPasskey = useSession((s) => s.loginWithPasskey)
+  const refreshPasskey = useSession((s) => s.refreshPasskey)
+  const hasPasskey = useSession((s) => s.passkey)
+  // 非安全上下文（http://局域网 IP）、IP 访问或浏览器不支持时不显示通行密钥选项
+  const showPasskey = mode === 'login' && hasPasskey && passkeyAvailable()
+  useEffect(() => {
+    if (mode === 'login') void refreshPasskey()
+  }, [mode, refreshPasskey])
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  const showError = (err: unknown) => {
+    if (err instanceof ApiError) {
+      if (err.code === 'rate_limited') {
+        const wait = Number(err.body.retry_after ?? 60)
+        setError(`尝试次数过多，请 ${wait} 秒后再试`)
+      } else if (err.code === 'wrong_password') setError('密码不正确')
+      else if (err.code === 'weak_password') setError('密码至少 8 位')
+      else if (err.code === 'already_initialized') setError('已经设置过密码，请刷新页面登录')
+      else if (err.code === 'passkey_failed') setError('通行密钥验证失败，可以改用密码登录')
+      else if (err.code === 'ceremony_expired') setError('验证已过期，请重试')
+      else setError(err.message || '出错了，请重试')
+    } else setError('出错了，请重试')
+  }
+
+  const passkeyLogin = async () => {
+    if (busy) return
+    setError(null)
+    setBusy(true)
+    try {
+      await loginWithPasskey()
+    } catch (err) {
+      // 用户在系统弹窗里取消：不算错误，保持在登录页
+      if (!isCancelled(err)) showError(err)
+      setBusy(false)
+    }
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -30,15 +67,7 @@ export function AuthPage({ mode }: { mode: 'setup' | 'login' }) {
       if (mode === 'setup') await setup(password)
       else await login(password)
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.code === 'rate_limited') {
-          const wait = Number(err.body.retry_after ?? 60)
-          setError(`尝试次数过多，请 ${wait} 秒后再试`)
-        } else if (err.code === 'wrong_password') setError('密码不正确')
-        else if (err.code === 'weak_password') setError('密码至少 8 位')
-        else if (err.code === 'already_initialized') setError('已经设置过密码，请刷新页面登录')
-        else setError(err.message || '出错了，请重试')
-      } else setError('出错了，请重试')
+      showError(err)
       setBusy(false)
     }
   }
@@ -96,6 +125,24 @@ export function AuthPage({ mode }: { mode: 'setup' | 'login' }) {
         <Button type="submit" variant="primary" size="lg" block disabled={busy}>
           {busy ? '请稍候…' : mode === 'setup' ? '设置密码并进入' : '登录'}
         </Button>
+        {showPasskey && (
+          <>
+            <p className="auth-or" aria-hidden="true">
+              <span>或</span>
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              block
+              icon={<KeyRound size={18} aria-hidden="true" />}
+              disabled={busy}
+              onClick={() => void passkeyLogin()}
+            >
+              使用通行密钥登录
+            </Button>
+          </>
+        )}
       </motion.form>
     </main>
   )

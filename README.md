@@ -93,7 +93,7 @@ claude mcp add --transport http lode "https://notes.example.com/mcp" --header "A
 ```bash
 lode backup lode-backup.tar.gz     # 在线备份数据库和全部文件，服务运行中也可以执行
 lode restore lode-backup.tar.gz    # 从备份恢复，需要先停止服务；原数据移到数据目录下的 pre-restore-<时间>/
-lode reset-password                # 忘记密码时在服务器上重置
+lode reset-password                # 忘记密码时在服务器上重置（保留通行密钥；加 --clear-passkeys 一并清除）
 lode healthcheck                   # 检查本机服务是否正常
 lode --version
 ```

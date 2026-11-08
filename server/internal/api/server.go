@@ -18,6 +18,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/audit"
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/notes"
+	"github.com/rt-game-440/lode/server/internal/passkey"
 )
 
 // SessionCookie 是会话 cookie 名。
@@ -44,6 +45,8 @@ type Server struct {
 	WSPingInterval time.Duration
 	// Agent 是助手服务；为 nil 时不提供 /api/agent/*。
 	Agent *agent.Service
+	// Passkeys 是通行密钥服务；为 nil 时不提供 /api/auth/passkey/* 和 /api/passkeys。
+	Passkeys *passkey.Service
 	// SSEPingInterval 是助手事件流的心跳间隔，默认 15 秒。
 	SSEPingInterval time.Duration
 
@@ -74,6 +77,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/setup", s.authSetup)
 	mux.HandleFunc("POST /api/auth/login", s.authLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.authLogout)
+	if s.Passkeys != nil {
+		mux.HandleFunc("POST /api/auth/passkey/begin", s.passkeyLoginBegin)
+		mux.HandleFunc("POST /api/auth/passkey/finish", s.passkeyLoginFinish)
+	}
 
 	// 需要会话的接口
 	p := http.NewServeMux()
@@ -107,6 +114,12 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("POST /api/tokens", s.createToken)
 	p.HandleFunc("DELETE /api/tokens/{id}", s.revokeToken)
 	p.HandleFunc("GET /api/audit", s.listAudit)
+	if s.Passkeys != nil {
+		p.HandleFunc("GET /api/passkeys", s.listPasskeys)
+		p.HandleFunc("POST /api/passkeys/begin", s.passkeyRegisterBegin)
+		p.HandleFunc("POST /api/passkeys/finish", s.passkeyRegisterFinish)
+		p.HandleFunc("DELETE /api/passkeys/{id}", s.deletePasskey)
+	}
 	if s.Agent != nil {
 		s.routeAgent(p)
 	}

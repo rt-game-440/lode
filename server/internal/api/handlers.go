@@ -32,7 +32,8 @@ func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"initialized": init, "authenticated": ok})
+	// passkey：当前访问的域名下是否登记了通行密钥，登录页据此决定是否显示通行密钥按钮
+	writeJSON(w, http.StatusOK, map[string]bool{"initialized": init, "authenticated": ok, "passkey": s.hasPasskey(r)})
 }
 
 type passwordReq struct {
