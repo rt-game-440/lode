@@ -41,6 +41,8 @@ export interface AgentSettings {
 
 export interface AgentConfig {
   secret_key_set: boolean
+  /** API key 由通行密钥保护且服务重启后还没解锁（#29）：助手暂时用不了已保存的 key */
+  keys_locked?: boolean
   settings: AgentSettings
   providers: Provider[]
 }

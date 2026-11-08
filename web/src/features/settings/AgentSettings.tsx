@@ -71,6 +71,18 @@ function SecretKeyNotice() {
   )
 }
 
+/** API key 由通行密钥保护且服务重启后还没解锁（#29）。 */
+function KeysLockedNotice() {
+  return (
+    <p className="settings-warning" role="note" data-testid="keys-locked-notice">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <span>
+        API key 已锁定：服务器重启后需要用加入保护的通行密钥登录一次，或到“设置 → 通行密钥”里解锁，助手才能使用已保存的 key。
+      </span>
+    </p>
+  )
+}
+
 function providerSummary(p: Provider): string {
   const n = p.models.length
   return n ? `${n} 个模型` : '未添加模型'
@@ -83,9 +95,10 @@ export function AgentPage({ sub }: { sub: string[] }) {
   return (
     <SettingsPage sub={sub} title={SECTION_TITLE.agent}>
       <p className="settings-desc">
-        接入 OpenAI 兼容接口、Anthropic 或 Gemini。API key 加密保存在服务器上，之后不会再显示，只显示末 4 位。加密用的主密钥在数据目录的 secret.key 里，备份文件等同于含有你的 API key，请妥善保管。
+        接入 OpenAI 兼容接口、Anthropic 或 Gemini。API key 加密保存在服务器上，之后不会再显示，只显示末 4 位。加密用的主密钥在数据目录的 secret.key 里，备份文件等同于含有你的 API key，请妥善保管；也可以在“设置 → 通行密钥”里改用通行密钥保护，不再保存这个文件。
       </p>
       {config && !config.secret_key_set && <SecretKeyNotice />}
+      {config?.keys_locked && <KeysLockedNotice />}
 
       {!config ? (
         <div className="settings-card">

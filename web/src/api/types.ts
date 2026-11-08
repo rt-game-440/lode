@@ -86,7 +86,25 @@ export interface Passkey {
   name: string
   created_at: number
   last_used_at: number
+  /** 是否支持 PRF 扩展（能否用来保护 API key）：登记或验证时探测到的结果，null 表示还不知道 */
+  prf?: boolean | null
+  /** 是否加入了 API key 保护（能用它解锁） */
+  key_wrapped?: boolean
 }
+
+/** “用通行密钥保护 API key”的状态（#29）。 */
+export interface KeyProtection {
+  /** false：服务器设置了 LODE_SECRET_KEY，不能用通行密钥保护 */
+  available: boolean
+  reason?: 'env'
+  enabled: boolean
+  /** 开启后服务重启即锁定，用加入保护的通行密钥登录或验证一次后解锁 */
+  unlocked: boolean
+  /** 加入保护的通行密钥个数 */
+  wrapped: number
+}
+
+export type KeyProtectionAction = 'enable' | 'unlock' | 'enroll'
 
 /** begin 接口的响应：仪式 ID 加浏览器 WebAuthn API 的选项（JSON 形式）。 */
 export interface PasskeyCeremony {

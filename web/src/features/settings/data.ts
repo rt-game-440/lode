@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { api } from '../../api/client'
-import type { ApiToken, AuditEntry, Passkey } from '../../api/types'
+import type { ApiToken, AuditEntry, KeyProtection, Passkey } from '../../api/types'
 import { useUI } from '../../stores/ui'
 import { errorMessage } from '../actions'
 
@@ -11,10 +11,14 @@ import { errorMessage } from '../actions'
 interface SettingsData {
   tokens: ApiToken[] | null
   passkeys: Passkey[] | null
+  /** “用通行密钥保护 API key”的状态；服务端没有这个功能时为 null */
+  keyProtection: KeyProtection | null
   audit: AuditEntry[] | null
   auditLoading: boolean
   loadTokens: () => Promise<void>
   loadPasskeys: () => Promise<void>
+  loadKeyProtection: () => Promise<void>
+  setKeyProtection: (k: KeyProtection) => void
   addPasskey: (p: Passkey) => void
   removePasskey: (id: string) => void
   loadAudit: () => Promise<void>
@@ -29,6 +33,7 @@ function toastError(err: unknown) {
 export const useSettingsData = create<SettingsData>((set) => ({
   tokens: null,
   passkeys: null,
+  keyProtection: null,
   audit: null,
   auditLoading: false,
   loadTokens: async () => {
@@ -47,6 +52,15 @@ export const useSettingsData = create<SettingsData>((set) => ({
       set((s) => ({ passkeys: s.passkeys ?? [] }))
     }
   },
+  loadKeyProtection: async () => {
+    try {
+      set({ keyProtection: await api.keyProtection() })
+    } catch {
+      // 旧版服务端没有这个接口：不显示保护选项
+      set({ keyProtection: null })
+    }
+  },
+  setKeyProtection: (k) => set({ keyProtection: k }),
   addPasskey: (p) => set((s) => ({ passkeys: [...(s.passkeys ?? []), p] })),
   removePasskey: (id) => set((s) => ({ passkeys: s.passkeys?.filter((x) => x.id !== id) ?? null })),
   loadAudit: async () => {

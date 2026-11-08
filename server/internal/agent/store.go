@@ -145,15 +145,69 @@ type Pending struct {
 
 // Store 是助手数据的持久化。
 type Store struct {
-	db  *sql.DB
-	box *secret.Box
+	db   *sql.DB
+	keys secret.Cipher
 }
 
-// NewStore 创建 Store。box 用于加解密 API key。
-func NewStore(db *sql.DB, box *secret.Box) *Store { return &Store{db: db, box: box} }
+// NewStore 创建 Store。keys 用于加解密 API key：固定主密钥的 *secret.Box，或可以锁定的 *secret.Keeper；
+// 只用 ClearKeys 等不涉及加解密的方法时可以传 nil。
+func NewStore(db *sql.DB, keys secret.Cipher) *Store { return &Store{db: db, keys: keys} }
 
 // CanStoreKeys 报告是否有可用的主密钥，没有时不能保存 API key。
-func (s *Store) CanStoreKeys() bool { return s.box.Enabled() }
+func (s *Store) CanStoreKeys() bool { return s.keys != nil && s.keys.Enabled() }
+
+// KeysLocked 报告 API key 是否由通行密钥保护且尚未解锁（#29）。
+func (s *Store) KeysLocked() bool {
+	l, ok := s.keys.(interface{ Locked() bool })
+	return ok && l.Locked()
+}
+
+// ResealKeys 在事务 tx 里把已保存的 API key 从 from 解密、用 to 重新加密（更换主密钥时使用）。
+// 用 from 解不开的 key（主密钥早已更换过）保持原样，之后照常提示重新填写。
+func (s *Store) ResealKeys(ctx context.Context, tx *sql.Tx, from, to secret.Cipher) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, key_enc FROM llm_providers WHERE key_enc != ''`)
+	if err != nil {
+		return err
+	}
+	type row struct{ id, enc string }
+	var list []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.enc); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range list {
+		plain, err := from.Open(r.enc, r.id)
+		if err != nil {
+			continue
+		}
+		enc, err := to.Seal(plain, r.id)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE llm_providers SET key_enc = ? WHERE id = ?`, enc, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClearKeys 在事务 tx 里清除全部已保存的 API key（主密钥找不回来时使用），返回清除的数量。
+func (s *Store) ClearKeys(ctx context.Context, tx *sql.Tx) (int, error) {
+	res, err := tx.ExecContext(ctx, `UPDATE llm_providers SET key_enc = '', key_last4 = '' WHERE key_enc != ''`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
 
 func newID() string {
 	b := make([]byte, 8)
@@ -197,9 +251,15 @@ func (s *Store) sealKey(id string, key *string) (enc, last4 string, err error) {
 		return "", "", nil
 	}
 	k := strings.TrimSpace(*key)
-	enc, err = s.box.Seal(k, id)
+	if s.keys == nil {
+		return "", "", invalid("服务器没有可用的主密钥，不能保存 API key。请检查数据目录是否可写后重启 Lode")
+	}
+	enc, err = s.keys.Seal(k, id)
 	if errors.Is(err, secret.ErrNoKey) {
 		return "", "", invalid("服务器没有可用的主密钥，不能保存 API key。请检查数据目录是否可写后重启 Lode")
+	}
+	if errors.Is(err, secret.ErrLocked) {
+		return "", "", invalid("API key 已锁定，暂时不能保存新的 key：请先用通行密钥登录，或在“设置 → 通行密钥”里解锁")
 	}
 	return enc, secret.Last4(k), err
 }
@@ -316,7 +376,13 @@ func (s *Store) Config(ctx context.Context, providerID string) (llm.Config, erro
 	}
 	cfg := llm.Config{Kind: llm.Kind(kind), BaseURL: base}
 	if enc != "" {
-		key, err := s.box.Open(enc, providerID)
+		if s.keys == nil {
+			return llm.Config{}, invalid("%s", secret.ErrNoKey.Error())
+		}
+		key, err := s.keys.Open(enc, providerID)
+		if errors.Is(err, secret.ErrLocked) {
+			return llm.Config{}, err // 调用方据此提示解锁（接口返回 keys_locked）
+		}
 		if err != nil {
 			return llm.Config{}, invalid("%s", err.Error())
 		}

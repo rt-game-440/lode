@@ -95,12 +95,30 @@ RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直�
 | --- | --- | --- | --- |
 | POST | `/api/auth/passkey/begin` | | 登录第一步；`200` 同上；`400 passkey_unsupported`；`429 rate_limited` |
 | POST | `/api/auth/passkey/finish?ceremony=` | `PublicKeyCredential` JSON | `204` 并写入会话 cookie；`401 passkey_failed`（计入登录失败限流，和密码登录共用同一个计数）；`400 ceremony_expired`；`429 rate_limited` |
-| GET | `/api/passkeys` | | `200 {"passkeys":[{"id","name","created_at","last_used_at"}]}`，`last_used_at` 为 0 表示从未使用（需要会话） |
+| GET | `/api/passkeys` | | `200 {"passkeys":[{"id","name","created_at","last_used_at","prf","key_wrapped"}]}`，`last_used_at` 为 0 表示从未使用；`prf` 为是否支持 PRF 扩展（`null` 表示还不知道），`key_wrapped` 为是否加入了 API key 保护（需要会话） |
 | POST | `/api/passkeys/begin` | `{"name":"…"}` | 登记第一步；名称 1 到 64 个字符，否则 `400 bad_request`；要求可发现凭据和用户验证，已登记的凭据列入排除列表（需要会话） |
 | POST | `/api/passkeys/finish?ceremony=` | `PublicKeyCredential` JSON | `201 {"passkey":{…}}`；`400 passkey_failed` / `ceremony_expired`（需要会话） |
-| DELETE | `/api/passkeys/{id}` | | `204`；`404 not_found`（需要会话）。删除后不能再用它登录 |
+| DELETE | `/api/passkeys/{id}` | `?force=1` 可选 | `204`；`404 not_found`（需要会话）。删除后不能再用它登录。开启了 API key 保护且它是最后一个能解锁的通行密钥时返回 `409 last_key_passkey`，带 `force=1` 才删除，并自动关闭保护（已解锁则主密钥写回 `secret.key`；锁定则已保存的 API key 被清除） |
 
 `lode reset-password` 默认保留通行密钥（见 [deploy.md](deploy.md) 的“忘记密码”）。
+
+登记时总是请求 PRF 扩展（只探测是否支持，记入 `prf`）；开启 API key 保护后，登记和登录还会带上 PRF 盐，浏览器把 PRF 输出放在 `clientExtensionResults.prf.results.first`（base64url）里：登录时用它解锁（或在已解锁时把这个通行密钥加入保护），登记时直接加入保护。
+
+### 用通行密钥保护 API key（#29）
+
+可选功能。开启后助手 API key 的主密钥不再以 `secret.key` 存在数据目录里：每个加入保护的通行密钥用自己的 [WebAuthn PRF](https://www.w3.org/TR/webauthn-3/#prf-extension) 输出（经 HKDF-SHA256 派生密钥，AES-256-GCM）包裹一份主密钥，存在数据库里。服务启动后处于锁定状态，用加入保护的通行密钥登录（或调用下面的 unlock）后解锁，主密钥只保存在内存里。PRF 输出不写日志、不落盘。开启时会生成新的主密钥并重新加密已保存的 key，所以旧的 `secret.key` 和以前的备份解不开开启后保存的 key。设置了 `LODE_SECRET_KEY` 时不可用。
+
+都需要会话。开启、解锁、加入保护要先做一次指定凭据的通行密钥验证，两步同登录：`begin` 返回仪式和选项（`allowCredentials` 限定可用的通行密钥，`extensions.prf.eval.first` 是 PRF 盐），`finish` 提交 `PublicKeyCredential`。
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| GET | `/api/key-protection` | | `200 {"key_protection":{"available":bool,"reason"?:"env","enabled":bool,"unlocked":bool,"wrapped":n}}`；`wrapped` 是加入保护的通行密钥个数 |
+| POST | `/api/key-protection/begin` | `{"action":"enable"\|"unlock"\|"enroll","passkey"?:id}` | `200 {"ceremony","options"}`。`enable`：可用当前域名下任意通行密钥（给了 `passkey` 时只用它）；`unlock`：只列出加入保护的通行密钥；`enroll`：把 `passkey` 加入保护，需要已解锁 |
+| POST | `/api/key-protection/finish?ceremony=` | `PublicKeyCredential` JSON | `200 {"key_protection":{…}}` |
+| POST | `/api/key-protection/lock` | | `200 {"key_protection":{…}}`：立即清除内存里的主密钥 |
+| POST | `/api/key-protection/disable` | `{"discard":bool}` | `200 {"key_protection":{…},"cleared_keys":n}`：已解锁时把主密钥写回 `secret.key`，已保存的 key 不受影响；锁定时必须 `discard: true`，生成新的 `secret.key` 并清除已保存的 API key |
+
+错误码：`409 env_secret_key`（设置了 `LODE_SECRET_KEY`）、`409 already_enabled` / `not_enabled`、`400 prf_unsupported`（通行密钥没有给出 PRF 输出）、`409 not_enrolled`（这个通行密钥没加入保护）、`400 unwrap_failed`（PRF 输出解不开包裹）、`409 keys_locked`（需要先解锁）、`400 passkey_failed` / `ceremony_expired`、`404 not_found`（当前域名下没有可用的通行密钥）。
 
 ## 笔记
 
@@ -235,7 +253,7 @@ type AuditEntry = {
 
 ## 助手（阶段 5）
 
-需要会话 cookie。API key 用主密钥派生的密钥（HKDF-SHA256 → AES-256-GCM）加密后存进 SQLite，任何响应里都不会出现明文 key，只返回 `has_key` 和末 4 位 `key_last4`。主密钥优先取环境变量 `LODE_SECRET_KEY`，否则取数据目录里自动生成的 `secret.key`；两者都不可用（例如数据目录不可写）时，带 key 的保存请求返回 `400`。
+需要会话 cookie。API key 用主密钥派生的密钥（HKDF-SHA256 → AES-256-GCM）加密后存进 SQLite，任何响应里都不会出现明文 key，只返回 `has_key` 和末 4 位 `key_last4`。主密钥优先取环境变量 `LODE_SECRET_KEY`，否则取数据目录里自动生成的 `secret.key`；两者都不可用（例如数据目录不可写）时，带 key 的保存请求返回 `400`。开启了“用通行密钥保护 API key”且服务重启后还没解锁时，用到已保存 key 的请求（测试连接、发送消息）返回 `409 keys_locked`，`message` 说明要先用通行密钥登录或在设置里解锁；保存新 key 返回 `400`。
 
 错误码：对象不存在 `404 not_found`；参数不合法 `400 bad_request`（`message` 是中文说明）；对话正在运行时删除对话、或重复发送 `409 conflict`。
 
@@ -243,7 +261,7 @@ type AuditEntry = {
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
-| GET | `/api/agent/config` | | `200 {"secret_key_set":bool,"settings":Settings,"providers":Provider[]}` |
+| GET | `/api/agent/config` | | `200 {"secret_key_set":bool,"keys_locked":bool,"settings":Settings,"providers":Provider[]}`；`keys_locked` 表示 API key 由通行密钥保护且尚未解锁 |
 | POST | `/api/agent/providers` | ProviderInput | `201 Provider` |
 | PUT | `/api/agent/providers/{id}` | ProviderInput；省略 `api_key` 表示不修改，`""` 表示清除 | `200 Provider` |
 | DELETE | `/api/agent/providers/{id}` | | `204`，连同它的模型一起删除 |

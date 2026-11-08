@@ -2,6 +2,14 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 14:22 #29 用通行密钥（PRF）保护 API key
+
+- **结构**：`secret.Keeper` 统一管理主密钥（`env` / `file` / `passkey` 三种模式，`passkey` 模式锁定时加解密返回 `secret.ErrLocked`），`agent.Store` 只依赖 `secret.Cipher` 接口；`internal/keyprotect` 管开关（`settings.key_protection='passkey'`）和开启、解锁、加入、锁定、关闭；HTTP 在 `api/keyprotect.go`。启动顺序：`keyprotect.Enabled` → `secret.OpenKeeper` → `agent.NewStore` → `passkey.New` → `keyprotect.New`，再把 `passkey.Service.PRFSalt` 设为 `keyProtect.LoginSalt`（只在开启时给登录/登记加 PRF 盐）。
+- **密码学**：每个实例一个 32 字节 PRF 盐（`settings.key_protection_salt`，不保密、不轮换）。包裹密钥 = HKDF-SHA256(PRF 输出, info `"lode master key wrap v1|"+凭据 ID`)，AES-256-GCM，AAD `w1:`+凭据 ID，存在 `passkeys.extra.key_wrap`。开启时换新主密钥并重新加密已存的 key（旧 secret.key 和旧备份解不开新数据）。PRF 输出只在请求处理期间存在，用完 `clear()`，不写日志。
+- **崩溃安全**：开启先提交数据库再删 secret.key；关闭先原子写 secret.key 再提交；启动时数据库是“已保护”就删除残留的 secret.key。
+- **PRF 时机**：登记总是请求 `prf: {}`（只探测），开启后登记带盐；多数平台登记时只返回 `enabled`，要再做一次验证（`action: enroll`）才拿到输出。Safari 要求每次 WebAuthn 调用都有用户手势，所以登记后不自动连着弹第二次，改为提示里的“加入保护”按钮。
+- **测试**：`passkeytest` 软件认证器实现了 PRF（HMAC-SHA256(PRFKey, SHA-256("WebAuthn PRF"‖0‖salt))），`NoPRF`、`PRFAtCreate` 模拟不同平台。e2e `ui-passkey-protect.spec.ts` 自己起一个不带 `LODE_SECRET_KEY` 的 lode（临时目录、随机端口），用 CDP 虚拟认证器 `hasPrf: true`，能真正重启验证锁定。Windows 上数据目录的 `.lock` 被 LockFileEx 锁住，扫描文件内容时要跳过。
+
 ## 2026-11-08 13:20 #28 通行密钥（WebAuthn）
 
 - **库**：`github.com/go-webauthn/webauthn`（纯 Go，`CGO_ENABLED=0` 可编译，依赖 fxamacker/cbor、golang-jwt、go-tpm 等均无 CGO）。已经内置 PRF 扩展选项（`WithExtensionPRFSupport`、`WithExtensionPRF` 等），#29 直接用。

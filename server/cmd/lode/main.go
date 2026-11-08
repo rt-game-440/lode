@@ -20,6 +20,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/config"
 	"github.com/rt-game-440/lode/server/internal/db"
+	"github.com/rt-game-440/lode/server/internal/keyprotect"
 	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
 	"github.com/rt-game-440/lode/server/internal/ops"
@@ -114,7 +115,11 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	auditLog := audit.New(database)
 	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: authSvc, Audit: auditLog, Version: version, Log: log})
 
-	box, keySrc, err := secret.Load(cfg.SecretKey, cfg.DataDir)
+	protected, err := keyprotect.Enabled(ctx, database)
+	if err != nil {
+		return fmt.Errorf("读取 API key 保护设置: %w", err)
+	}
+	keys, keySrc, err := secret.OpenKeeper(cfg.SecretKey, cfg.DataDir, protected)
 	if err != nil {
 		return fmt.Errorf("加载主密钥: %w", err)
 	}
@@ -123,12 +128,25 @@ func serve(cfg config.Config, log *slog.Logger) error {
 		log.Info("已生成助手 API key 的主密钥", "file", secret.FileName)
 	case secret.SourceEnv:
 		log.Info("使用环境变量 LODE_SECRET_KEY 作为助手 API key 的主密钥")
+		if protected {
+			log.Warn("数据库里的 API key 由通行密钥保护，但设置了 LODE_SECRET_KEY：环境变量里的主密钥解不开它们；去掉 LODE_SECRET_KEY 重启后用通行密钥登录即可解锁")
+		}
+	case secret.SourcePasskey, secret.SourcePasskeyStale:
+		log.Info("API key 由通行密钥保护，当前处于锁定状态：用加入保护的通行密钥登录一次即可解锁", "removed_stale_secret_key", keySrc == secret.SourcePasskeyStale)
 	}
-	agentSvc := &agent.Service{Store: agent.NewStore(database, box), Tools: tools.New(svc), Notes: svc, Log: log}
+	store := agent.NewStore(database, keys)
+	agentSvc := &agent.Service{Store: store, Tools: tools.New(svc), Notes: svc, Log: log}
 	defer agentSvc.Close() // 在关闭数据库之前停止生成（defer 逆序执行）
 
+	passkeys := passkey.New(database, log)
+	keyProtect, err := keyprotect.New(ctx, database, keys, passkeys, store, log)
+	if err != nil {
+		return fmt.Errorf("初始化 API key 保护: %w", err)
+	}
+	passkeys.PRFSalt = keyProtect.LoginSalt
+
 	srv := &api.Server{Notes: svc, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
-		Audit: auditLog, MCP: mcpHandler, Agent: agentSvc, Passkeys: passkey.New(database, log)}
+		Audit: auditLog, MCP: mcpHandler, Agent: agentSvc, Passkeys: passkeys, KeyProtect: keyProtect}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),

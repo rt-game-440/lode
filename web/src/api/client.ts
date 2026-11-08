@@ -5,6 +5,8 @@ import type {
   AuthStatus,
   Backlink,
   Change,
+  KeyProtection,
+  KeyProtectionAction,
   MoveResult,
   Note,
   NoteContent,
@@ -113,7 +115,18 @@ export const api = {
   passkeyRegisterBegin: (name: string) => request<PasskeyCeremony>('POST', '/api/passkeys/begin', { name }),
   passkeyRegisterFinish: (ceremony: string, credential: unknown) =>
     request<{ passkey: Passkey }>('POST', `/api/passkeys/finish${q({ ceremony })}`, credential).then((r) => r.passkey),
-  deletePasskey: (id: string) => request<void>('DELETE', `/api/passkeys/${encodeURIComponent(id)}`),
+  /** force：删除最后一个能解锁 API key 的通行密钥时确认（会关闭保护），否则服务端返回 409 last_key_passkey。 */
+  deletePasskey: (id: string, force = false) =>
+    request<void>('DELETE', `/api/passkeys/${encodeURIComponent(id)}${q({ force: force ? 1 : undefined })}`),
+  keyProtection: () => request<{ key_protection: KeyProtection }>('GET', '/api/key-protection').then((r) => r.key_protection),
+  keyProtectionBegin: (action: KeyProtectionAction, passkey?: string) =>
+    request<PasskeyCeremony>('POST', '/api/key-protection/begin', { action, passkey }),
+  keyProtectionFinish: (ceremony: string, credential: unknown) =>
+    request<{ key_protection: KeyProtection }>('POST', `/api/key-protection/finish${q({ ceremony })}`, credential).then((r) => r.key_protection),
+  keyProtectionLock: () => request<{ key_protection: KeyProtection }>('POST', '/api/key-protection/lock').then((r) => r.key_protection),
+  /** discard：锁定时放弃已保存的 API key 并关闭（找不回主密钥时用）。 */
+  keyProtectionDisable: (discard = false) =>
+    request<{ key_protection: KeyProtection; cleared_keys: number }>('POST', '/api/key-protection/disable', { discard }),
 
   tree: () => request<Tree>('GET', '/api/tree'),
   readNote: (id: string) => request<NoteContent>('GET', `/api/notes/${encodeURIComponent(id)}`),

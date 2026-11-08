@@ -11,6 +11,7 @@ import (
 
 	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/llm"
+	"github.com/rt-game-440/lode/server/internal/secret"
 )
 
 // 助手接口：供应商与模型配置、对话、SSE 事件流、停止和批准。见 docs/api.md 的“助手”一节。
@@ -45,6 +46,8 @@ func (s *Server) agentFail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, "bad_request", strings.TrimPrefix(err.Error(), agent.ErrInvalid.Error()+": "), nil)
 	case errors.Is(err, agent.ErrBusy):
 		writeError(w, http.StatusConflict, "busy", "助手正在回复，请先停止或等待完成", nil)
+	case errors.Is(err, secret.ErrLocked):
+		writeError(w, http.StatusConflict, "keys_locked", err.Error(), nil)
 	default:
 		s.fail(w, r, err)
 	}
@@ -61,7 +64,8 @@ func (s *Server) agentConfig(w http.ResponseWriter, r *http.Request) {
 		s.agentFail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"secret_key_set": s.Agent.Store.CanStoreKeys(), "settings": st, "providers": ps})
+	writeJSON(w, http.StatusOK, map[string]any{"secret_key_set": s.Agent.Store.CanStoreKeys(), "keys_locked": s.Agent.Store.KeysLocked(),
+		"settings": st, "providers": ps})
 }
 
 func (s *Server) createProvider(w http.ResponseWriter, r *http.Request) {
