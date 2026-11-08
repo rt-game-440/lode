@@ -119,8 +119,12 @@
  * 载入笔记时不带 data-animate，直接到位；减弱动态效果时直接切换。
  */
 @media (min-width: 768px) {
+  /* 编辑区窄时给右上角的目录条（#47）留出位置：标题和正文列两侧各让出 space-12，不被目录条遮挡 */
+  .editor-scroll {
+    --note-width: min(var(--editor-max-width), calc(100% - 2 * var(--space-12)));
+  }
   .editor-scroll[data-width='narrow'] {
-    --note-width: var(--editor-width-narrow);
+    --note-width: min(var(--editor-width-narrow), calc(100% - 2 * var(--space-12)));
   }
   .editor-scroll[data-width='wide'] {
     --note-width: calc(100% - 2 * var(--editor-gutter-wide));

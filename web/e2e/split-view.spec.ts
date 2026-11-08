@@ -25,6 +25,8 @@ interface Toggle {
 }
 
 interface Frame {
+  /** 采样时刻（rAF 回调里的 performance.now()，毫秒） */
+  t: number
   mainL: number
   mainR: number
   /** 侧栏右缘；侧栏隐藏时为 null */
@@ -134,6 +136,7 @@ async function startSampling(p: Page, ms = 900) {
         const rt = toggle(/^(隐藏|显示)右栏$/)
         if (!rt?.ok) hidden.splice(1, 0, '右栏')
         w.__frames.push({
+          t: performance.now(),
           mainL: main.left,
           mainR: main.right,
           sbR: sb?.right ?? null,
@@ -349,9 +352,14 @@ function toggleProblems(frames: Frame[], side: 'left' | 'right'): string[] {
   return out
 }
 
-/** 最大的单帧位移变化（二阶差分的绝对值），衡量运动有多“急” */
-function maxAccel(xs: number[]): number {
-  return Math.max(0, ...xs.slice(2).map((x, i) => Math.abs(x - 2 * xs[i + 1] + xs[i])))
+/**
+ * 最大的速度变化，衡量运动有多“急”。速度按采样时间间隔折算（px / 标准 16.7ms 帧），
+ * 这样某一帧晚到（间隔变长、位移翻倍）不会被当成“猛拽”：rAF 的间隔在负载高时会抖动，
+ * 直接用位置的二阶差分会把时间抖动算成加速度，两个量（按钮、面板边缘）受的影响还不一样。
+ */
+function maxAccel(xs: number[], ts: number[]): number {
+  const v = xs.slice(1).map((x, i) => ((x - xs[i]) / Math.max(ts[i + 1] - ts[i], 1)) * 16.7)
+  return Math.max(0, ...v.slice(1).map((s, i) => Math.abs(s - v[i])))
 }
 
 async function rect(l: Locator) {
@@ -422,7 +430,8 @@ test.describe('收起按钮（#19）', () => {
         expectSmoothPath(xs, closing ? inPanel(side) : INSET, closing ? INSET : inPanel(side))
         // 停到角上、从角上被带走时没有急刹或猛拽：按钮的单帧位移变化不比面板边缘自己的大太多
         const exposed = frames.map((f) => (side === 'left' ? (f.sbR ?? 0) : f.rpL === null ? 0 : VIEWPORT.width - f.rpL))
-        expect(maxAccel(xs), `按钮最大位移变化（面板边缘 ${maxAccel(exposed).toFixed(1)}）`).toBeLessThanOrEqual(maxAccel(exposed) * 1.5 + 0.5)
+        const ts = frames.map((f) => f.t)
+        expect(maxAccel(xs, ts), `按钮最大速度变化（面板边缘 ${maxAccel(exposed, ts).toFixed(1)}）`).toBeLessThanOrEqual(maxAccel(exposed, ts) * 1.5 + 0.5)
         // 收起后的展开按钮在编辑区标题栏同侧的角上（toggleProblems 已检查垂直居中）
         await expect(button(p, toggleLabel(side, !closing))).toBeVisible()
         await c.close()

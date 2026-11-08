@@ -318,7 +318,20 @@ func (s *Store) DeleteProvider(ctx context.Context, id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	s.clearStaleDefault(ctx)
 	return nil
+}
+
+// clearStaleDefault 默认模型指向的模型已被删除（单独删或随供应商一起删）时清空，
+// 否则之后添加的第一个模型不会自动成为默认模型。
+func (s *Store) clearStaleDefault(ctx context.Context) {
+	st, err := s.Settings(ctx)
+	if err != nil || st.DefaultModel == "" {
+		return
+	}
+	if _, err := s.Model(ctx, st.DefaultModel); errors.Is(err, ErrNotFound) {
+		_ = s.setSetting(ctx, "default_model", "")
+	}
 }
 
 // Providers 返回全部供应商及其模型。
@@ -510,6 +523,7 @@ func (s *Store) DeleteModel(ctx context.Context, id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	s.clearStaleDefault(ctx)
 	return nil
 }
 

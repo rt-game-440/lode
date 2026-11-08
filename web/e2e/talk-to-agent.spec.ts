@@ -127,6 +127,14 @@ test.afterAll(async () => {
   await new Promise((r) => mock.close(r))
 })
 
+/** 删掉所有供应商（连同模型），让“未配置”的起点不依赖前面的 spec 留下了什么 */
+async function clearProviders(page: Page) {
+  const config = (await (await page.request.get('/api/agent/config')).json()) as { providers: { id: string }[] }
+  for (const p of config.providers) {
+    expect((await page.request.delete(`/api/agent/providers/${p.id}`)).ok()).toBe(true)
+  }
+}
+
 async function signIn(page: Page) {
   const status = await (await page.request.get('/api/auth/status')).json()
   if (!status.initialized) {
@@ -139,6 +147,7 @@ async function signIn(page: Page) {
 test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 批准写入 → 编辑器更新 → 切换模型', async ({ page }, info) => {
   test.setTimeout(90_000)
   await signIn(page)
+  await clearProviders(page)
   const created = await page.request.post('/api/notes', { data: { path: '待办.md', content: '# 待办\n\n- [ ] 买牛奶\n- [ ] 交电费\n' } })
   expect(created.ok()).toBe(true)
   const note = (await created.json()) as { id: string }
