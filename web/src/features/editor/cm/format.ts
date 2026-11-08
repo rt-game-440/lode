@@ -68,6 +68,52 @@ export function toggleList(state: EditorState, kind: 'bullet' | 'task'): Transac
   return replacePrefixes(state, edits)
 }
 
+/**
+ * 切换行内标记（加粗 **、斜体 *、行内代码 `）：
+ * 已被标记包住（选中文字自带标记，或标记就在选区两侧）时去掉，否则包起来。
+ * 空选区插入一对标记，光标停在中间；在一对空标记中间再次触发则删除它们。
+ */
+export function toggleWrap(state: EditorState, mark: string): TransactionSpec {
+  const n = mark.length
+  return done(
+    state.changeByRange((r) => {
+      const text = state.sliceDoc(r.from, r.to)
+      const before = state.sliceDoc(Math.max(0, r.from - n), r.from)
+      const after = state.sliceDoc(r.to, Math.min(state.doc.length, r.to + n))
+      if (before === mark && after === mark) {
+        return {
+          changes: [
+            { from: r.from - n, to: r.from },
+            { from: r.to, to: r.to + n },
+          ],
+          range: EditorSelection.range(r.from - n, r.to - n),
+        }
+      }
+      if (text.length >= 2 * n && text.startsWith(mark) && text.endsWith(mark)) {
+        return {
+          changes: { from: r.from, to: r.to, insert: text.slice(n, text.length - n) },
+          range: EditorSelection.range(r.from, r.to - 2 * n),
+        }
+      }
+      return {
+        changes: { from: r.from, to: r.to, insert: mark + text + mark },
+        range: r.empty ? EditorSelection.cursor(r.from + n) : EditorSelection.range(r.from + n, r.to + n),
+      }
+    }),
+  )
+}
+
+/** 切换引用：所有选中行都以 > 开头时去掉，否则统一加上。 */
+export function toggleQuote(state: EditorState): TransactionSpec {
+  const lines = selectedLines(state)
+  const all = lines.every((l) => /^>\s?/.test(l.text))
+  const edits = lines.map((line) => {
+    const m = /^>\s?/.exec(line.text)
+    return all ? { from: line.from, to: line.from + m![0].length, insert: '' } : { from: line.from, to: line.from, insert: '> ' }
+  })
+  return replacePrefixes(state, edits)
+}
+
 /** 插入链接：有选区时把选中文字作为链接文字，光标停在地址处；否则光标停在方括号里。 */
 export function insertLink(state: EditorState): TransactionSpec {
   return done(

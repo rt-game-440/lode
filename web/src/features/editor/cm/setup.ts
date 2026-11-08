@@ -1,4 +1,4 @@
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, startCompletion } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -6,6 +6,7 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { Annotation, EditorState, type Extension } from '@codemirror/state'
 import { EditorView, drawSelection, dropCursor, keymap, placeholder } from '@codemirror/view'
 import { type LinkCandidate, type LinkHandlers, autoCloseWikiLink, imagePaste, linkClicks, wikiLinkCompletion } from './extras'
+import { FORMAT_ACTIONS } from './formatActions'
 import { type PreviewContext, livePreview } from './livePreview'
 import { editorHighlight, editorTheme } from './theme'
 import { wikiLinkSyntax } from './wikilinkSyntax'
@@ -48,6 +49,15 @@ export function editorExtensions(env: EditorEnv): Extension[] {
           return true
         },
       },
+      ...FORMAT_ACTIONS.map((a) => ({
+        key: a.key,
+        preventDefault: true,
+        run: (v: EditorView) => {
+          v.dispatch(a.run(v.state))
+          if (a.id === 'wikilink') startCompletion(v)
+          return true
+        },
+      })),
       ...closeBracketsKeymap,
       ...completionKeymap,
       ...searchKeymap,
