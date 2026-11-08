@@ -5,7 +5,8 @@ export type Route =
   | { view: 'note'; id: string }
   | { view: 'trash' }
   | { view: 'tag'; tag: string }
-  | { view: 'settings' }
+  /** sub 是设置里的子页面路径，例如 ['tokens', '<id>']；省略或为空表示设置首页 */
+  | { view: 'settings'; sub?: string[] }
   | { view: 'agent' }
 
 export type Theme = 'system' | 'light' | 'dark'
@@ -21,11 +22,11 @@ export interface Toast {
   persistent?: boolean
 }
 
-function parseRoute(pathname: string): Route {
+export function parseRoute(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean).map(decodeURIComponent)
   if (parts[0] === 'note' && parts[1]) return { view: 'note', id: parts[1] }
   if (parts[0] === 'trash') return { view: 'trash' }
-  if (parts[0] === 'settings') return { view: 'settings' }
+  if (parts[0] === 'settings') return parts.length > 1 ? { view: 'settings', sub: parts.slice(1) } : { view: 'settings' }
   if (parts[0] === 'agent') return { view: 'agent' }
   if (parts[0] === 'tag' && parts[1]) return { view: 'tag', tag: parts.slice(1).join('/') }
   return { view: 'home' }
@@ -38,7 +39,7 @@ export function routePath(r: Route): string {
     case 'trash':
       return '/trash'
     case 'settings':
-      return '/settings'
+      return ['/settings', ...(r.sub ?? []).map(encodeURIComponent)].join('/')
     case 'agent':
       return '/agent'
     case 'tag':

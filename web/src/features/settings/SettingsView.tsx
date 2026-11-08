@@ -1,369 +1,195 @@
-import { Check, Copy, KeyRound, Keyboard, RefreshCw, X } from 'lucide-react'
-import { type FormEvent, useCallback, useEffect, useId, useState } from 'react'
-import { api } from '../../api/client'
-import type { ApiToken, AuditEntry, TokenScope } from '../../api/types'
-import { confirmDialog } from '../../components/overlays'
-import { ListItem, ListPresence } from '../../components/AnimatedList'
-import { Button, EmptyState, IconButton, Spinner, TextField } from '../../components/ui'
-import { copyText } from '../../lib/clipboard'
+import { EyeOff, History, KeyRound, Keyboard, Palette, PenLine, Plug, Sparkles } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { EmptyState } from '../../components/ui'
+import { useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
-import { errorMessage } from '../actions'
-import { ViewBar } from '../views/Views'
-import { AgentSection } from './AgentSettings'
-import { EditorPrefsSection } from './EditorPrefsSection'
+import { useEditorPrefs } from '../../stores/editorPrefs'
+import { AgentPage, ProviderPage, agentSummary } from './AgentSettings'
+import { AppearancePage, EditorPage, KeyboardPage, SHORTCUT_COUNT, THEME_LABEL } from './GeneralSettings'
+import { NavStack } from './NavStack'
+import { useSettingsData } from './data'
+import { settingsBack } from './nav'
+import { Group, NavRow, RowIcon, SettingsContext, SettingsPage } from './parts'
+import { AuditPage, McpPage, TokenPage, TokensPage } from './TokenSettings'
+import { ROOT_TITLE, SECTION_TITLE, settingsPage } from './stack'
 import './settings.css'
 
-const dateFmt = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-const timeFmt = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+const shortFmt = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-const SCOPE_LABEL: Record<TokenScope, string> = { read: '只读', write: '读写' }
-const SCOPE_HINT: Record<TokenScope, string> = {
-  read: '可以搜索、阅读和列出笔记。',
-  write: '还可以新建、修改、移动和删除笔记（删除的笔记进回收站）。',
-}
+/**
+ * 设置：iOS / macOS“设置”式的多级页面。第一级是分组列表，每行有图标、名称、状态摘要和 ›；
+ * 点进去是子页面，单个供应商、单个 token 可以再进一层。每一级有自己的地址（见 stack.ts），
+ * 浏览器后退、Android 返回键、返回按钮和左缘手势都逐级返回。
+ */
+export function SettingsView({ mobile }: { mobile: boolean }) {
+  const route = useUI((s) => s.route)
+  // 手机上离开设置时，详情层滑出期间路由已经变了：继续显示最后的设置页面
+  const last = useRef<string[]>([])
+  if (route.view === 'settings') last.current = route.sub ?? []
+  const sub = last.current
 
-function mcpEndpoint() {
-  return `${location.origin}/mcp`
-}
+  useSettingsSync()
 
-/** 复制并提示结果。 */
-async function copyWithToast(text: string, what: string) {
-  const ok = await copyText(text)
-  useUI.getState().toast(ok ? { message: `已复制${what}`, tone: 'success' } : { message: '复制失败，请手动选择复制', tone: 'error' })
-}
-
-function CopyField({ value, label, testId }: { value: string; label: string; testId?: string }) {
   return (
-    <div className="copy-field">
-      <code className="copy-field-value" data-testid={testId}>
-        {value}
-      </code>
-      <IconButton label={`复制${label}`} size="sm" onClick={() => void copyWithToast(value, label)}>
-        <Copy size={15} />
-      </IconButton>
-    </div>
+    <SettingsContext.Provider value={{ mobile }}>
+      <NavStack path={sub} renderPage={(s) => <Page sub={s} />} onBack={() => settingsBack(sub)} edgeSwipe={mobile} />
+    </SettingsContext.Provider>
   )
 }
 
-export function SettingsView({ mobile }: { mobile: boolean }) {
-  // 刷新时 token 列表（最后使用时间）和调用记录一起重新加载；从 agent 那边切回来时也刷新
-  const [version, setVersion] = useState(0)
-  const refresh = useCallback(() => setVersion((v) => v + 1), [])
+/** 首页的状态摘要和各子页面共用的数据：进入设置时加载，从别的应用切回来时刷新。 */
+function useSettingsSync() {
   useEffect(() => {
-    const onVisible = () => document.visibilityState === 'visible' && refresh()
+    const load = () => {
+      void useAgent.getState().loadConfig()
+      void useSettingsData.getState().loadTokens()
+      void useSettingsData.getState().loadAudit()
+    }
+    load()
+    const onVisible = () => document.visibilityState === 'visible' && load()
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [refresh])
-  return (
-    <section className="view">
-      <ViewBar title="设置" mobile={mobile} />
-      <div className="view-body settings">
-        <AgentSection />
-        <EditorPrefsSection />
-        <McpSection />
-        <TokenSection version={version} />
-        <AuditSection version={version} onRefresh={refresh} />
-        <KeyboardSection />
-      </div>
-    </section>
-  )
+  }, [])
 }
 
-function KeyboardSection() {
-  const setShortcutsOpen = useUI((s) => s.setShortcutsOpen)
-  return (
-    <section className="settings-group" aria-labelledby="settings-keyboard">
-      <h2 id="settings-keyboard" className="settings-heading">
-        键盘
-      </h2>
-      <div className="settings-card">
-        <div className="settings-row">
-          <span className="settings-row-text">所有功能都可以只用键盘完成；不在输入时按 ? 随时查看。</span>
-          <Button size="sm" variant="secondary" icon={<Keyboard size={14} />} onClick={() => setShortcutsOpen(true)}>
-            键盘快捷键
-          </Button>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function McpSection() {
-  return (
-    <section className="settings-group" aria-labelledby="settings-mcp">
-      <h2 id="settings-mcp" className="settings-heading">
-        MCP 接入
-      </h2>
-      <p className="settings-desc">
-        Claude Code、Codex、Cursor 等 agent 可以通过 MCP 搜索、阅读和编辑你的笔记。先在下面创建 API token，再在 agent
-        里添加这个地址，用 <code>Authorization: Bearer &lt;token&gt;</code> 请求头鉴权。
-      </p>
-      <div className="settings-card">
-        <div className="settings-row">
-          <span className="settings-row-label">地址</span>
-          <CopyField value={mcpEndpoint()} label="MCP 地址" testId="mcp-endpoint" />
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function TokenSection({ version }: { version: number }) {
-  const [tokens, setTokens] = useState<ApiToken[] | null>(null)
-  const [created, setCreated] = useState<{ token: ApiToken; secret: string } | null>(null)
-  const toast = useUI((s) => s.toast)
-
-  const load = useCallback(async () => {
-    try {
-      setTokens(await api.tokens())
-    } catch (err) {
-      toast({ message: errorMessage(err), tone: 'error' })
-      setTokens([])
-    }
-  }, [toast])
-
-  useEffect(() => {
-    void load()
-  }, [load, version])
-
-  const revoke = async (t: ApiToken) => {
-    const ok = await confirmDialog({
-      title: `吊销“${t.name}”？`,
-      message: '使用这个 token 的 agent 会立即失去访问权限。吊销后无法恢复，需要时请重新创建。',
-      confirmLabel: '吊销',
-      danger: true,
-    })
-    if (!ok) return
-    try {
-      await api.revokeToken(t.id)
-      setTokens((list) => list?.filter((x) => x.id !== t.id) ?? null)
-      if (created?.token.id === t.id) setCreated(null)
-      toast({ message: `已吊销“${t.name}”` })
-    } catch (err) {
-      toast({ message: errorMessage(err), tone: 'error' })
-    }
+function Page({ sub }: { sub: string[] }) {
+  const page = settingsPage(sub)
+  switch (page?.id) {
+    case 'root':
+      return <SettingsHome />
+    case 'appearance':
+      return <AppearancePage sub={sub} />
+    case 'editor':
+      return <EditorPage sub={sub} />
+    case 'keyboard':
+      return <KeyboardPage sub={sub} />
+    case 'agent':
+      return <AgentPage sub={sub} />
+    case 'provider':
+      return <ProviderPage sub={sub} id={page.param!} />
+    case 'mcp':
+      return <McpPage sub={sub} />
+    case 'tokens':
+      return <TokensPage sub={sub} />
+    case 'token':
+      return <TokenPage sub={sub} id={page.param!} />
+    case 'audit':
+      return <AuditPage sub={sub} />
+    default:
+      return (
+        <SettingsPage sub={sub} title={ROOT_TITLE}>
+          <EmptyState icon={<EyeOff size={28} strokeWidth={1.5} />} title="找不到这个设置页面" />
+        </SettingsPage>
+      )
   }
-
-  return (
-    <section className="settings-group" aria-labelledby="settings-tokens">
-      <h2 id="settings-tokens" className="settings-heading">
-        API token
-      </h2>
-      <p className="settings-desc">每个 agent 用一个单独的 token，方便在调用记录里区分，也可以单独吊销。</p>
-
-      {created ? (
-        <TokenReveal created={created} onDone={() => setCreated(null)} />
-      ) : (
-        <CreateTokenForm
-          onCreated={(c) => {
-            setCreated(c)
-            setTokens((list) => [c.token, ...(list ?? [])])
-          }}
-        />
-      )}
-
-      <div className="settings-card">
-        {!tokens ? (
-          <div className="view-loading">
-            <Spinner />
-          </div>
-        ) : !tokens.length ? (
-          <EmptyState icon={<KeyRound size={28} strokeWidth={1.5} />} title="还没有 token" />
-        ) : (
-          <ul className="token-list" aria-label="API token 列表">
-            <ListPresence>
-              {tokens.map((t) => (
-                <ListItem key={t.id} className="settings-row token-row">
-                  <div className="token-info">
-                    <span className="token-name">
-                      {t.name}
-                      <span className={`scope-badge scope-${t.scope}`}>{SCOPE_LABEL[t.scope]}</span>
-                    </span>
-                    <span className="settings-meta">
-                      创建于 {dateFmt.format(t.created_at)} · {t.last_used_at ? `最后使用 ${dateFmt.format(t.last_used_at)}` : '从未使用'}
-                    </span>
-                  </div>
-                  <Button size="sm" variant="secondary" className="btn-destructive" onClick={() => void revoke(t)}>
-                    吊销
-                  </Button>
-                </ListItem>
-              ))}
-            </ListPresence>
-          </ul>
-        )}
-      </div>
-    </section>
-  )
 }
 
-function CreateTokenForm({ onCreated }: { onCreated: (c: { token: ApiToken; secret: string }) => void }) {
-  const [name, setName] = useState('')
-  const [scope, setScope] = useState<TokenScope>('read')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const scopeLabelId = useId()
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!name.trim()) {
-      setError('请填写名称，例如 Claude Code')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      onCreated(await api.createToken(name.trim(), scope))
-      setName('')
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
+/** 第一级：分组列表。 */
+function SettingsHome() {
+  const theme = useUI((s) => s.theme)
+  const formatToolbar = useEditorPrefs((s) => s.formatToolbar)
+  const config = useAgent((s) => s.config)
+  const tokens = useSettingsData((s) => s.tokens)
+  const audit = useSettingsData((s) => s.audit)
+  const latest = audit?.[0]
   return (
-    <form className="settings-card token-form" onSubmit={(e) => void submit(e)}>
-      <TextField
-        id="token-name"
-        label="名称"
-        placeholder="例如 Claude Code"
-        maxLength={64}
-        value={name}
-        error={error}
-        onChange={(e) => setName(e.target.value)}
-        autoComplete="off"
-      />
-      <div className="field">
-        <span className="field-label" id={scopeLabelId}>
-          权限
-        </span>
-        <div className="segmented" role="radiogroup" aria-labelledby={scopeLabelId}>
-          {(['read', 'write'] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="radio"
-              aria-checked={scope === s}
-              className={`segment${scope === s ? ' is-selected' : ''}`}
-              onClick={() => setScope(s)}
-            >
-              {SCOPE_LABEL[s]}
-            </button>
-          ))}
-        </div>
-        <p className="settings-meta">{SCOPE_HINT[scope]}</p>
-      </div>
-      <div className="token-form-actions">
-        <Button type="submit" variant="primary" disabled={busy}>
-          {busy ? '正在创建…' : '创建 token'}
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-function TokenReveal({ created, onDone }: { created: { token: ApiToken; secret: string }; onDone: () => void }) {
-  const command = `claude mcp add --transport http lode ${mcpEndpoint()} --header "Authorization: Bearer ${created.secret}"`
-  return (
-    <div className="settings-card token-reveal" role="status">
-      <p className="token-reveal-title">
-        <Check size={16} aria-hidden="true" />
-        已创建“{created.token.name}”（{SCOPE_LABEL[created.token.scope]}）
-      </p>
-      <p className="settings-desc">token 只显示这一次，离开后无法再查看。请现在复制，保存到 agent 的配置里。</p>
-      <CopyField value={created.secret} label="token" testId="token-secret" />
-      <p className="settings-meta">Claude Code 可以直接运行：</p>
-      <CopyField value={command} label="接入命令" />
-      <div className="token-form-actions">
-        <Button variant="secondary" onClick={onDone}>
-          我已保存
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function AuditSection({ version, onRefresh }: { version: number; onRefresh: () => void }) {
-  const [entries, setEntries] = useState<AuditEntry[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const toast = useUI((s) => s.toast)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      setEntries(await api.audit(100))
-    } catch (err) {
-      toast({ message: errorMessage(err), tone: 'error' })
-      setEntries((e) => e ?? [])
-    } finally {
-      setLoading(false)
-    }
-  }, [toast])
-
-  useEffect(() => {
-    void load()
-  }, [load, version])
-
-  return (
-    <section className="settings-group" aria-labelledby="settings-audit">
-      <div className="settings-heading-row">
-        <h2 id="settings-audit" className="settings-heading">
-          调用记录
-        </h2>
-        <IconButton label="刷新调用记录" size="sm" onClick={onRefresh} disabled={loading}>
-          <RefreshCw size={15} className={loading ? 'is-spinning' : undefined} />
-        </IconButton>
-      </div>
-      <p className="settings-desc">agent 通过 MCP 调用工具的记录，保留最近 1000 条，这里显示最近 100 条。</p>
-      <div className="settings-card">
-        {!entries ? (
-          <div className="view-loading">
-            <Spinner />
-          </div>
-        ) : !entries.length ? (
-          <EmptyState title="还没有调用记录">agent 通过 MCP 调用工具后会显示在这里</EmptyState>
-        ) : (
-          <table className="audit-table" aria-label="调用记录">
-            <thead>
-              <tr>
-                <th scope="col">时间</th>
-                <th scope="col">token</th>
-                <th scope="col">工具</th>
-                <th scope="col">路径</th>
-                <th scope="col">结果</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id}>
-                  <td className="audit-time">{timeFmt.format(e.at)}</td>
-                  <td>{e.token_name}</td>
-                  <td>
-                    <code>{e.tool}</code>
-                  </td>
-                  <td className="audit-target" title={e.target}>
-                    {e.target || '—'}
-                  </td>
-                  <td className={e.ok ? 'audit-ok' : 'audit-fail'} title={e.error}>
-                    {e.ok ? (
-                      <>
-                        <Check size={14} aria-hidden="true" />
-                        成功
-                      </>
-                    ) : (
-                      <>
-                        <X size={14} aria-hidden="true" />
-                        失败
-                        {e.error && <span className="audit-error">{e.error}</span>}
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </section>
+    <SettingsPage sub={[]} title={ROOT_TITLE} testId="settings-home">
+      <Group title="通用">
+        <ul className="settings-list">
+          <li>
+            <NavRow
+              to={['appearance']}
+              icon={
+                <RowIcon tone="indigo">
+                  <Palette size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.appearance}
+              value={THEME_LABEL[theme]}
+            />
+          </li>
+          <li>
+            <NavRow
+              to={['editor']}
+              icon={
+                <RowIcon tone="azure">
+                  <PenLine size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.editor}
+              value={formatToolbar ? '显示格式工具栏' : '隐藏格式工具栏'}
+            />
+          </li>
+          <li>
+            <NavRow
+              to={['keyboard']}
+              icon={
+                <RowIcon tone="slate">
+                  <Keyboard size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.keyboard}
+              value={`${SHORTCUT_COUNT} 个快捷键`}
+            />
+          </li>
+        </ul>
+      </Group>
+      <Group title="助手" footer="模型供应商、模型、API key 和默认选项。">
+        <ul className="settings-list">
+          <li>
+            <NavRow
+              to={['agent']}
+              icon={
+                <RowIcon tone="violet">
+                  <Sparkles size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.agent}
+              value={agentSummary(config)}
+            />
+          </li>
+        </ul>
+      </Group>
+      <Group title="agent 接入" footer="Claude Code、Codex、Cursor 等 agent 通过 MCP 搜索、阅读和编辑你的笔记。">
+        <ul className="settings-list">
+          <li>
+            <NavRow
+              to={['mcp']}
+              icon={
+                <RowIcon tone="azure">
+                  <Plug size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.mcp}
+              value={`${location.host}/mcp`}
+            />
+          </li>
+          <li>
+            <NavRow
+              to={['tokens']}
+              icon={
+                <RowIcon tone="emerald">
+                  <KeyRound size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.tokens}
+              value={tokens ? (tokens.length ? `${tokens.length} 个` : '未创建') : ''}
+            />
+          </li>
+          <li>
+            <NavRow
+              to={['audit']}
+              icon={
+                <RowIcon tone="amber">
+                  <History size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.audit}
+              value={audit ? (latest ? `最近 ${shortFmt.format(latest.at)}` : '暂无') : ''}
+            />
+          </li>
+        </ul>
+      </Group>
+    </SettingsPage>
   )
 }

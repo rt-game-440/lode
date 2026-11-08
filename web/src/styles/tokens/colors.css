@@ -170,6 +170,17 @@
   --color-md-quote-bar: rgba(235, 235, 245, 0.25);
 }
 
+/* 设置列表的图标底色（iOS“设置”式的彩色方块）：亮暗通用，上面放白色图标，对比度都 ≥ 3:1 */
+:root {
+  --color-tile-azure: #007aff;
+  --color-tile-emerald: #28a745;
+  --color-tile-amber: #e66a00;
+  --color-tile-violet: #af52de;
+  --color-tile-slate: #8e8e93;
+  --color-tile-indigo: #5856d6;
+  --color-on-tile: #ffffff;
+}
+
 /*
  * 以下覆盖规则的选择器与主题选择器同等优先级（最高 0,2,0），写在后面才能在暗色下也生效。
  */

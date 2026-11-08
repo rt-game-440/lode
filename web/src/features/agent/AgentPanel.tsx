@@ -141,7 +141,7 @@ function NoModels({ secretKeySet }: { secretKeySet: boolean }) {
           ? '在设置的“助手”里添加一个模型供应商（OpenAI 兼容、Anthropic 或 Gemini）和模型。'
           : '服务器暂时没有可用的主密钥，不能保存 API key。请检查数据目录是否可写后重启 Lode。'}
         <div className="agent-empty-action">
-          <Button size="sm" variant="primary" icon={<Settings size={14} />} onClick={() => navigate({ view: 'settings' })}>
+          <Button size="sm" variant="primary" icon={<Settings size={14} />} onClick={() => navigate({ view: 'settings', sub: ['agent'] })}>
             打开设置
           </Button>
         </div>

@@ -143,13 +143,18 @@ test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 
   expect(created.ok()).toBe(true)
   const note = (await created.json()) as { id: string }
 
-  // 1. 设置里添加供应商，测试连接，从列表添加两个模型
+  // 1. 设置 → 助手里添加供应商（保存后进入它的页面），测试连接，从列表添加两个模型
   await page.goto('/settings')
+  await expect(page.getByRole('link', { name: /^助手/ })).toContainText('未配置')
+  await page.getByRole('link', { name: /^助手/ }).click()
+  await expect(page).toHaveURL(/\/settings\/agent$/)
   await page.getByTestId('add-provider').click()
   await page.getByTestId('provider-name').fill('模拟 OpenAI')
   await page.getByTestId('provider-base-url').fill(mockBase)
   await page.getByTestId('provider-key').fill(MOCK_KEY)
   await page.getByTestId('provider-save').click()
+  await expect(page).toHaveURL(/\/settings\/agent\/[^/]+$/)
+  await expect(page.getByRole('heading', { name: '模拟 OpenAI', level: 1 })).toBeVisible()
   const card = page.getByTestId('provider-card')
   await expect(card).toContainText('模拟 OpenAI')
   await expect(card).toContainText('••••1234')
@@ -166,9 +171,12 @@ test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 
     await expect(page.getByRole('dialog')).toHaveCount(0)
   }
   await expect(card.getByTestId('model-row')).toHaveCount(2)
-  // 第一个添加的模型自动成为默认模型
+  await shot(page, 'agent-provider')
+  // 返回助手页：供应商行显示模型数，第一个添加的模型自动成为默认模型
+  await page.getByRole('button', { name: '返回助手' }).click()
+  await expect(page).toHaveURL(/\/settings\/agent$/)
+  await expect(page.getByTestId('provider-row')).toContainText('2 个模型')
   await expect(page.getByTestId('default-model')).toContainText('mock-smart')
-  await page.locator('#settings-agent').evaluate((el) => el.scrollIntoView({ block: 'start' }))
   await shot(page, 'agent-settings')
 
   // 2. 打开笔记，在右栏打开助手；当前笔记默认附上

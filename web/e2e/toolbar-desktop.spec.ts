@@ -55,7 +55,7 @@ test('桌面显示格式顶栏，按钮作用于选区且提示带快捷键', as
 })
 
 test('设置里可以隐藏和重新显示，刷新后保持', async () => {
-  await page.goto('/settings')
+  await page.goto('/settings/editor')
   const sw = page.getByTestId('format-toolbar-switch')
   await expect(sw).toBeChecked()
   await sw.uncheck()
@@ -65,7 +65,7 @@ test('设置里可以隐藏和重新显示，刷新后保持', async () => {
   await expect(page.locator('.cm-content')).toBeVisible()
   await expect(toolbar()).toHaveCount(0)
 
-  await page.goto('/settings')
+  await page.goto('/settings/editor')
   await page.getByTestId('format-toolbar-switch').check()
   await page.goto(noteUrl)
   await expect(toolbar()).toBeVisible()
