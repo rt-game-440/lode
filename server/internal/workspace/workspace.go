@@ -364,3 +364,6 @@ func FromContext(ctx context.Context) *Workspace {
 	w, _ := ctx.Value(ctxKey{}).(*Workspace)
 	return w
 }
+
+// DataDir 返回数据目录。
+func (m *Manager) DataDir() string { return m.dataDir }

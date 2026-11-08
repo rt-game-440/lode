@@ -146,7 +146,9 @@ const globalApi = {
     request<{ key_protection: KeyProtection; cleared_keys: number }>('POST', '/api/key-protection/disable', { discard }),
 
   workspaces: () => request<{ workspaces: WorkspaceInfo[] }>('GET', '/api/workspaces').then((r) => r.workspaces),
-  createWorkspace: (name: string) => request<WorkspaceInfo>('POST', '/api/workspaces', { name }),
+  /** vaultDir 非空时把服务器上已有的文件夹（绝对路径）接入为外部工作空间 */
+  createWorkspace: (name: string, vaultDir?: string) =>
+    request<WorkspaceInfo>('POST', '/api/workspaces', vaultDir ? { name, vault_dir: vaultDir } : { name }),
   /** name：改名；sort：移到列表里的第几位（从 0 开始）。 */
   updateWorkspace: (id: string, patch: { name?: string; sort?: number }) =>
     request<WorkspaceInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}`, patch),

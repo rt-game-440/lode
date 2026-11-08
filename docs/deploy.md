@@ -69,6 +69,50 @@ sudo systemctl daemon-reload && sudo systemctl enable --now lode
 - 数据目录尽量放在 U 盘或 SSD 上，少写 SD 卡：二进制部署改 `LODE_DATA_DIR`，Docker 部署把 `/data` 挂到外接盘。
 - 首次导入大量笔记时建立索引比 PC 慢（PC 上 10000 篇约 6 秒，见 [benchmark.md](benchmark.md)），之后启动只比对文件的修改时间和大小。
 
+## 工作空间与外部目录
+
+一个 Lode 实例可以有多个互相隔离的工作空间（设计见 [workspaces.md](workspaces.md)）。默认工作空间就是数据目录里的 `vault/`；其他工作空间默认放在数据目录的 `workspaces/<id>/` 下，随数据卷一起备份和迁移。
+
+**外部目录**：新建工作空间时选“使用已有文件夹”，可以把服务器上已有的文件夹（比如 Obsidian 库）接入，笔记文件留在原处。外部目录里只放笔记文件，Lode 的索引、回收站在数据目录的 `workspaces/<id>/` 下，不会在你的文件夹里创建别的文件。接口和路径校验规则见 [api.md](api.md) 的“外部目录”。
+
+- **容器里要另外挂卷。** 路径是 Lode 进程看到的路径，不是宿主机路径：容器只能访问挂进来的目录。例如把宿主机的 Obsidian 库挂到容器的 `/vaults/obsidian`：
+
+  ```yaml
+  services:
+    lode:
+      volumes:
+        - lode-data:/data
+        - /srv/obsidian:/vaults/obsidian   # 外部目录，要读写，不要加 :ro
+  ```
+
+  然后新建工作空间时填 `/vaults/obsidian`。镜像以 uid 65532 运行（NAS 上见上面的 `chown`），挂进来的目录要让这个用户可读写。外部目录不能放在 `/data` 里面（会被拒绝）。
+- **不要让两个 Lode 实例指向同一个外部目录。** 数据目录的文件锁只能防止同一个数据目录被两个进程使用，管不了外部目录；两个实例各自有索引和回收站，同时改同一个文件会互相覆盖。同样不要把数据卷里的 `vault/` 或某个内置工作空间的目录再当作外部目录接入（会被拒绝）。
+- 外部目录所在的磁盘没挂载或文件夹被移走时，这个工作空间会显示“笔记文件夹不可用”，不会重建目录，也不会清空索引；恢复后重新访问即可。Linux 上大的库可能触到 `fs.inotify.max_user_watches` 上限（日志里会有文件监听失败的警告），调高它：`sudo sysctl fs.inotify.max_user_watches=524288`。
+- 外部目录里的 `.obsidian/` 等以点开头的目录和非 Markdown 文件，Lode 不索引也不会改动。Obsidian 和 Lode 可以同时打开同一个库交叉编辑：在 Obsidian 里改的文件 Lode 一两秒内同步，Lode 里的修改也会写回文件。
+- 在 Lode 里删除的笔记进的是数据目录里的回收站，不是 Obsidian 的 `.trash`。
+- 删除外部工作空间只删 Lode 的索引（连同回收站和助手对话移到 `trash-workspaces/`），外部文件夹里的笔记文件一个都不会动。
+- `lode backup` / `restore` 对外部工作空间的支持由后续任务提供（见 workspaces.md 第 10 节）：在那之前，备份不包含外部目录里的笔记，请用自己的方式备份这些文件夹。
+
+### 无界面管理：`lode workspace`
+
+没有浏览器可用的部署（SSH 上的服务器、容器）可以用命令行管理工作空间。**必须先停止服务**（和 `restore` 一样检查数据目录锁，服务运行中会报错退出），语义与设置页、`/api/workspaces` 一致：
+
+```bash
+lode workspace list [--json]                          # 列出全部（--json 与 GET /api/workspaces 的内容相同）
+lode workspace add 读书                                # 新建内置位置的工作空间
+lode workspace add 我的库 --dir /srv/obsidian          # 接入已有文件夹（绝对路径，规则同接口）
+lode workspace rename <id> 新名称
+lode workspace remove <id>                            # 内置：目录移到 trash-workspaces/；外部：只处理索引，笔记文件不动
+```
+
+Docker：
+
+```bash
+docker compose stop lode
+docker compose run --rm --no-deps lode workspace add 我的库 --dir /vaults/obsidian
+docker compose start lode
+```
+
 ## 升级
 
 数据库迁移在启动时自动执行。有待执行的迁移时，会先把数据库复制到 `backups/app-v<旧版本>-<时间>.db`。保险起见，升级前再做一次完整备份。

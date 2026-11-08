@@ -86,6 +86,9 @@ type Info struct {
 // CreateOptions 是新建工作空间的参数。
 type CreateOptions struct {
 	Name string
+	// VaultDir 非空时把这个已有的绝对路径目录作为笔记目录（外部目录，规则见 CheckVaultDir）；
+	// 为空则在 data/workspaces/<id>/vault 下新建。
+	VaultDir string
 }
 
 // List 按排序返回所有登记的工作空间，不会打开它们。没有登记表时只返回默认工作空间。
@@ -163,8 +166,10 @@ func (m *Manager) noteCount(ctx context.Context, id, vaultDir string) (int, erro
 	return n, nil
 }
 
-// Create 新建一个内置位置的工作空间：在 data/workspaces/<id>/ 下建好 vault、trash 和迁移到最新的 index.db，
+// Create 新建工作空间：在 data/workspaces/<id>/ 下建好 vault、trash 和迁移到最新的 index.db，
 // 再写入登记表（排在最后）。新工作空间不会被打开，第一次 Get 时才打开。
+// 指定了 VaultDir 时笔记目录是外部目录：校验通过后只在 data/workspaces/<id>/ 下建 trash 和 index.db，
+// 不在外部目录里创建或写入任何东西。
 func (m *Manager) Create(ctx context.Context, o CreateOptions) (Info, error) {
 	if m.global == nil {
 		return Info{}, ErrNoRegistry
@@ -179,9 +184,19 @@ func (m *Manager) Create(ctx context.Context, o CreateOptions) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	p := PathsFor(m.dataDir, id, "")
-	cleanup := func() { os.RemoveAll(p.Root) }
-	for _, dir := range []string{p.Vault, p.Trash} {
+	vaultDir := ""
+	if strings.TrimSpace(o.VaultDir) != "" {
+		if vaultDir, err = m.checkVaultDirLocked(ctx, o.VaultDir); err != nil {
+			return Info{}, err
+		}
+	}
+	p := PathsFor(m.dataDir, id, vaultDir)
+	cleanup := func() { os.RemoveAll(p.Root) } // 只清 data/workspaces/<id>/，不碰外部目录
+	dirs := []string{p.Trash}
+	if vaultDir == "" {
+		dirs = append(dirs, p.Vault)
+	}
+	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			cleanup()
 			return Info{}, err
@@ -197,16 +212,19 @@ func (m *Manager) Create(ctx context.Context, o CreateOptions) (Info, error) {
 		cleanup()
 		return Info{}, err
 	}
-	in := Info{ID: id, Name: name, CreatedAt: m.now().UnixMilli()}
+	in := Info{ID: id, Name: name, CreatedAt: m.now().UnixMilli(), Path: displayPath(id, vaultDir)}
+	if vaultDir != "" {
+		in.External, in.VaultDir = true, vaultDir
+	}
 	err = m.global.QueryRowContext(ctx,
 		`INSERT INTO workspaces(id, name, vault_dir, sort, created_at)
-		 SELECT ?, ?, '', COALESCE(MAX(sort), 0) + 1, ? FROM workspaces
-		 RETURNING sort`, id, name, in.CreatedAt).Scan(&in.Sort)
+		 SELECT ?, ?, ?, COALESCE(MAX(sort), 0) + 1, ? FROM workspaces
+		 RETURNING sort`, id, name, vaultDir, in.CreatedAt).Scan(&in.Sort)
 	if err != nil {
 		cleanup()
 		return Info{}, err
 	}
-	m.log.Info("已新建工作空间", "workspace", id)
+	m.log.Info("已新建工作空间", "workspace", id, "external", vaultDir != "")
 	return in, nil
 }
 
@@ -274,7 +292,16 @@ func (m *Manager) openWorkspace(ctx context.Context, id string) (*Workspace, err
 		return nil, err
 	}
 	p := PathsFor(m.dataDir, id, vaultDir)
+	if vaultDir != "" {
+		// 外部目录不存在时不要代为创建（卷没挂载时会得到一个空库，对账会把索引里的笔记全清掉）
+		if err := checkVaultPresent(vaultDir); err != nil {
+			return nil, err
+		}
+	}
 	if err := os.MkdirAll(p.Root, 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(p.Trash, 0o755); err != nil {
 		return nil, err
 	}
 	d, err := db.Open(ctx, p.Index)

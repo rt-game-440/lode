@@ -167,7 +167,9 @@
 
 - #59 设置页管理工作空间、MCP token 绑定工作空间：`PATCH/DELETE /api/workspaces/{id}`（改名、排序；默认空间不能删，内置空间删除时停后台任务、关库，目录移到 `data/trash-workspaces/<id>-<时间>/`，登记和绑定的 token 一并移除）；`Manager.Rename/Reorder/Remove/SetBeforeRemove`；token 创建时可选 `workspace`（默认 `default`），`/mcp` 只访问 token 绑定空间的笔记，审计记录 `workspace`，`GET /api/audit?workspace=` 筛选。设置页新增“工作空间”分组（拖动或键盘排序、重命名、路径、删除确认），token 表单有工作空间下拉。测试：`internal/workspace/manage_test.go`、`internal/mcpserver/workspace_test.go`、`internal/api/workspaces_manage_test.go`、`internal/audit` 的 `TestListFiltersByWorkspace`、`web/e2e/ui-workspace-settings.spec.ts`。#61 合并后需在 `main.go` 注册 `workspaces.SetBeforeRemove(agentSvc.CloseWorkspace)`（已留 TODO）；#60 在 `disposeFiles` 里加外部目录分支。
 
-下一步：#61（助手按工作空间）、#60、#63 等。注意 `lode backup/restore` 还不包含 `data/workspaces/`。
+- #60 外部目录工作空间与 `lode workspace`：`POST /api/workspaces` 接受 `vault_dir`（也接受 `vaultDir`），校验失败返回 `400 vault_dir_<原因>`（not_absolute / not_found / not_directory / unreadable / invalid / root / home / data_dir / inside_data_dir / contains_data_dir / same_vault / nested_vault），外部目录里不写任何东西（索引、回收站、锁都在 `data/workspaces/<id>/`）；外部目录不见了时访问返回 `503 workspace_vault_unavailable`，不重建目录；回收站跨磁盘时退回到复制 + 删除（文件和文件夹）；删除外部空间不动外部文件。`lode workspace list|add|rename|remove`（需停服，复用 `workspace.Manager`）。前端新建对话框加“使用已有文件夹”开关和绝对路径输入（错误显示在输入框下面），设置页外部空间的删除确认写明“不会删除你的笔记文件”。测试：`internal/workspace/external_test.go`（`TestCreateRejectsBadVaultDirs`、`TestExternalVaultReconcilesAndWatches`、`TestRemoveExternalWorkspaceKeepsEveryFile`、`TestExternalVaultMissingIsNotRecreated`）、`internal/api/workspaces_manage_test.go`（`TestExternalWorkspaceAPI`）、`cmd/lode/workspace_test.go`、`internal/vault` 的 `TestMoveFallsBackToCopyAcrossDevices`、`web/e2e/ui-workspace-external.spec.ts`、`web/src/features/workspace/names.test.ts`。人工验收：`docs/checklist/stage-7.md`（Obsidian 库交叉编辑）。
+
+下一步：#62（备份恢复要覆盖 `data/workspaces/` 和外部 vault，登记信息见 MEMORY.md 的 #60 条）、#63 等。注意 `lode backup/restore` 还不包含 `data/workspaces/`。
 
 ## 发布前
 

@@ -93,7 +93,8 @@ interface WorkspaceState {
   /** 从服务器刷新列表（失败时保留缓存） */
   load: () => Promise<void>
   /** 新建内置工作空间（不切换），返回登记信息 */
-  create: (name: string) => Promise<WorkspaceInfo>
+  /** vaultDir 非空时接入服务器上已有的文件夹为外部工作空间 */
+  create: (name: string, vaultDir?: string) => Promise<WorkspaceInfo>
   /** 重命名（默认工作空间也可以）。名称由服务端校验，不合法时抛出错误。 */
   rename: (id: string, name: string) => Promise<void>
   /** 把工作空间移到列表里的第 pos 位（从 0 开始）；先更新界面，失败时恢复并抛出错误。 */
@@ -134,8 +135,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     if (!list.some((w) => w.id === cur)) workspaceMissing(cur)
   },
 
-  create: async (name) => {
-    const info = await api.createWorkspace(name)
+  create: async (name, vaultDir) => {
+    const info = await api.createWorkspace(name, vaultDir)
     setList([...get().list.filter((w) => w.id !== info.id), info].sort((a, b) => a.sort - b.sort))
     return info
   },

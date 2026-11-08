@@ -35,6 +35,9 @@ const usage = `用法：
                                  重置登录密码（从终端输入，或从标准输入读一行）；默认保留已登记的通行密钥，
                                  --clear-passkeys 同时删除全部通行密钥（开启了通行密钥保护时一并关闭保护，
                                  已保存的 API key 无法再解开，会被清除）
+  lode workspace list [--json] | add <名称> [--dir <绝对路径>] | rename <id> <新名称> | remove <id>
+                                 管理工作空间，必须先停止服务；--dir 把已有文件夹（比如 Obsidian 库）接入为外部工作空间，
+                                 里面只放笔记文件；remove 外部工作空间只删索引，不删笔记文件
   lode healthcheck               检查本机服务是否正常（容器健康检查用）
   lode --version                 显示版本
 

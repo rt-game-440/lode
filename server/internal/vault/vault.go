@@ -349,11 +349,46 @@ func (v *Vault) Walk(rel string, fn func(Entry) error) error {
 	})
 }
 
-func moveFile(src, dst string) error {
-	if err := renameRetry(src, dst); err == nil {
+// rename 是移动文件用的重命名，测试里替换它来模拟跨磁盘（回收站在 data 目录，外部 vault 可能在别的磁盘上）。
+var rename = os.Rename
+
+// MoveDirOut 把 vault 内的目录整个移到 vault 外的绝对路径（用于删除文件夹进回收站）。
+// 先尝试重命名；跨磁盘等重命名不了时，复制整棵目录树再删除原目录，复制不完整时清理目标、保留原目录。
+func MoveDirOut(srcAbs, dstAbs string) error {
+	if err := os.MkdirAll(filepath.Dir(dstAbs), 0o755); err != nil {
+		return err
+	}
+	if err := renameRetry(srcAbs, dstAbs); err == nil {
 		return nil
 	}
-	// 跨设备时退回到复制 + 删除
+	if err := copyTree(srcAbs, dstAbs); err != nil {
+		os.RemoveAll(dstAbs)
+		return err
+	}
+	return os.RemoveAll(srcAbs)
+}
+
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		switch {
+		case d.IsDir():
+			return os.MkdirAll(target, 0o755)
+		case d.Type().IsRegular():
+			return copyFile(p, target)
+		}
+		return nil // 符号链接等不复制（Walk 本来也不跟随）
+	})
+}
+
+func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -365,21 +400,34 @@ func moveFile(src, dst string) error {
 	}
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
-		os.Remove(dst)
 		return err
 	}
-	if err := out.Close(); err != nil {
+	return out.Close()
+}
+
+func moveFile(src, dst string) error {
+	if err := renameRetry(src, dst); err == nil {
+		return nil
+	}
+	// 跨设备时退回到复制 + 删除
+	if err := copyFile(src, dst); err != nil {
+		if !errors.Is(err, fs.ErrExist) {
+			os.Remove(dst)
+		}
 		return err
 	}
-	in.Close()
-	return os.Remove(src)
+	if err := os.Remove(src); err != nil {
+		os.Remove(dst) // 原文件删不掉时不要留下两份
+		return err
+	}
+	return nil
 }
 
 // renameRetry 在 Windows 上遇到文件被短暂占用（杀毒、索引服务）时重试几次。
 func renameRetry(src, dst string) error {
 	var err error
 	for i := 0; i < 5; i++ {
-		if err = os.Rename(src, dst); err == nil {
+		if err = rename(src, dst); err == nil {
 			return nil
 		}
 		if runtime.GOOS != "windows" {

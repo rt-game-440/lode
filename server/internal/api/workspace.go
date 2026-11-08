@@ -92,6 +92,11 @@ func (s *Server) inWorkspace(id string, h http.HandlerFunc) http.Handler {
 }
 
 func (s *Server) workspaceFail(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, workspace.ErrVaultUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, "workspace_vault_unavailable",
+			"这个工作空间的笔记文件夹不可用（已被移动、删除或所在磁盘未挂载），恢复后再试", nil)
+		return
+	}
 	if errors.Is(err, workspace.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "workspace_not_found", "工作空间不存在", map[string]any{"error": "workspace_not_found"})
 		return
@@ -132,22 +137,33 @@ func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"workspaces": list})
 }
 
-// createWorkspace 新建一个内置位置的工作空间（data/workspaces/<id>/），不立即打开。
-// 外部目录（vault_dir）由之后的票支持，现在传了就拒绝，免得被悄悄建成内置位置。
+// createWorkspace 新建工作空间，不立即打开。vault_dir（也接受 vaultDir）非空时把这个已有的绝对路径目录作为
+// 笔记目录（外部目录），校验失败返回 400，错误码 vault_dir_<原因>（见 workspace.Reason*）；
+// 外部目录里不会写入任何东西。
 func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name     string `json:"name"`
-		VaultDir string `json:"vault_dir"`
+		Name      string `json:"name"`
+		VaultDir  string `json:"vault_dir"`
+		VaultDir2 string `json:"vaultDir"`
 	}
 	if err := decode(w, r, &in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if in.VaultDir != "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "暂不支持外部目录", nil)
+	dir := strings.TrimSpace(in.VaultDir)
+	if alt := strings.TrimSpace(in.VaultDir2); alt != "" {
+		if dir != "" && dir != alt {
+			writeError(w, http.StatusBadRequest, "bad_request", "vault_dir 与 vaultDir 不一致", nil)
+			return
+		}
+		dir = alt
+	}
+	info, err := s.Workspaces.Create(r.Context(), workspace.CreateOptions{Name: in.Name, VaultDir: dir})
+	var ve *workspace.VaultDirError
+	if errors.As(err, &ve) {
+		writeError(w, http.StatusBadRequest, "vault_dir_"+ve.Reason, ve.Msg, map[string]any{"reason": ve.Reason})
 		return
 	}
-	info, err := s.Workspaces.Create(r.Context(), workspace.CreateOptions{Name: in.Name})
 	if errors.Is(err, workspace.ErrInvalid) {
 		writeError(w, http.StatusBadRequest, "bad_request", strings.TrimPrefix(err.Error(), workspace.ErrInvalid.Error()+": "), nil)
 		return

@@ -2,6 +2,18 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 23:55 #60 外部目录工作空间与 lode workspace
+
+- **登记与路径（#62 备份恢复要用）**：登记表 `workspaces.vault_dir` 存**解析符号链接后的绝对路径**（空=内置）；`workspace.Info.External/VaultDir` 由它得出；`workspace.PathsFor(dataDir, id, vaultDir)` 给出 `Paths{Root,Index,Vault,Trash}`，外部目录只替换 Vault，Root（`data/workspaces/<id>`）、Index、Trash 仍在数据目录。`Manager.List/Info` 取登记信息；`Manager.Create(ctx, CreateOptions{Name, VaultDir})`；`Manager.CheckVaultDir(ctx, dir)` 单独校验（恢复到新位置时可复用，会拿 adminMu）；`Manager.DataDir()`。外部 vault 不在 `data/` 里，所以备份必须按登记表遍历 `vault_dir` 并在清单里记原路径。
+- **校验（`internal/workspace/vaultdir.go`）**：`*VaultDirError{Reason, Msg}`，满足 `errors.Is(err, ErrInvalid)`；API 错误码 `vault_dir_<Reason>`，响应带 `reason`。顺序：非法字符 → 非绝对 → 不存在 → 非目录 → 读不了 → 根目录 → 主目录 → 数据目录相同/在里面/包含它 → 与已有外部目录相同/嵌套。比较前 `EvalSymlinks`，Windows/macOS 小写比较并用 `os.SameFile` 兜底。内置空间和默认 vault 都在数据目录里，由“数据目录”几条覆盖，不必逐个比。
+- **外部目录消失不重建**：`openWorkspace` 对外部目录先 `checkVaultPresent`，不存在返回 `ErrVaultUnavailable`（API 503 `workspace_vault_unavailable`）。原因：`vault.New` 会 MkdirAll，卷没挂载时会得到空库，启动对账会把索引里的笔记全清掉。该空间仍可删除。
+- **删除**：`disposeFiles` 没有为外部目录加分支：`PathsFor` 的 Root 永远不含外部 vault，所以和内置一样整体移到 `trash-workspaces/<id>-<时间>/`（保留 Lode 回收站里的笔记和对话，外部文件不动）。`TestRemoveLeavesExternalVaultAlone` + 新增哈希校验测试。
+- **回收站跨磁盘**：`vault.moveFile` 本来就有复制+删除回退（现在复制失败/删原文件失败会清理目标，避免留下两份）；文件夹删除原来直接 `os.Rename`，改为 `vault.MoveDirOut`（重命名失败则复制树再删）。`vault.rename` 是可替换的变量，测试用它模拟跨设备。
+- **CLI**：`cmd/lode/workspace.go` 的 `runWorkspace(cfg, args, out)`：先校验参数再 `ops.Lock`（运行中报“lode 服务正在运行”），建临时 `workspace.Manager`（默认空间用 `notes.New` 但不 Start，日志丢弃）直接调 Create/Rename/Remove/List，所以语义与接口一致；`list --json` 输出与 `GET /api/workspaces` 相同结构。remove 不加确认（内置空间只是移到 trash-workspaces，外部空间不动文件）。
+- **API 字段名**：沿用 snake_case `vault_dir`，同时兼容 `vaultDir`（两个都给且不同 → 400）。
+- **前端**：`components/overlays` 新增 `customDialog<T>(render)`（kind 'custom'，Esc/点遮罩返回 null）；`features/workspace/CreateWorkspaceDialog.tsx` 用它做新建对话框，创建请求在对话框内发出，服务器的 `vault_dir_*` 错误显示在路径输入框下面；纯函数 `names.ts`（`invalidWorkspaceName`、`looksAbsolute`）单独成文件，便于单测（导入 stores 的模块在 vitest 里没有 location）。
+- **工具坑**：Bash 工具里的 heredoc 会吃掉反斜杠（Windows 路径、正则），含反斜杠的文件用 Write/Edit 工具写。
+
 ## 2026-11-08 23:25 #61 助手按工作空间隔离
 
 - **库划分**：`agent.Store` 只管全局数据（供应商、模型、设置、API key，app.db）；`agent.ChatStore` 管对话三张表。默认空间用 `Store.DefaultChats()`（app.db，所以升级前的对话自然属于默认空间），其他空间用 `Workspace.Chats`（各自 index.db，Manager 打开时创建，默认空间为 nil）。统一用 `Workspace.AgentSpace(defaultChats)` 取 `agent.Space{ID, Chats, Tools, Notes}`。默认空间不用 Manager 的 Chats，是因为 api 测试里 agent 的库和默认空间的 app.db 不是同一个；生产中是同一个库。

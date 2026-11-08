@@ -1,43 +1,23 @@
 import { ChevronDown, Plus, Settings2 } from 'lucide-react'
 import { errorMessage } from '../../api/client'
-import { type MenuEntry, openMenu, promptDialog } from '../../components/overlays'
+import { type MenuEntry, openMenu } from '../../components/overlays'
 import { useUI } from '../../stores/ui'
 import { openSettings } from '../settings/nav'
 import { useWorkspace, workspaceName } from '../../stores/workspace'
+import { createWorkspaceDialog } from './CreateWorkspaceDialog'
 import './workspace.css'
 
-/** 与服务端 workspace.cleanName 一致：去掉首尾空白后不能为空、不超过 64 个字符、不含控制字符。 */
-export function invalidWorkspaceName(name: string): string | null {
-  const v = name.trim()
-  if (!v) return '请输入名称'
-  const chars = [...v]
-  if (chars.length > 64) return '名称不能超过 64 个字符'
-  // Unicode 的 Cc 类：U+0000–001F、U+007F–009F（与 Go 的 unicode.IsControl 相同）
-  const control = (ch: string) => {
-    const c = ch.codePointAt(0) ?? 0
-    return c < 0x20 || (c >= 0x7f && c <= 0x9f)
-  }
-  if (chars.some(control)) return '名称不能包含控制字符'
-  return null
-}
 
-/** 新建工作空间并切换过去。 */
+
+/** 新建工作空间（可选接入已有文件夹）并切换过去。 */
 export async function promptCreateWorkspace() {
-  const name = await promptDialog({
-    title: '新建工作空间',
-    label: '名称',
-    placeholder: '例如：工作',
-    confirmLabel: '创建',
-    validate: invalidWorkspaceName,
-  })
-  if (name === null) return
-  const ws = useWorkspace.getState()
+  const info = await createWorkspaceDialog()
+  if (!info) return
   try {
-    const info = await ws.create(name.trim())
-    await ws.switchTo(info.id)
-    useUI.getState().toast({ message: `已新建工作空间“${info.name}”`, tone: 'success' })
+    await useWorkspace.getState().switchTo(info.id)
+    useUI.getState().toast({ message: `已${info.external ? '接入' : '新建'}工作空间“${info.name}”`, tone: 'success' })
   } catch (err) {
-    useUI.getState().toast({ message: `新建工作空间失败：${errorMessage(err)}`, tone: 'error' })
+    useUI.getState().toast({ message: `切换到新工作空间失败：${errorMessage(err)}`, tone: 'error' })
   }
 }
 

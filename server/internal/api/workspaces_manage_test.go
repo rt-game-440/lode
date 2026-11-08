@@ -1,9 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // #59：改名、排序、删除工作空间，token 绑定工作空间，审计按空间筛选。
@@ -184,4 +189,115 @@ func TestTokenWorkspaceAndAuditFilter(t *testing.T) {
 	if n := len(entries("?workspace=nope")); n != 0 {
 		t.Fatalf("筛选不存在的空间 = %d", n)
 	}
+}
+
+// #60：POST /api/workspaces 接受 vault_dir（也接受 vaultDir），接入已有目录；错误码区分原因；
+// 只有外部空间返回 vault_dir；删除只删索引，外部文件不动。
+func TestExternalWorkspaceAPI(t *testing.T) {
+	var srv *Server
+	c := newServer(t, func(s *Server) { srv = s; s.Workspaces.Start(t.Context()) })
+	c.setup()
+	ext := t.TempDir()
+	if err := os.WriteFile(filepath.Join(ext, "已有.md"), []byte("# 已有\n\n正文\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(filepath.Join(ext, "已有.md"))
+
+	// 错误码区分原因
+	for _, tc := range []struct {
+		body map[string]any
+		code string
+	}{
+		{map[string]any{"name": "x", "vault_dir": "相对/路径"}, "vault_dir_not_absolute"},
+		{map[string]any{"name": "x", "vaultDir": filepath.Join(ext, "不存在")}, "vault_dir_not_found"},
+		{map[string]any{"name": "x", "vault_dir": filepath.Join(ext, "已有.md")}, "vault_dir_not_directory"},
+		{map[string]any{"name": "x", "vault_dir": filepath.VolumeName(ext) + string(filepath.Separator)}, "vault_dir_root"},
+		{map[string]any{"name": "x", "vault_dir": srv.Workspaces.DataDir()}, "vault_dir_data_dir"},
+		{map[string]any{"name": "x", "vault_dir": filepath.Join(srv.Workspaces.DataDir(), "vault")}, "vault_dir_inside_data_dir"},
+		{map[string]any{"name": "x", "vault_dir": ext, "vaultDir": ext + "2"}, "bad_request"},
+	} {
+		st, out := c.do("POST", "/api/workspaces", tc.body)
+		if st != 400 || out["code"] != tc.code || out["message"] == "" {
+			t.Errorf("POST %v = %d %v，期望 400 %s", tc.body, st, out, tc.code)
+		}
+	}
+	if got := c.workspaceNames(); got != "笔记" {
+		t.Fatalf("被拒绝后不应登记：%s", got)
+	}
+
+	// vaultDir 写法
+	out := c.mustDo("POST", "/api/workspaces", map[string]any{"name": "外部", "vaultDir": ext}, 201)
+	id, _ := out["id"].(string)
+	resolved, _ := filepath.EvalSymlinks(ext)
+	if out["external"] != true || out["vault_dir"] != resolved || id == "" {
+		t.Fatalf("新建 = %v", out)
+	}
+	if st, out := c.do("POST", "/api/workspaces", map[string]any{"name": "再来", "vault_dir": ext}); st != 400 || out["code"] != "vault_dir_same_vault" {
+		t.Fatalf("同一目录再接入 = %d %v", st, out)
+	}
+	if st, out := c.do("POST", "/api/workspaces", map[string]any{"name": "里面", "vault_dir": filepath.Join(ext, "子")}); st != 400 {
+		t.Fatalf("不存在的子目录 = %d %v", st, out)
+	}
+
+	list := c.mustDo("GET", "/api/workspaces", nil, 200)["workspaces"].([]any)
+	if _, ok := list[0].(map[string]any)["vault_dir"]; ok {
+		t.Fatalf("默认空间不应返回 vault_dir：%v", list[0])
+	}
+	if got := list[1].(map[string]any); got["vault_dir"] != resolved || got["external"] != true {
+		t.Fatalf("列表 = %v", got)
+	}
+
+	// 对账出已有的笔记，在 Lode 里读写
+	p := "/api/w/" + id
+	var nt map[string]any
+	for i := 0; i < 100; i++ { // 第一次访问时打开，对账在后台完成
+		var st int
+		if st, nt = c.do("GET", p+"/notes/by-path?path="+url.QueryEscape("已有.md"), nil); st == 200 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if s, _ := nt["content"].(string); !strings.Contains(s, "正文") {
+		t.Fatalf("笔记 = %v", nt)
+	}
+	c.mustDo("POST", p+"/notes", map[string]any{"path": "新建.md", "content": "# 新建\n"}, 201)
+	if _, err := os.Stat(filepath.Join(ext, "新建.md")); err != nil {
+		t.Fatalf("在 Lode 里新建的笔记应写进外部目录：%v", err)
+	}
+
+	// 删除：外部文件不动（新建的也还在）
+	res := c.mustDo("DELETE", "/api/workspaces/"+id, nil, 200)
+	if tr, _ := res["trash"].(string); !strings.HasPrefix(tr, "trash-workspaces/"+id+"-") {
+		t.Fatalf("删除结果 = %v", res)
+	}
+	if b, err := os.ReadFile(filepath.Join(ext, "已有.md")); err != nil || !bytes.Equal(b, before) {
+		t.Fatalf("外部笔记应原样保留：%q %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(ext, "新建.md")); err != nil {
+		t.Fatalf("外部目录里的其他文件应保留：%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(srv.Workspaces.DataDir(), "workspaces", id)); !os.IsNotExist(err) {
+		t.Fatalf("data/workspaces/<id> 应已移走：%v", err)
+	}
+}
+
+// 外部目录不见了：访问返回 503 workspace_vault_unavailable，不重新创建目录，仍可删除。
+func TestExternalWorkspaceVaultMissingAPI(t *testing.T) {
+	c := newServer(t, func(s *Server) { s.Workspaces.Start(t.Context()) })
+	c.setup()
+	ext := filepath.Join(t.TempDir(), "库")
+	if err := os.Mkdir(ext, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id := c.mustDo("POST", "/api/workspaces", map[string]any{"name": "外部", "vault_dir": ext}, 201)["id"].(string)
+	if err := os.RemoveAll(ext); err != nil {
+		t.Fatal(err)
+	}
+	if st, out := c.do("GET", "/api/w/"+id+"/tree", nil); st != 503 || out["code"] != "workspace_vault_unavailable" {
+		t.Fatalf("访问 = %d %v", st, out)
+	}
+	if _, err := os.Stat(ext); !os.IsNotExist(err) {
+		t.Fatalf("不应重新创建外部目录：%v", err)
+	}
+	c.mustDo("DELETE", "/api/workspaces/"+id, nil, 200)
 }

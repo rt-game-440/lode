@@ -49,7 +49,7 @@ func main() {
 	case "-h", "--help", "help":
 		fmt.Println(usage)
 		return
-	case "serve", "backup", "restore", "reset-password", "healthcheck":
+	case "serve", "backup", "restore", "reset-password", "healthcheck", "workspace":
 	default:
 		fmt.Fprintf(os.Stderr, "未知命令: %s\n\n%s\n", cmd, usage)
 		os.Exit(2)
@@ -68,6 +68,8 @@ func main() {
 		err = runRestore(cfg, args, os.Stdin)
 	case "reset-password":
 		err = runResetPassword(cfg, args)
+	case "workspace":
+		err = runWorkspace(cfg, args, os.Stdout)
 	case "healthcheck":
 		err = runHealthcheck(cfg)
 	default:

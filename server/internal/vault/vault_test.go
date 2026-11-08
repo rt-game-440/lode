@@ -41,3 +41,52 @@ func TestSymlinkedDirOutsideVaultIsRejected(t *testing.T) {
 		t.Errorf("普通路径写入失败：%v", err)
 	}
 }
+
+// 回收站在数据目录，外部 vault 可能在另一块磁盘上：重命名失败（跨设备）时退回到复制 + 删除。
+func TestMoveFallsBackToCopyAcrossDevices(t *testing.T) {
+	root, trash := t.TempDir(), t.TempDir()
+	v, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for p, c := range map[string]string{"a/b.md": "正文", "d/sub/c.md": "c", "d/e.md": "e"} {
+		if _, err := v.CreateFile(p, []byte(c)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := rename
+	rename = func(string, string) error { return errors.New("invalid cross-device link") }
+	defer func() { rename = old }()
+
+	dst := filepath.Join(trash, "x", "b.md")
+	if err := v.MoveOut("a/b.md", dst); err != nil {
+		t.Fatalf("MoveOut: %v", err)
+	}
+	if b, err := os.ReadFile(dst); err != nil || string(b) != "正文" {
+		t.Fatalf("回收站里的文件 = %q %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "a", "b.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("原文件应已删除：%v", err)
+	}
+	// 恢复
+	if err := v.MoveIn(dst, "a/b.md"); err != nil {
+		t.Fatalf("MoveIn: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "a", "b.md")); err != nil || string(b) != "正文" {
+		t.Fatalf("恢复后的文件 = %q %v", b, err)
+	}
+
+	// 整个目录
+	dir := filepath.Join(trash, "folders", "1-d")
+	if err := MoveDirOut(filepath.Join(root, "d"), dir); err != nil {
+		t.Fatalf("MoveDirOut: %v", err)
+	}
+	for _, f := range []string{"sub/c.md", "e.md"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f))); err != nil {
+			t.Errorf("目录副本缺 %s：%v", f, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "d")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("原目录应已删除：%v", err)
+	}
+}

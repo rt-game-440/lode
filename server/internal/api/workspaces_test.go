@@ -41,7 +41,7 @@ func TestWorkspacesListAndCreate(t *testing.T) {
 	if def["id"] != "default" || def["name"] != "笔记" || def["external"] != false || def["note_count"] != 0.0 {
 		t.Fatalf("默认工作空间 = %v", def)
 	}
-	for _, body := range []map[string]any{{"name": ""}, {"name": "   "}, {"name": strings.Repeat("长", 65)}, {"name": "x", "vault_dir": "/tmp"}} {
+	for _, body := range []map[string]any{{"name": ""}, {"name": "   "}, {"name": strings.Repeat("长", 65)}} {
 		if st, out := c.do("POST", "/api/workspaces", body); st != 400 || out["code"] != "bad_request" {
 			t.Errorf("POST %v = %d %v，期望 400", body, st, out)
 		}

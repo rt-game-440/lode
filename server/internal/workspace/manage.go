@@ -192,8 +192,7 @@ func (m *Manager) Remove(ctx context.Context, id string) (RemoveResult, error) {
 		return RemoveResult{}, err
 	}
 
-	// 处理磁盘上的文件。#60 的外部目录（vaultDir != ""）在 disposeFiles 里加分支：
-	// 只清掉 data/workspaces/<id>/（索引、回收站、对话），外部的笔记文件一个都不动。
+	// 处理磁盘上的文件：外部目录（vaultDir != ""）只处理 data/workspaces/<id>/，外部的笔记文件一个都不动。
 	trash, undo, err := m.disposeFiles(id, vaultDir)
 	if err != nil {
 		return RemoveResult{}, err
@@ -208,7 +207,9 @@ func (m *Manager) Remove(ctx context.Context, id string) (RemoveResult, error) {
 }
 
 // disposeFiles 处理被删除工作空间在磁盘上的文件，返回它们去了哪里（相对数据目录，可为空）和撤销函数
-// （事务提交失败时调用）。内置目录：整个 data/workspaces/<id>/ 移到 data/trash-workspaces/<id>-<时间>/。
+// （事务提交失败时调用）。整个 data/workspaces/<id>/ 移到 data/trash-workspaces/<id>-<时间>/。
+// 内置目录的笔记文件在它里面，随之移走；外部目录（vaultDir != ""）的笔记文件不在里面，只移走索引、回收站里
+// 已删除的笔记和助手对话，外部的笔记文件一个都不动（PathsFor 的 Root 永远不含外部目录）。
 func (m *Manager) disposeFiles(id, vaultDir string) (trash string, undo func(), err error) {
 	p := PathsFor(m.dataDir, id, vaultDir)
 	trash, err = m.moveToTrash(id, p.Root)

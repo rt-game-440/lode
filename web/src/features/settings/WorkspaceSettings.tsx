@@ -9,7 +9,8 @@ import { DEFAULT_WORKSPACE, isDefaultWorkspace } from '../../lib/workspace'
 import { useUI } from '../../stores/ui'
 import { useWorkspace } from '../../stores/workspace'
 import { errorMessage } from '../actions'
-import { invalidWorkspaceName } from '../workspace/WorkspaceSwitcher'
+import { createWorkspaceDialog } from '../workspace/CreateWorkspaceDialog'
+import { invalidWorkspaceName } from '../workspace/names'
 import { useSettingsData } from './data'
 import { settingsBack } from './nav'
 import { ActionRow, CopyField, Group, InfoRow, NavRow, SettingsPage } from './parts'
@@ -29,20 +30,8 @@ function workspaceError(err: unknown) {
 }
 
 async function createWorkspace() {
-  const name = await promptDialog({
-    title: '新建工作空间',
-    label: '名称',
-    placeholder: '例如：工作',
-    confirmLabel: '创建',
-    validate: invalidWorkspaceName,
-  })
-  if (name === null) return
-  try {
-    const info = await useWorkspace.getState().create(name.trim())
-    toast(`已新建“${info.name}”`, 'success')
-  } catch (err) {
-    toast(`新建工作空间失败：${workspaceError(err)}`, 'error')
-  }
+  const info = await createWorkspaceDialog()
+  if (info) toast(`已${info.external ? '接入' : '新建'}“${info.name}”`, 'success')
 }
 
 /* ---------------- 列表 ---------------- */
@@ -238,10 +227,18 @@ export function WorkspacePage({ sub, id }: { sub: string[]; id: string }) {
       title: `删除工作空间“${ws.name}”？`,
       message: (
         <div className="ws-confirm" data-testid="workspace-delete-confirm">
-          <p>
-            这个工作空间的 {ws.note_count} 篇笔记、附件、回收站和助手对话不会被直接删除：整个目录会被移到服务器数据目录的{' '}
-            <code>trash-workspaces/</code> 下，你可以在服务器上手动取回或清理。
-          </p>
+          {ws.external ? (
+            <p data-testid="workspace-delete-external-note">
+              <strong>不会删除你的笔记文件。</strong>外部文件夹 <code>{ws.vault_dir ?? ws.path}</code> 里的 {ws.note_count} 篇笔记和其他文件一个都不会动，
+              Lode 只删除自己的索引；这个工作空间在 Lode 里删掉的笔记（回收站）和助手对话会连同索引一起移到服务器数据目录的{' '}
+              <code>trash-workspaces/</code> 下，需要时可以手动取回或清理。之后你随时可以重新接入同一个文件夹。
+            </p>
+          ) : (
+            <p>
+              这个工作空间的 {ws.note_count} 篇笔记、附件、回收站和助手对话不会被直接删除：整个目录会被移到服务器数据目录的{' '}
+              <code>trash-workspaces/</code> 下，你可以在服务器上手动取回或清理。
+            </p>
+          )}
           <p>
             {bound.length
               ? `绑定它的 ${bound.length} 个 API token（${bound.map((t) => t.name).join('、')}）会立即作废，用它们的 agent 无法再访问。`
@@ -294,7 +291,15 @@ export function WorkspacePage({ sub, id }: { sub: string[]; id: string }) {
           </ActionRow>
         )}
       </Group>
-      <Group footer={isDefault ? '默认工作空间不能删除，只能改名。' : '目录会移到服务器数据目录的 trash-workspaces/ 下，不会直接删除。'}>
+      <Group
+        footer={
+          isDefault
+            ? '默认工作空间不能删除，只能改名。'
+            : ws.external
+              ? '只删除 Lode 的索引，外部文件夹里的笔记文件不会被删除。'
+              : '目录会移到服务器数据目录的 trash-workspaces/ 下，不会直接删除。'
+        }
+      >
         <ActionRow
           danger
           icon={<Trash2 size={17} aria-hidden="true" />}

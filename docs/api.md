@@ -31,7 +31,9 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
 | 401 | `unauthorized` | 未登录或会话过期 | |
 | 401 | `wrong_password` | 密码错误 | |
 | 404 | `not_found` | 笔记、文件夹、回收站条目或文件不存在 | |
+| 400 | `vault_dir_<原因>` | 新建工作空间时 `vault_dir` 不合法，原因见“工作空间”一节的“外部目录” | `reason`（`<原因>`） |
 | 404 | `workspace_not_found` | `/api/w/{ws}/...` 里的工作空间不存在 | `error`（同 `code`） |
+| 503 | `workspace_vault_unavailable` | `/api/w/{ws}/...` 的外部工作空间的笔记文件夹不存在（被删、被移动或所在磁盘没挂载）；不会代为重建 | |
 | 409 | `conflict` | `base_rev` 过期且无法自动合并，请求内容已另存为冲突副本（PATCH 在 base 版本缺失时不生成副本） | `current_rev`、`conflict_id`、`conflict_path` |
 | 409 | `exists` | 目标路径已被占用 | |
 | 409 | `already_initialized` | 密码已经设置过 | |
@@ -129,7 +131,7 @@ RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直�
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
 | GET | `/api/workspaces` | | `200 {"workspaces":[Workspace]}`，按 `sort`（相同时按创建时间）排序；不会打开任何工作空间 |
-| POST | `/api/workspaces` | `{"name":"…"}` | `201 Workspace`；名称去掉首尾空白后为空、超过 64 个字符或含控制字符时 `400 bad_request`；带 `vault_dir`（外部目录）时 `400`（暂不支持） |
+| POST | `/api/workspaces` | `{"name":"…","vault_dir"?:"<绝对路径>"}`；`vault_dir` 也可写成 `vaultDir`（两个都给且不一致时 `400 bad_request`） | `201 Workspace`；名称去掉首尾空白后为空、超过 64 个字符或含控制字符时 `400 bad_request`；`vault_dir` 校验失败时 `400 vault_dir_<原因>`，见下文“外部目录” |
 | PATCH | `/api/workspaces/{id}` | `{"name"?:"…","sort"?:n}`，至少给一个 | `200 Workspace`。`name` 规则同新建，默认工作空间也可以改名；`sort` 是目标位置（从 0 开始，超出范围按两端处理），移动后所有工作空间的 `sort` 重新编号为 0、1、2…，默认工作空间也可以挪位置。两个都没给、名称不合法或 `sort` 为负数时 `400 bad_request` |
 | DELETE | `/api/workspaces/{id}` | | `200 {"trash":"trash-workspaces/<id>-<时间>","revoked_tokens":n}`；默认工作空间 `403 forbidden` |
 
@@ -138,6 +140,31 @@ RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直�
 `Workspace`：`{"id":"k3f9a2","name":"工作","external":false,"sort":1,"created_at":1794142854549,"note_count":0,"path":"workspaces/k3f9a2/vault"}`。`path` 是笔记文件所在位置：内置空间相对数据目录，外部目录是绝对路径。`id` 是 6 位小写字母或数字，创建后不变；`default` 是默认工作空间（名称“笔记”）。`vault_dir` 只对外部目录返回。`note_count` 是索引里的笔记数，还没打开过的工作空间读的是上次的索引。
 
 新建的工作空间放在数据目录的 `workspaces/<id>/` 下（`index.db`、`vault/`、`trash/`），之后用 `/api/w/<id>/...` 访问。它在第一次被访问时才打开（建立文件监听、全量对账，直接放进 `vault/` 的文件这时进入索引），之后保持到服务退出。各工作空间的笔记、搜索、标签、反链、回收站、变更序号和 WebSocket 推送互不影响。
+
+### 外部目录
+
+`POST /api/workspaces` 带 `vault_dir`（服务器上已有文件夹的绝对路径，比如现有的 Obsidian 库）时，这个文件夹直接作为工作空间的 vault，不再在数据目录里建 `vault/`。外部目录里只放笔记文件：**Lode 不会往里面写别的东西**，索引（`index.db`）、回收站（`trash/`）和对话仍在数据目录的 `workspaces/<id>/` 下；在 Lode 里删除笔记是移到那个回收站（跨磁盘时自动退回到复制 + 删除）。`.obsidian` 等以点开头的目录、非 Markdown 文件不会被索引，也不会被改动。接入后第一次访问时对账出全部笔记，之后在外部（比如 Obsidian）直接修改文件会被文件监听到。
+
+`vault_dir` 的校验规则与错误码（HTTP 400，`code` 为 `vault_dir_<原因>`，响应另带 `reason`，`message` 是可直接展示的中文说明）：
+
+| `code` | 含义 |
+| --- | --- |
+| `vault_dir_not_absolute` | 不是绝对路径 |
+| `vault_dir_not_found` | 路径不存在（不会代为创建） |
+| `vault_dir_not_directory` | 路径是文件 |
+| `vault_dir_unreadable` | 目录读不了（没有权限等） |
+| `vault_dir_invalid` | 含控制字符或不是合法的 UTF-8 |
+| `vault_dir_root` | 磁盘根目录（`/`、`C:\`） |
+| `vault_dir_home` | 运行 Lode 的用户的主目录本身（里面的子文件夹可以） |
+| `vault_dir_data_dir` | 就是 Lode 的数据目录 |
+| `vault_dir_inside_data_dir` | 在 Lode 的数据目录里面 |
+| `vault_dir_contains_data_dir` | Lode 的数据目录在它里面 |
+| `vault_dir_same_vault` | 已经是另一个外部工作空间的目录 |
+| `vault_dir_nested_vault` | 与另一个外部工作空间的目录互相嵌套 |
+
+比较前会解析符号链接，Windows 和 macOS 上忽略大小写。登记表里保存的是解析后的绝对路径，`Workspace.vault_dir` 返回它（内置空间没有这个字段）。外部目录已经不在时，访问该空间返回 `503 workspace_vault_unavailable`（不会重建目录，也不会把索引清空），设置页里仍可删除。同一个文件夹被两个 Lode 实例使用无法完全阻止，请避免。
+
+删除外部工作空间：**外部目录里的笔记文件一个都不动**，只有 `workspaces/<id>/`（索引、回收站里已删除的笔记、助手对话）和内置空间一样移到 `trash-workspaces/<id>-<时间>/`，绑定它的 token 作废。删除后可以重新接入同一个文件夹。
 
 删除内置工作空间时：先让它不能再被访问，停掉文件监听和后台任务、关闭 `index.db`，再把整个 `workspaces/<id>/` 目录移到数据目录的 `trash-workspaces/<id>-<yyyyMMdd-HHmmss>/`（不直接删除，可以在服务器上手动取回），从登记表移除，并删除绑定它的所有 API token（立即返回 401）。该空间上还没断开的 WebSocket 会被关闭。目录移动失败时整体回滚，空间保持可用。
 

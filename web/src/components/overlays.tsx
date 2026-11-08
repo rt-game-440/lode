@@ -34,7 +34,14 @@ interface ConfirmRequest {
   resolve: (ok: boolean) => void
 }
 
-type DialogRequest = PromptRequest | ConfirmRequest
+/** 自定义内容的对话框：render 收到的 done(值) 会关闭对话框并让 customDialog 返回该值；取消（Esc、点遮罩）返回 null。 */
+interface CustomRequest {
+  kind: 'custom'
+  render: (done: (value: unknown) => void) => ReactNode
+  resolve: (v: unknown) => void
+}
+
+type DialogRequest = PromptRequest | ConfirmRequest | CustomRequest
 
 const useDialogStore = create<{ current: DialogRequest | null }>(() => ({ current: null }))
 
@@ -42,14 +49,21 @@ const useDialogStore = create<{ current: DialogRequest | null }>(() => ({ curren
 function show(req: DialogRequest) {
   const cur = useDialogStore.getState().current
   if (cur) {
-    if (cur.kind === 'prompt') cur.resolve(null)
-    else cur.resolve(false)
+    if (cur.kind === 'confirm') cur.resolve(false)
+    else cur.resolve(null)
   }
   useDialogStore.setState({ current: req })
 }
 
 export function promptDialog(opts: Omit<PromptRequest, 'kind' | 'resolve'>): Promise<string | null> {
   return new Promise((resolve) => show({ ...opts, kind: 'prompt', resolve }))
+}
+
+/** 打开内容由调用方渲染的对话框（用 .dialog / .dialog-title / .dialog-actions 样式），返回 done 传入的值，取消时返回 null。 */
+export function customDialog<T>(render: (done: (value: T) => void) => ReactNode): Promise<T | null> {
+  return new Promise((resolve) =>
+    show({ kind: 'custom', render: render as CustomRequest['render'], resolve: resolve as CustomRequest['resolve'] }),
+  )
 }
 
 export function confirmDialog(opts: Omit<ConfirmRequest, 'kind' | 'resolve'>): Promise<boolean> {
@@ -159,8 +173,8 @@ function ConfirmBody({ req }: { req: ConfirmRequest }) {
 }
 
 function cancel(req: DialogRequest) {
-  if (req.kind === 'prompt') req.resolve(null)
-  else req.resolve(false)
+  if (req.kind === 'confirm') req.resolve(false)
+  else req.resolve(null)
   closeDialog()
 }
 
@@ -205,7 +219,16 @@ export function DialogHost() {
             transition={springDefault}
             style={{ width: 'min(26rem, 100%)' }}
           >
-            {req.kind === 'prompt' ? <PromptBody req={req} /> : <ConfirmBody req={req} />}
+            {req.kind === 'prompt' ? (
+              <PromptBody req={req} />
+            ) : req.kind === 'confirm' ? (
+              <ConfirmBody req={req} />
+            ) : (
+              req.render((value) => {
+                req.resolve(value)
+                closeDialog()
+              })
+            )}
           </motion.div>
         </motion.div>
       )}
