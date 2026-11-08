@@ -298,6 +298,7 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
         placeholder={model ? '问助手，@ 附上笔记' : '先在设置里添加模型'}
         aria-label="给助手的消息"
         aria-autocomplete="list"
+        data-own-escape={listOpen ? 'true' : undefined}
         aria-controls={listOpen && items.length ? listId : undefined}
         aria-activedescendant={listOpen && items.length ? optionId(activeIndex) : undefined}
         value={text}
