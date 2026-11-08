@@ -14,7 +14,7 @@ import (
 const maxPreviewLines = 400
 
 // preview 计算写操作的预览：不写入，只算出执行后笔记会变成什么样。
-func (s *Service) preview(ctx context.Context, c llm.ToolCall) Preview {
+func (s *Service) preview(ctx context.Context, sp Space, c llm.ToolCall) Preview {
 	var a struct {
 		Path    string  `json:"path"`
 		From    string  `json:"from"`
@@ -41,7 +41,7 @@ func (s *Service) preview(ctx context.Context, c llm.ToolCall) Preview {
 		return Preview{Action: "move", Path: clean(a.From), To: clean(a.To)}
 	case "delete_note":
 		p := Preview{Action: "delete", Path: clean(a.Path)}
-		if n, err := s.Notes.ReadByPath(ctx, p.Path); err == nil {
+		if n, err := sp.Notes.ReadByPath(ctx, p.Path); err == nil {
 			p.Diff = limit(merge.Lines(n.Content, "", 0))
 		} else {
 			p.Error = "找不到这篇笔记"
@@ -49,7 +49,7 @@ func (s *Service) preview(ctx context.Context, c llm.ToolCall) Preview {
 		return p
 	case "update_note":
 		p := Preview{Action: "update", Path: clean(a.Path)}
-		n, err := s.Notes.ReadByPath(ctx, p.Path)
+		n, err := sp.Notes.ReadByPath(ctx, p.Path)
 		if err != nil {
 			p.Error = "找不到这篇笔记"
 			return p

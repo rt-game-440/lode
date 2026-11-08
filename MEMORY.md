@@ -2,6 +2,13 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 23:25 #61 助手按工作空间隔离
+
+- **库划分**：`agent.Store` 只管全局数据（供应商、模型、设置、API key，app.db）；`agent.ChatStore` 管对话三张表。默认空间用 `Store.DefaultChats()`（app.db，所以升级前的对话自然属于默认空间），其他空间用 `Workspace.Chats`（各自 index.db，Manager 打开时创建，默认空间为 nil）。统一用 `Workspace.AgentSpace(defaultChats)` 取 `agent.Space{ID, Chats, Tools, Notes}`。默认空间不用 Manager 的 Chats，是因为 api 测试里 agent 的库和默认空间的 app.db 不是同一个；生产中是同一个库。
+- **Service**：全局一个，`Space` 由调用方每次传入；运行记录、订阅、空闲计时按“空间 id/对话 id”区分，一次生成固定用同一个 Space，切换空间不影响它。“模型存在”检查在 `Service.UpdateChat`（模型是全局的），`ChatStore.UpdateChat` 不查。
+- **删除空间**：`main.go` 注册 `workspaces.SetBeforeRemove(agentSvc.CloseWorkspace)`，在空间不可访问之后、关 index.db 之前取消并等待它的生成任务；之后该 id 永不再接受生成（id 不复用）。对话随目录一起移走。退出顺序：先 `agentSvc.Close()` 再 `workspaces.Close()`。
+- **e2e**：`ui-workspace-agent.spec.ts` 自己起 lode（临时目录、随机端口、`LODE_SECRET_KEY`、不带 key 的模拟供应商），不受 spec 执行顺序影响。Windows 本机的 `python3` 是 Windows Store 空壳，要用 `python`。
+
 ## 2026-11-08 23:10 #59 设置页管理工作空间，MCP token 绑定工作空间
 
 - **Manager 管理方法**：`Info(ctx,id)`、`Exists(ctx,id)`、`Rename(ctx,id,name)`、`Reorder(ctx,id,pos)`、`Remove(ctx,id) (RemoveResult{Trash,RevokedTokens}, error)`、`SetBeforeRemove(fn func(id string))`。锁 `createMu` 改名 `adminMu`（新建、改名、排序、删除互斥）。默认工作空间删除返回 `ErrProtected`（API 403 `forbidden`）；管理对象不存在返回 `404 not_found`，不用 `workspace_not_found`（前端收到后者会切回默认空间）。

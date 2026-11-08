@@ -15,7 +15,7 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
   - 两边改动重叠，或 `base_rev` 那一版已被清理：服务器版本不变，请求内容另存为冲突副本 `名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md`（与原笔记同目录，设备名取 `X-Device-Name`，缺省为“未知设备”），返回 `409 conflict`，带 `current_rev`、`conflict_id`、`conflict_path`。
   - 阶段 1 中 `base_rev` 过期一律返回 409；阶段 2 起只有无法自动合并时才返回 409，且 409 意味着请求内容已经保存在冲突副本里，客户端不需要重试。
 - **请求体上限**：JSON 32 MB；附件 20 MB。
-- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。工作空间的列出和新建见下文“工作空间”一节，设计见 [workspaces.md](workspaces.md)。助手对话（`agent/chats*`）目前只在默认工作空间可用，其他工作空间返回 `501 workspace_agent_unsupported`。
+- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。工作空间的列出和新建见下文“工作空间”一节，设计见 [workspaces.md](workspaces.md)。助手对话（`agent/chats*`）按工作空间隔离（阶段 7，见下文“助手”一节）。
 
 ### 错误格式
 
@@ -40,7 +40,6 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
 | 422 | `patch_failed` | patch 的某处 `old` 没有唯一匹配 | `index`（从 0 开始）、`matches` |
 | 429 | `rate_limited` | 同一 IP 连续 5 次密码错误后锁定 | `retry_after`（秒），并带 `Retry-After` 头 |
 | 500 | `internal` | 服务器内部错误（详情只写服务器日志） | |
-| 501 | `workspace_agent_unsupported` | 在默认工作空间以外调用助手对话接口（暂不支持） | |
 
 ### 数据类型
 
@@ -278,6 +277,8 @@ type AuditEntry = {
 ## 助手（阶段 5）
 
 需要会话 cookie。API key 用主密钥派生的密钥（HKDF-SHA256 → AES-256-GCM）加密后存进 SQLite，任何响应里都不会出现明文 key，只返回 `has_key` 和末 4 位 `key_last4`。主密钥优先取环境变量 `LODE_SECRET_KEY`，否则取数据目录里自动生成的 `secret.key`；两者都不可用（例如数据目录不可写）时，带 key 的保存请求返回 `400`。开启了“用通行密钥保护 API key”且服务重启后还没解锁时，用到已保存 key 的请求（测试连接、发送消息）返回 `409 keys_locked`，`message` 说明要先用通行密钥登录或在设置里解锁；保存新 key 返回 `400`。
+
+**按工作空间隔离**（阶段 7）：供应商、模型、助手设置和 API key 全局只配置一份（`/api/agent/config`、`providers*`、`models*`、`settings`，不挂工作空间前缀）；对话、消息和待批准操作按工作空间存放（`/api/agent/chats*` 和 `/api/w/{ws}/agent/chats*`），对话列表只含所在工作空间的对话，用别的工作空间的对话 id 访问返回 `404 not_found`。助手的工具调用（搜索、读取、写入等）和 `@` 提及只作用于对话所属的工作空间；正在生成的任务记在对应工作空间名下，请求结束或浏览器切换到别的工作空间都不影响它。升级前的对话都属于默认工作空间。
 
 错误码：对象不存在 `404 not_found`；参数不合法 `400 bad_request`（`message` 是中文说明）；对话正在运行时删除对话、或重复发送 `409 conflict`。
 

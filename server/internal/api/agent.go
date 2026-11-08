@@ -12,7 +12,6 @@ import (
 	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/llm"
 	"github.com/rt-game-440/lode/server/internal/secret"
-	"github.com/rt-game-440/lode/server/internal/workspace"
 )
 
 // 助手接口：供应商与模型配置、对话、SSE 事件流、停止和批准。见 docs/api.md 的“助手”一节。
@@ -43,29 +42,13 @@ func (s *Server) agentChatRoutes() []route {
 		{"POST /api/agent/chats/{id}/stop", s.stopChat},
 		{"POST /api/agent/chats/{id}/approvals/{callId}", s.resolveApproval},
 	}
-	for i := range rs {
-		rs[i].handler = defaultWorkspaceOnly(rs[i].handler)
-	}
 	return rs
 }
 
-// chatAgent 返回处理当前工作空间对话的助手服务。目前助手只服务默认工作空间：其他工作空间的请求
-// 已经被 defaultWorkspaceOnly 挡掉。#61 拆出按工作空间的 ChatStore 后改为按 currentWorkspace(r) 取依赖。
-func (s *Server) chatAgent(r *http.Request) *agent.Service {
-	_ = currentWorkspace(r)
-	return s.Agent
-}
-
-// defaultWorkspaceOnly 让助手对话接口只在默认工作空间可用。其他工作空间返回
-// 501 workspace_agent_unsupported，而不是悄悄用默认工作空间的对话和笔记（那样会串数据）。#61 去掉它。
-func defaultWorkspaceOnly(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if currentWorkspace(r).ID != workspace.DefaultID {
-			writeError(w, http.StatusNotImplemented, "workspace_agent_unsupported", "这个工作空间暂不支持助手对话", nil)
-			return
-		}
-		h(w, r)
-	}
+// chatSpace 返回当前请求所在工作空间的助手依赖：对话库、笔记工具和笔记服务都属于这个工作空间。
+// 默认工作空间的对话在 app.db（和供应商同库），其他工作空间的在各自的 index.db。
+func (s *Server) chatSpace(r *http.Request) agent.Space {
+	return currentWorkspace(r).AgentSpace(s.Agent.Store.DefaultChats())
 }
 
 // agentFail 先映射助手的错误，其余交给 fail。
@@ -208,8 +191,8 @@ func (s *Server) updateAgentSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listChats(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
-	chats, err := ag.Store.Chats(r.Context(), 200)
+	sp := s.chatSpace(r)
+	chats, err := sp.Chats.Chats(r.Context(), 200)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -219,7 +202,7 @@ func (s *Server) listChats(w http.ResponseWriter, r *http.Request) {
 
 // createChat 新建对话；不指定模型时用默认模型。
 func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
+	sp := s.chatSpace(r)
 	var in struct {
 		ModelID string `json:"model_id"`
 	}
@@ -228,7 +211,7 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if in.ModelID == "" {
-		st, err := ag.Store.Settings(r.Context())
+		st, err := s.Agent.Store.Settings(r.Context())
 		if err != nil {
 			s.agentFail(w, r, err)
 			return
@@ -236,12 +219,12 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 		in.ModelID = st.DefaultModel
 	}
 	if in.ModelID != "" {
-		if _, err := ag.Store.Model(r.Context(), in.ModelID); err != nil {
+		if _, err := s.Agent.Store.Model(r.Context(), in.ModelID); err != nil {
 			s.agentFail(w, r, err)
 			return
 		}
 	}
-	c, err := ag.Store.CreateChat(r.Context(), in.ModelID)
+	c, err := sp.Chats.CreateChat(r.Context(), in.ModelID)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -250,8 +233,8 @@ func (s *Server) createChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getChat(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
-	v, err := ag.View(r.Context(), r.PathValue("id"))
+	sp := s.chatSpace(r)
+	v, err := s.Agent.View(r.Context(), sp, r.PathValue("id"))
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -260,7 +243,7 @@ func (s *Server) getChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchChat(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
+	sp := s.chatSpace(r)
 	var in struct {
 		Title   *string     `json:"title"`
 		ModelID *string     `json:"model_id"`
@@ -270,7 +253,7 @@ func (s *Server) patchChat(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	c, err := ag.Store.UpdateChat(r.Context(), r.PathValue("id"), in.Title, in.ModelID, in.Effort)
+	c, err := s.Agent.UpdateChat(r.Context(), sp, r.PathValue("id"), in.Title, in.ModelID, in.Effort)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -280,13 +263,13 @@ func (s *Server) patchChat(w http.ResponseWriter, r *http.Request) {
 
 // deleteChat 删除对话；正在生成时返回 409，避免生成结束时写入已删除的对话。
 func (s *Server) deleteChat(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
+	sp := s.chatSpace(r)
 	id := r.PathValue("id")
-	if ag.Running(id) {
+	if s.Agent.Running(sp, id) {
 		s.agentFail(w, r, agent.ErrBusy)
 		return
 	}
-	if err := ag.Store.DeleteChat(r.Context(), id); err != nil {
+	if err := sp.Chats.DeleteChat(r.Context(), id); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -294,13 +277,13 @@ func (s *Server) deleteChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
+	sp := s.chatSpace(r)
 	var in agent.SendInput
 	if err := decode(w, r, &in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	m, err := ag.Send(r.Context(), r.PathValue("id"), in)
+	m, err := s.Agent.Send(r.Context(), sp, r.PathValue("id"), in)
 	if err != nil {
 		s.agentFail(w, r, err)
 		return
@@ -309,8 +292,8 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopChat(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
-	if err := ag.Stop(r.Context(), r.PathValue("id")); err != nil {
+	sp := s.chatSpace(r)
+	if err := s.Agent.Stop(r.Context(), sp, r.PathValue("id")); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -318,7 +301,7 @@ func (s *Server) stopChat(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
+	sp := s.chatSpace(r)
 	var in struct {
 		Approve bool `json:"approve"`
 	}
@@ -326,7 +309,7 @@ func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := ag.Resolve(r.Context(), r.PathValue("id"), r.PathValue("callId"), in.Approve); err != nil {
+	if err := s.Agent.Resolve(r.Context(), sp, r.PathValue("id"), r.PathValue("callId"), in.Approve); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -336,9 +319,9 @@ func (s *Server) resolveApproval(w http.ResponseWriter, r *http.Request) {
 // chatStream 以 SSE 推送对话事件。第一条是状态快照；订阅被断开（客户端太慢）时结束响应，
 // EventSource 会自动重连，前端重连后重新拉取对话。
 func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
-	ag := s.chatAgent(r)
+	sp := s.chatSpace(r)
 	id := r.PathValue("id")
-	if _, err := ag.Store.Chat(r.Context(), id); err != nil {
+	if _, err := sp.Chats.Chat(r.Context(), id); err != nil {
 		s.agentFail(w, r, err)
 		return
 	}
@@ -349,7 +332,7 @@ func (s *Server) chatStream(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no") // 让 nginx 不缓冲
 	w.WriteHeader(http.StatusOK)
 
-	events, unsubscribe := ag.Subscribe(id)
+	events, unsubscribe := s.Agent.Subscribe(sp, id)
 	defer unsubscribe()
 	ping := time.NewTicker(s.SSEPingInterval)
 	defer ping.Stop()

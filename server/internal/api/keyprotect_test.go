@@ -17,7 +17,6 @@ import (
 	"github.com/rt-game-440/lode/server/internal/passkey"
 	"github.com/rt-game-440/lode/server/internal/passkey/passkeytest"
 	"github.com/rt-game-440/lode/server/internal/secret"
-	"github.com/rt-game-440/lode/server/internal/tools"
 )
 
 // kpEnv 是一份跨“重启”保留的数据：数据库（通行密钥、助手配置）和数据目录（secret.key）。
@@ -56,7 +55,7 @@ func (e *kpEnv) option() func(*Server) {
 		}
 		store := agent.NewStore(e.db, keys)
 		s.Log = log
-		s.Agent = &agent.Service{Store: store, Tools: tools.New(s.Notes), Notes: s.Notes, Log: log}
+		s.Agent = &agent.Service{Store: store, Log: log}
 		e.t.Cleanup(s.Agent.Close)
 		s.Passkeys = passkey.New(e.db, log)
 		kp, err := keyprotect.New(ctx, e.db, keys, s.Passkeys, store, log)

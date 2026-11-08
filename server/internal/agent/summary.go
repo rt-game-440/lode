@@ -25,7 +25,7 @@ const (
 )
 
 // modelSummarizer 返回用当前模型生成摘要的 Summarizer。
-func (s *Service) modelSummarizer(ctx context.Context, cfg llm.Config, chat Chat, m Model) Summarizer {
+func (s *Service) modelSummarizer(ctx context.Context, sp Space, cfg llm.Config, chat Chat, m Model) Summarizer {
 	return func(earlier []llm.Message, room int) (llm.Message, bool) {
 		n := len(earlier)
 		maxTok := min(room-messageOverhead-EstimateTokens(summaryHead)-20, summaryMaxTokens, m.MaxOutput)
@@ -38,14 +38,14 @@ func (s *Service) modelSummarizer(ctx context.Context, cfg llm.Config, chat Chat
 		}
 		text := prev
 		if from < n {
-			t, err := s.summarizeWithModel(ctx, cfg, chat.ID, m, prev, earlier[from:], maxTok)
+			t, err := s.summarizeWithModel(ctx, sp, cfg, chat.ID, m, prev, earlier[from:], maxTok)
 			if err != nil {
 				s.log().Warn("模型生成摘要失败，改用本地摘要", "chat", chat.ID, "model", m.Model, "err", err)
 				return summarize(earlier, room)
 			}
 			text = t
 			chat.Summary, chat.SummaryUpto = t, n
-			if err := s.Store.SetSummary(context.WithoutCancel(ctx), chat.ID, t, n); err != nil {
+			if err := sp.Chats.SetSummary(context.WithoutCancel(ctx), chat.ID, t, n); err != nil {
 				s.log().Warn("保存摘要失败", "chat", chat.ID, "err", err)
 			}
 		}
@@ -57,7 +57,7 @@ func (s *Service) modelSummarizer(ctx context.Context, cfg llm.Config, chat Chat
 }
 
 // summarizeWithModel 请求模型把 msgs 合并进已有摘要 prev，返回新摘要。
-func (s *Service) summarizeWithModel(ctx context.Context, cfg llm.Config, chatID string, m Model, prev string, msgs []llm.Message, maxTok int) (string, error) {
+func (s *Service) summarizeWithModel(ctx context.Context, sp Space, cfg llm.Config, chatID string, m Model, prev string, msgs []llm.Message, maxTok int) (string, error) {
 	system := fmt.Sprintf(summarySystem, maxTok*4/5)
 	// 摘要请求本身也要放进上下文窗口：放不下时只保留较新的部分
 	inputLimit := Budget{Window: m.ContextWindow, MaxOutput: maxTok}.Limit() - EstimateTokens(system) - EstimateTokens(prev) - 100
@@ -78,7 +78,7 @@ func (s *Service) summarizeWithModel(ctx context.Context, cfg llm.Config, chatID
 	if err != nil {
 		return "", err
 	}
-	_ = s.Store.addUsage(context.WithoutCancel(ctx), chatID, res.Usage)
+	_ = sp.Chats.addUsage(context.WithoutCancel(ctx), chatID, res.Usage)
 	text := strings.TrimSpace(res.Message.Text())
 	if text == "" {
 		return "", fmt.Errorf("模型返回了空摘要")

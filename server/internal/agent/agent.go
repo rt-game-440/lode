@@ -32,11 +32,22 @@ const (
 // Actor 是助手写笔记时的设备身份，其他端据此显示“由助手修改”。
 var Actor = notes.Actor{DeviceID: "agent", DeviceName: "助手"}
 
-// Service 是助手服务。
+// Space 是助手在一个工作空间里工作所需的依赖：对话存在 Chats 里，工具调用只作用于 Tools 和 Notes
+// （都属于这个工作空间）。一次生成从开始到结束一直用同一个 Space，所以在生成期间切换工作空间不影响它。
+type Space struct {
+	ID    string // 工作空间 id，正在生成的任务记在它名下
+	Chats *ChatStore
+	Tools *tools.Registry
+	Notes *notes.Service
+}
+
+// key 是对话在 Service 内部的键（对话 id 只在工作空间内唯一）。
+func (sp Space) key(chatID string) string { return sp.ID + "/" + chatID }
+
+// Service 是助手服务，所有工作空间共用一个：供应商、模型和设置是全局的（Store），
+// 对话数据和笔记工具通过每次调用传入的 Space 取得。
 type Service struct {
 	Store        *Store
-	Tools        *tools.Registry
-	Notes        *notes.Service
 	Log          *slog.Logger
 	HTTP         *http.Client     // 调用供应商用；为空时用 llm 的默认客户端
 	MaxToolCalls int              // 每轮最多工具调用次数，默认 20
@@ -49,10 +60,13 @@ type Service struct {
 	runs   map[string]*run
 	subs   map[string]map[chan Event]struct{}
 	closed bool
-	wg     sync.WaitGroup
+	// 已 CloseWorkspace 的工作空间：不再开始新的生成（工作空间 id 不会复用）
+	closedWS map[string]bool
+	wg       sync.WaitGroup
 }
 
 type run struct {
+	ws     string // 所属工作空间
 	cancel context.CancelFunc
 	draft  Draft
 	idle   *time.Timer // 没有订阅者时开始计时，到期取消生成
@@ -103,7 +117,8 @@ func (s *Service) maxCalls() int {
 // ---- 推送 ----
 
 // Subscribe 订阅对话的事件。返回的第一个事件是当前状态快照（是否在生成、已生成的部分）。
-func (s *Service) Subscribe(chatID string) (<-chan Event, func()) {
+func (s *Service) Subscribe(sp Space, chatID string) (<-chan Event, func()) {
+	chatID = sp.key(chatID)
 	ch := make(chan Event, 512)
 	s.mu.Lock()
 	if s.subs == nil {
@@ -139,9 +154,9 @@ func (s *Service) Subscribe(chatID string) (<-chan Event, func()) {
 }
 
 // watchIdle 在对话正在生成且没有订阅者时开始计时，宽限时间内没人重连就取消生成。调用时持有 s.mu。
-func (s *Service) watchIdle(chatID string) {
-	r := s.runs[chatID]
-	if r == nil || r.idle != nil || len(s.subs[chatID]) > 0 {
+func (s *Service) watchIdle(key string) {
+	r := s.runs[key]
+	if r == nil || r.idle != nil || len(s.subs[key]) > 0 {
 		return
 	}
 	grace := s.DisconnectGrace
@@ -151,8 +166,8 @@ func (s *Service) watchIdle(chatID string) {
 	r.idle = time.AfterFunc(grace, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.runs[chatID] == r && r.idle != nil && len(s.subs[chatID]) == 0 {
-			s.log().Info("客户端已全部断开，取消生成", "chat", chatID)
+		if s.runs[key] == r && r.idle != nil && len(s.subs[key]) == 0 {
+			s.log().Info("客户端已全部断开，取消生成", "chat", key)
 			r.cancel()
 		}
 		r.idle = nil
@@ -168,10 +183,10 @@ func (r *run) stopIdle() {
 }
 
 // publish 推送事件；订阅者缓冲区满时断开它（前端重连后重新拉取）。
-func (s *Service) publish(chatID string, e Event) {
+func (s *Service) publish(key string, e Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if r := s.runs[chatID]; r != nil {
+	if r := s.runs[key]; r != nil {
 		switch e.Type {
 		case "text":
 			r.draft.Text += e.Text
@@ -183,54 +198,56 @@ func (s *Service) publish(chatID string, e Event) {
 			r.draft = Draft{}
 		}
 	}
-	for ch := range s.subs[chatID] {
+	for ch := range s.subs[key] {
 		select {
 		case ch <- e:
 		default:
-			delete(s.subs[chatID], ch)
+			delete(s.subs[key], ch)
 			close(ch)
 		}
 	}
-	s.watchIdle(chatID)
+	s.watchIdle(key)
 }
 
 // Running 报告对话是否正在生成。
-func (s *Service) Running(chatID string) bool {
+func (s *Service) Running(sp Space, chatID string) bool {
+	chatID = sp.key(chatID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.runs[chatID] != nil
 }
 
 // start 在后台开始一次生成；对话已在生成时返回 ErrBusy。
-func (s *Service) start(chatID string) error {
+func (s *Service) start(sp Space, chatID string) error {
+	k := sp.key(chatID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
+	if s.closed || s.closedWS[sp.ID] {
 		return errors.New("服务正在关闭")
 	}
 	if s.runs == nil {
 		s.runs = map[string]*run{}
 	}
-	if s.runs[chatID] != nil {
+	if s.runs[k] != nil {
 		return ErrBusy
 	}
 	ctx, cancel := context.WithCancel(notes.WithActor(context.Background(), Actor))
-	s.runs[chatID] = &run{cancel: cancel}
-	s.watchIdle(chatID) // 发送后一直没有客户端订阅时同样会取消
+	s.runs[k] = &run{ws: sp.ID, cancel: cancel}
+	s.watchIdle(k) // 发送后一直没有客户端订阅时同样会取消
 	s.wg.Go(func() {
 		defer func() {
 			if v := recover(); v != nil {
-				s.log().Error("助手运行崩溃", "chat", chatID, "panic", v)
-				s.publish(chatID, Event{Type: "error", Text: "服务器内部错误", Kind: llm.ErrServer})
+				s.log().Error("助手运行崩溃", "workspace", sp.ID, "chat", chatID, "panic", v)
+				s.publish(k, Event{Type: "error", Text: "服务器内部错误", Kind: llm.ErrServer})
 			}
 			s.mu.Lock()
-			s.runs[chatID].stopIdle()
-			delete(s.runs, chatID)
+			s.runs[k].stopIdle()
+			delete(s.runs, k)
 			s.mu.Unlock()
 			cancel()
-			s.publish(chatID, Event{Type: "state"})
+			s.publish(k, Event{Type: "state"})
 		}()
-		s.loop(ctx, chatID)
+		s.loop(ctx, sp, chatID)
 	})
 	return nil
 }
@@ -244,6 +261,39 @@ func (s *Service) Close() {
 	}
 	s.mu.Unlock()
 	s.wg.Wait()
+}
+
+// CloseWorkspace 取消并等待结束指定工作空间里所有正在生成的任务，不影响其他工作空间。
+// 删除工作空间时，必须在关闭它的索引库、移走它的目录之前调用（见 docs/agent.md）：生成任务会写对话库，
+// 库关闭后再写会失败。调用方应保证此时已没有新的指向该工作空间的请求（先让登记表/Manager 拒绝它）；
+// 之后偶然到达的新生成请求由调用方的库已关闭而失败。可以重复调用。
+func (s *Service) CloseWorkspace(id string) {
+	s.mu.Lock()
+	if s.closedWS == nil {
+		s.closedWS = map[string]bool{}
+	}
+	s.closedWS[id] = true
+	for _, r := range s.runs {
+		if r.ws == id {
+			r.cancel()
+		}
+	}
+	s.mu.Unlock()
+	// 任务结束时会把自己从 s.runs 里删除
+	for {
+		s.mu.Lock()
+		left := 0
+		for _, r := range s.runs {
+			if r.ws == id {
+				left++
+			}
+		}
+		s.mu.Unlock()
+		if left == 0 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // ---- 用户操作 ----
@@ -263,12 +313,12 @@ type SendInput struct {
 }
 
 // Send 保存用户消息并开始生成。有待批准的操作时先按“拒绝”处理。
-func (s *Service) Send(ctx context.Context, chatID string, in SendInput) (Message, error) {
-	chat, err := s.Store.Chat(ctx, chatID)
+func (s *Service) Send(ctx context.Context, sp Space, chatID string, in SendInput) (Message, error) {
+	chat, err := sp.Chats.Chat(ctx, chatID)
 	if err != nil {
 		return Message{}, err
 	}
-	if s.Running(chatID) {
+	if s.Running(sp, chatID) {
 		return Message{}, ErrBusy
 	}
 	in.Text = strings.TrimSpace(in.Text)
@@ -291,7 +341,7 @@ func (s *Service) Send(ctx context.Context, chatID string, in SendInput) (Messag
 			continue
 		}
 		seen[p] = true
-		n, err := s.Notes.ReadByPath(ctx, p)
+		n, err := sp.Notes.ReadByPath(ctx, p)
 		if err != nil {
 			return Message{}, invalid("找不到 @ 的笔记 %s", p)
 		}
@@ -317,14 +367,14 @@ func (s *Service) Send(ctx context.Context, chatID string, in SendInput) (Messag
 		return Message{}, invalid("附件合计不能超过 20MB")
 	}
 
-	if err := s.rejectAll(ctx, chatID, "用户没有批准这次操作，而是发了新消息。笔记没有修改。"); err != nil {
+	if err := s.rejectAll(ctx, sp, chatID, "用户没有批准这次操作，而是发了新消息。笔记没有修改。"); err != nil {
 		return Message{}, err
 	}
-	msg, err := s.Store.AddMessage(ctx, chatID, Message{Role: llm.RoleUser, Parts: parts, Meta: Meta{Mentions: mentions}})
+	msg, err := sp.Chats.AddMessage(ctx, chatID, Message{Role: llm.RoleUser, Parts: parts, Meta: Meta{Mentions: mentions}})
 	if err != nil {
 		return Message{}, err
 	}
-	s.publish(chatID, Event{Type: "message", Message: stripData(msg)})
+	s.publish(sp.key(chatID), Event{Type: "message", Message: stripData(msg)})
 	if chat.Title == "" {
 		title := in.Text
 		if title == "" && len(in.Attachments) > 0 {
@@ -334,31 +384,31 @@ func (s *Service) Send(ctx context.Context, chatID string, in SendInput) (Messag
 		if r := []rune(title); len(r) > 40 {
 			title = string(r[:40]) + "…"
 		}
-		if c, err := s.Store.UpdateChat(ctx, chatID, &title, nil, nil); err == nil {
-			s.publish(chatID, Event{Type: "chat", Chat: &c})
+		if c, err := sp.Chats.UpdateChat(ctx, chatID, &title, nil, nil); err == nil {
+			s.publish(sp.key(chatID), Event{Type: "chat", Chat: &c})
 		}
 	}
-	return stripDataValue(msg), s.start(chatID)
+	return stripDataValue(msg), s.start(sp, chatID)
 }
 
 // Stop 停止生成；没有在生成但有待批准的操作时，把它们按“拒绝”处理。
-func (s *Service) Stop(ctx context.Context, chatID string) error {
+func (s *Service) Stop(ctx context.Context, sp Space, chatID string) error {
 	s.mu.Lock()
-	r := s.runs[chatID]
+	r := s.runs[sp.key(chatID)]
 	s.mu.Unlock()
 	if r != nil {
 		r.cancel()
 		return nil
 	}
-	return s.rejectAll(ctx, chatID, "用户停止了这次操作，笔记没有修改。")
+	return s.rejectAll(ctx, sp, chatID, "用户停止了这次操作，笔记没有修改。")
 }
 
 // Resolve 批准或拒绝一个待批准的写操作。全部处理完后继续生成。
-func (s *Service) Resolve(ctx context.Context, chatID, callID string, approve bool) error {
-	if s.Running(chatID) {
+func (s *Service) Resolve(ctx context.Context, sp Space, chatID, callID string, approve bool) error {
+	if s.Running(sp, chatID) {
 		return ErrBusy
 	}
-	list, err := s.Store.PendingList(ctx, chatID)
+	list, err := sp.Chats.PendingList(ctx, chatID)
 	if err != nil {
 		return err
 	}
@@ -371,48 +421,48 @@ func (s *Service) Resolve(ctx context.Context, chatID, callID string, approve bo
 	if p == nil {
 		return ErrNotFound
 	}
-	ok, err := s.Store.removePending(ctx, chatID, callID)
+	ok, err := sp.Chats.removePending(ctx, chatID, callID)
 	if err != nil || !ok {
 		return ErrNotFound
 	}
 	call := llm.ToolCall{ID: p.CallID, Name: p.Name, Args: p.Args}
 	var res llm.ToolResult
 	if approve {
-		res = s.execute(notes.WithActor(context.WithoutCancel(ctx), Actor), call)
+		res = s.execute(notes.WithActor(context.WithoutCancel(ctx), Actor), sp, call)
 	} else {
 		res = llm.ToolResult{CallID: call.ID, Name: call.Name, Content: rejectedResult}
 	}
-	if err := s.saveResult(ctx, chatID, res); err != nil {
+	if err := s.saveResult(ctx, sp, chatID, res); err != nil {
 		return err
 	}
 	if len(list) == 1 {
-		return s.start(chatID)
+		return s.start(sp, chatID)
 	}
 	return nil
 }
 
-func (s *Service) rejectAll(ctx context.Context, chatID, reason string) error {
-	list, err := s.Store.PendingList(ctx, chatID)
+func (s *Service) rejectAll(ctx context.Context, sp Space, chatID, reason string) error {
+	list, err := sp.Chats.PendingList(ctx, chatID)
 	if err != nil {
 		return err
 	}
 	for _, p := range list {
-		if ok, err := s.Store.removePending(ctx, chatID, p.CallID); err != nil || !ok {
+		if ok, err := sp.Chats.removePending(ctx, chatID, p.CallID); err != nil || !ok {
 			continue
 		}
-		if err := s.saveResult(ctx, chatID, llm.ToolResult{CallID: p.CallID, Name: p.Name, Content: reason}); err != nil {
+		if err := s.saveResult(ctx, sp, chatID, llm.ToolResult{CallID: p.CallID, Name: p.Name, Content: reason}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) saveResult(ctx context.Context, chatID string, res llm.ToolResult) error {
-	msg, err := s.Store.AddMessage(context.WithoutCancel(ctx), chatID, Message{Role: llm.RoleUser, Parts: []llm.Part{{Type: llm.PartToolResult, Result: &res}}})
+func (s *Service) saveResult(ctx context.Context, sp Space, chatID string, res llm.ToolResult) error {
+	msg, err := sp.Chats.AddMessage(context.WithoutCancel(ctx), chatID, Message{Role: llm.RoleUser, Parts: []llm.Part{{Type: llm.PartToolResult, Result: &res}}})
 	if err != nil {
 		return err
 	}
-	s.publish(chatID, Event{Type: "message", Message: &msg})
+	s.publish(sp.key(chatID), Event{Type: "message", Message: &msg})
 	return nil
 }
 
@@ -446,14 +496,15 @@ func (s *Service) resolveModel(ctx context.Context, chat Chat) (Model, llm.Confi
 
 // ---- 生成循环 ----
 
-func (s *Service) loop(ctx context.Context, chatID string) {
+func (s *Service) loop(ctx context.Context, sp Space, chatID string) {
+	k := sp.key(chatID)
 	bg := context.WithoutCancel(ctx)
 	fail := func(kind llm.ErrorKind, msg string) {
-		s.publish(chatID, Event{Type: "error", Text: msg, Kind: kind})
+		s.publish(k, Event{Type: "error", Text: msg, Kind: kind})
 	}
 	overLimit := 0
 	for {
-		chat, err := s.Store.Chat(bg, chatID)
+		chat, err := sp.Chats.Chat(bg, chatID)
 		if err != nil {
 			return
 		}
@@ -463,20 +514,20 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 			return
 		}
 		st, _ := s.Store.Settings(bg)
-		history, err := s.Store.Messages(bg, chatID)
+		history, err := sp.Chats.Messages(bg, chatID)
 		if err != nil {
 			fail(llm.ErrServer, "读取对话失败")
 			return
 		}
-		req, used := s.request(ctx, cfg, chat, model, history)
-		s.log().Debug("助手请求", "chat", chatID, "model", model.Model, "messages", len(req.Messages), "estimated_tokens", used)
+		req, used := s.request(ctx, sp, cfg, chat, model, history)
+		s.log().Debug("助手请求", "workspace", sp.ID, "chat", chatID, "model", model.Model, "messages", len(req.Messages), "estimated_tokens", used)
 
 		res, err := llm.Stream(ctx, cfg, req, func(e llm.Event) {
 			switch e.Type {
 			case llm.EventText, llm.EventThinking:
-				s.publish(chatID, Event{Type: string(e.Type), Text: e.Text})
+				s.publish(k, Event{Type: string(e.Type), Text: e.Text})
 			case llm.EventToolCall:
-				s.publish(chatID, Event{Type: "tool_call", Call: e.Call})
+				s.publish(k, Event{Type: "tool_call", Call: e.Call})
 			}
 		})
 		if err != nil {
@@ -484,7 +535,7 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 			meta := Meta{Stopped: e.Kind == llm.ErrCanceled}
 			if !meta.Stopped {
 				meta.Error = e.Error()
-				s.log().Warn("模型调用失败", "chat", chatID, "model", model.Model, "kind", e.Kind, "status", e.Status)
+				s.log().Warn("模型调用失败", "workspace", sp.ID, "chat", chatID, "model", model.Model, "kind", e.Kind, "status", e.Status)
 			}
 			// 保存已生成的正文和思考；不完整的工具调用丢弃
 			partial := Message{Role: llm.RoleAssistant, Model: model.Model, Meta: meta}
@@ -494,7 +545,7 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 				}
 			}
 			if len(partial.Parts) == 0 {
-				d := s.draftOf(chatID)
+				d := s.draftOf(k)
 				if d.Thinking != "" {
 					partial.Parts = append(partial.Parts, llm.Part{Type: llm.PartThinking, Text: d.Thinking})
 				}
@@ -502,11 +553,11 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 					partial.Parts = append(partial.Parts, llm.Part{Type: llm.PartText, Text: d.Text})
 				}
 			}
-			if msg, err := s.Store.AddMessage(bg, chatID, partial); err == nil {
-				s.publish(chatID, Event{Type: "message", Message: &msg})
+			if msg, err := sp.Chats.AddMessage(bg, chatID, partial); err == nil {
+				s.publish(k, Event{Type: "message", Message: &msg})
 			}
 			if meta.Stopped {
-				s.publish(chatID, Event{Type: "done", Stop: "stopped"})
+				s.publish(k, Event{Type: "done", Stop: "stopped"})
 			} else {
 				fail(e.Kind, e.Error())
 			}
@@ -514,20 +565,20 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 		}
 
 		u := res.Usage
-		msg, err := s.Store.AddMessage(bg, chatID, Message{Role: llm.RoleAssistant, Parts: res.Message.Parts, Model: model.Model, Usage: &u})
+		msg, err := sp.Chats.AddMessage(bg, chatID, Message{Role: llm.RoleAssistant, Parts: res.Message.Parts, Model: model.Model, Usage: &u})
 		if err != nil {
 			fail(llm.ErrServer, "保存回复失败")
 			return
 		}
-		_ = s.Store.addUsage(bg, chatID, u)
-		s.publish(chatID, Event{Type: "message", Message: &msg})
-		if c, err := s.Store.Chat(bg, chatID); err == nil {
-			s.publish(chatID, Event{Type: "chat", Chat: &c})
+		_ = sp.Chats.addUsage(bg, chatID, u)
+		s.publish(k, Event{Type: "message", Message: &msg})
+		if c, err := sp.Chats.Chat(bg, chatID); err == nil {
+			s.publish(k, Event{Type: "chat", Chat: &c})
 		}
 
 		calls := res.Message.Calls()
 		if len(calls) == 0 {
-			s.publish(chatID, Event{Type: "done", Stop: string(res.Stop)})
+			s.publish(k, Event{Type: "done", Stop: string(res.Stop)})
 			return
 		}
 		count := s.callsThisRound(history) + len(calls)
@@ -536,37 +587,37 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 		for i, c := range calls {
 			if ctx.Err() != nil {
 				// 停止时，尚未执行的调用按“已停止”回复，保持历史完整
-				_ = s.saveResult(bg, chatID, llm.ToolResult{CallID: c.ID, Name: c.Name, Content: "用户停止了这次操作。", IsError: true})
+				_ = s.saveResult(bg, sp, chatID, llm.ToolResult{CallID: c.ID, Name: c.Name, Content: "用户停止了这次操作。", IsError: true})
 				continue
 			}
 			if count-len(calls)+i+1 > s.maxCalls() {
 				hit = true
-				_ = s.saveResult(bg, chatID, llm.ToolResult{CallID: c.ID, Name: c.Name, IsError: true,
+				_ = s.saveResult(bg, sp, chatID, llm.ToolResult{CallID: c.ID, Name: c.Name, IsError: true,
 					Content: fmt.Sprintf("本轮工具调用已达到上限（%d 次），这次调用没有执行。请根据已有信息直接回答用户。", s.maxCalls())})
 				continue
 			}
-			t := s.tool(c.Name)
+			t := s.tool(sp, c.Name)
 			if t != nil && !t.ReadOnly && !st.AutoApprove {
-				p := Pending{CallID: c.ID, Name: c.Name, Args: c.Args, Preview: s.preview(bg, c)}
-				if err := s.Store.addPending(bg, chatID, p); err != nil {
+				p := Pending{CallID: c.ID, Name: c.Name, Args: c.Args, Preview: s.preview(bg, sp, c)}
+				if err := sp.Chats.addPending(bg, chatID, p); err != nil {
 					fail(llm.ErrServer, "保存待批准操作失败")
 					return
 				}
-				s.publish(chatID, Event{Type: "approval", Pending: &p})
+				s.publish(k, Event{Type: "approval", Pending: &p})
 				waiting = true
 				continue
 			}
-			if err := s.saveResult(bg, chatID, s.execute(ctx, c)); err != nil {
+			if err := s.saveResult(bg, sp, chatID, s.execute(ctx, sp, c)); err != nil {
 				fail(llm.ErrServer, "保存工具结果失败")
 				return
 			}
 		}
 		if ctx.Err() != nil {
-			s.publish(chatID, Event{Type: "done", Stop: "stopped"})
+			s.publish(k, Event{Type: "done", Stop: "stopped"})
 			return
 		}
 		if waiting {
-			s.publish(chatID, Event{Type: "done", Stop: "awaiting_approval"})
+			s.publish(k, Event{Type: "done", Stop: "awaiting_approval"})
 			return
 		}
 		if hit {
@@ -579,10 +630,10 @@ func (s *Service) loop(ctx context.Context, chatID string) {
 	}
 }
 
-func (s *Service) draftOf(chatID string) Draft {
+func (s *Service) draftOf(key string) Draft {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if r := s.runs[chatID]; r != nil {
+	if r := s.runs[key]; r != nil {
 		return r.draft
 	}
 	return Draft{}
@@ -605,8 +656,8 @@ func (s *Service) callsThisRound(history []Message) int {
 	return n
 }
 
-func (s *Service) tool(name string) *tools.Tool {
-	for _, t := range s.Tools.Tools(true) {
+func (s *Service) tool(sp Space, name string) *tools.Tool {
+	for _, t := range sp.Tools.Tools(true) {
 		if t.Name == name {
 			return t
 		}
@@ -615,11 +666,11 @@ func (s *Service) tool(name string) *tools.Tool {
 }
 
 // execute 执行一次工具调用，失败时返回 IsError 的结果给模型。
-func (s *Service) execute(ctx context.Context, c llm.ToolCall) llm.ToolResult {
-	res, err := s.Tools.Call(ctx, c.Name, c.Args, true)
+func (s *Service) execute(ctx context.Context, sp Space, c llm.ToolCall) llm.ToolResult {
+	res, err := sp.Tools.Call(ctx, c.Name, c.Args, true)
 	if err != nil {
 		if errors.Is(err, tools.ErrInternal) {
-			s.log().Error("助手工具调用失败", "tool", c.Name, "target", res.Target, "err", errors.Unwrap(err))
+			s.log().Error("助手工具调用失败", "workspace", sp.ID, "tool", c.Name, "target", res.Target, "err", errors.Unwrap(err))
 		}
 		return llm.ToolResult{CallID: c.ID, Name: c.Name, Content: err.Error(), IsError: true}
 	}
@@ -628,12 +679,12 @@ func (s *Service) execute(ctx context.Context, c llm.ToolCall) llm.ToolResult {
 
 // request 组装发给模型的请求：系统提示、工具定义，以及按上下文预算裁剪过的历史。
 // 历史放不下时，较早的轮次由当前模型压缩成摘要（见 summary.go）。
-func (s *Service) request(ctx context.Context, cfg llm.Config, chat Chat, m Model, history []Message) (llm.Request, int) {
+func (s *Service) request(ctx context.Context, sp Space, cfg llm.Config, chat Chat, m Model, history []Message) (llm.Request, int) {
 	system := systemPrompt(s.now())
 	var defs []llm.ToolDef
 	toolTokens := 0
 	if m.Tools {
-		for _, t := range s.Tools.Tools(true) {
+		for _, t := range sp.Tools.Tools(true) {
 			schema, _ := json.Marshal(t.InputSchema)
 			defs = append(defs, llm.ToolDef{Name: t.Name, Description: t.Description, Schema: schema})
 			toolTokens += EstimateTokens(t.Name+t.Description) + EstimateTokens(string(schema))
@@ -646,7 +697,7 @@ func (s *Service) request(ctx context.Context, cfg llm.Config, chat Chat, m Mode
 		}
 		msgs = append(msgs, llm.Message{Role: h.Role, Parts: h.Parts})
 	}
-	msgs, used := FitWith(system, toolTokens, msgs, Budget{Window: m.ContextWindow, MaxOutput: m.MaxOutput}.Limit(), s.modelSummarizer(ctx, cfg, chat, m))
+	msgs, used := FitWith(system, toolTokens, msgs, Budget{Window: m.ContextWindow, MaxOutput: m.MaxOutput}.Limit(), s.modelSummarizer(ctx, sp, cfg, chat, m))
 	effort := llm.Effort("")
 	if m.Reasoning {
 		effort = m.Effort
@@ -689,6 +740,19 @@ func stripDataValue(m Message) Message {
 	return m
 }
 
+// UpdateChat 修改对话的标题、模型或推理强度覆盖（nil 表示不改）；换模型时检查模型存在（模型是全局的）。
+func (s *Service) UpdateChat(ctx context.Context, sp Space, id string, title, modelID *string, effort *llm.Effort) (Chat, error) {
+	if modelID != nil {
+		if _, err := s.Store.Model(ctx, *modelID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return Chat{}, invalid("模型不存在")
+			}
+			return Chat{}, err
+		}
+	}
+	return sp.Chats.UpdateChat(ctx, id, title, modelID, effort)
+}
+
 // ChatView 是打开一个对话时需要的全部内容。
 type ChatView struct {
 	Chat     Chat      `json:"chat"`
@@ -698,19 +762,19 @@ type ChatView struct {
 }
 
 // View 返回对话、消息（去掉附件内容）、待批准操作和是否在生成。
-func (s *Service) View(ctx context.Context, chatID string) (ChatView, error) {
-	chat, err := s.Store.Chat(ctx, chatID)
+func (s *Service) View(ctx context.Context, sp Space, chatID string) (ChatView, error) {
+	chat, err := sp.Chats.Chat(ctx, chatID)
 	if err != nil {
 		return ChatView{}, err
 	}
-	msgs, err := s.Store.Messages(ctx, chatID)
+	msgs, err := sp.Chats.Messages(ctx, chatID)
 	if err != nil {
 		return ChatView{}, err
 	}
 	for i := range msgs {
 		msgs[i] = stripDataValue(msgs[i])
 	}
-	pending, err := s.Store.PendingList(ctx, chatID)
+	pending, err := sp.Chats.PendingList(ctx, chatID)
 	if err != nil {
 		return ChatView{}, err
 	}
@@ -720,5 +784,5 @@ func (s *Service) View(ctx context.Context, chatID string) (ChatView, error) {
 	if pending == nil {
 		pending = []Pending{}
 	}
-	return ChatView{Chat: chat, Messages: msgs, Pending: pending, Running: s.Running(chatID)}, nil
+	return ChatView{Chat: chat, Messages: msgs, Pending: pending, Running: s.Running(sp, chatID)}, nil
 }

@@ -164,7 +164,7 @@ func (m *Manager) Remove(ctx context.Context, id string) (RemoveResult, error) {
 	m.order = slices.DeleteFunc(m.order, func(x string) bool { return x == id })
 	m.mu.Unlock()
 	// 工作空间已从 open 里摘掉（Get 返回 ErrNotFound），但后台任务和索引库还没动：这时通知外部停掉依赖它的东西
-	// TODO(#61)：合并助手按空间隔离后，在 main.go 注册 SetBeforeRemove(agentSvc.CloseWorkspace)
+	// main.go 注册的是 agent.Service.CloseWorkspace
 	if fn := m.beforeRemove; fn != nil {
 		fn(id)
 	}
