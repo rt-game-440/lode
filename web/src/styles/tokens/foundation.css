@@ -91,7 +91,6 @@
   /* ---- 布局 ---- */
   --sidebar-width: 264px;
   --rightbar-width: 300px;
-  --rightbar-width-agent: 380px;
   --bar-height: 2.75rem; /* 44 */
   --row-height: 1.875rem; /* 30：桌面列表行 */
   --hit-target: 2.75rem; /* 44：触控最小可点区域 */
