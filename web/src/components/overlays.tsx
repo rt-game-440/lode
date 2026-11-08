@@ -220,32 +220,53 @@ export interface MenuItem {
 export type MenuEntry = MenuItem | 'separator'
 
 interface MenuState {
-  /** above：空间不够向上翻转时，菜单底边对齐的位置（触发元素的上沿，或点击点） */
-  open: { x: number; y: number; above: number; items: MenuEntry[] } | null
+  /**
+   * above：空间不够向上翻转时，菜单底边对齐的位置（触发元素的上沿，或点击点）。
+   * anchor：触发元素；再次点击它时切换关闭，Esc 关闭后焦点回到它。
+   */
+  open: { x: number; y: number; above: number; items: MenuEntry[]; anchor: HTMLElement | null } | null
 }
 
 const useMenuStore = create<MenuState>(() => ({ open: null }))
 
-/** 在 (x, y) 打开菜单；传入触发元素时从元素下方弹出，下方空间不够时改到元素上方。 */
+/** 在 (x, y) 打开菜单；传入触发元素时从元素下方弹出，下方空间不够时改到元素上方。再次点击已打开菜单的触发元素会关闭它。 */
 export function openMenu(at: { x: number; y: number } | HTMLElement, items: MenuEntry[]) {
+  const anchor = at instanceof HTMLElement ? at : null
+  const cur = useMenuStore.getState().open
+  if (anchor && cur?.anchor === anchor) {
+    closeMenu()
+    anchor.focus()
+    return
+  }
   let x: number
   let y: number
   let above: number
-  if (at instanceof HTMLElement) {
-    const r = at.getBoundingClientRect()
+  if (anchor) {
+    const r = anchor.getBoundingClientRect()
     x = r.left
     y = r.bottom + 4
     above = r.top - 4
   } else {
-    x = at.x
-    y = at.y
-    above = at.y - 8
+    const p = at as { x: number; y: number }
+    x = p.x
+    y = p.y
+    above = p.y - 8
   }
-  useMenuStore.setState({ open: { x, y, above, items } })
+  useMenuStore.setState({ open: { x, y, above, items, anchor } })
 }
 
 export function closeMenu() {
   useMenuStore.setState({ open: null })
+}
+
+/** 外部点击只关闭菜单：吞掉随后的这一次 click，不让被点到的元素响应。pointerup 之后若没有 click（例如拖动），超时后自动撤下。 */
+function swallowNextClick() {
+  const stop = (e: MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+  }
+  window.addEventListener('click', stop, { capture: true, once: true })
+  window.setTimeout(() => window.removeEventListener('click', stop, { capture: true }), 1000)
 }
 
 export function MenuHost() {
@@ -272,12 +293,18 @@ export function MenuHost() {
   useEffect(() => {
     if (!open) return
     const onDown = (e: Event) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) closeMenu()
+      const target = e.target as Node
+      if (ref.current?.contains(target)) return
+      // 触发元素上的按下交给随后的 click 处理（切换），这里不关，否则会先关再被 click 重新打开
+      if (open.anchor?.contains(target)) return
+      closeMenu()
+      swallowNextClick()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
         closeMenu()
+        if (open.anchor?.isConnected) open.anchor.focus()
         return
       }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
