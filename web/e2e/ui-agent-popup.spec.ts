@@ -324,6 +324,42 @@ test.describe('手机端：底部半屏面板', () => {
     await shot(page, 'agent-popup-mobile-full')
   })
 
+  test('#45：半屏时输入框完整在视口内、可点击；拖到全屏再回半屏仍贴在可见区域底部', async ({ page }) => {
+    await openMobile(page)
+    await assistantButton(page).tap()
+    const sheet = page.getByTestId('bottom-sheet')
+    const input = sheet.getByTestId('agent-input')
+    await expect(sheet).toHaveAttribute('data-snap', 'half')
+    await page.waitForTimeout(700)
+    const vh = 812
+    const inView = async (label: string) => {
+      const b = (await input.boundingBox())!
+      expect(b.y, `${label}：输入框顶部`).toBeGreaterThan(0)
+      expect(b.y + b.height, `${label}：输入框底部在视口内`).toBeLessThanOrEqual(vh + 0.5)
+      // 贴在可见区域底部：助手面板的下沿就是屏幕底部（输入框下面还有一行工具栏）
+      const panel = (await sheet.getByTestId('agent-panel').boundingBox())!
+      expect(Math.abs(vh - (panel.y + panel.height)), `${label}：助手面板贴底`).toBeLessThan(2)
+      expect(vh - (b.y + b.height), `${label}：输入框离底部很近`).toBeLessThan(100)
+      const thread = (await sheet.getByTestId('agent-thread').boundingBox())!
+      expect(thread.y + thread.height, `${label}：会话列表在输入框上方`).toBeLessThanOrEqual(b.y + 0.5)
+    }
+    await inView('半屏')
+    await shot(page, 'agent-sheet-half-45')
+    // 半屏下输入框可以直接点到（会展开到全屏，焦点在输入框）
+    const g = await headerCenter(page)
+    await swipe(page, g, { x: g.x, y: g.y - 260 })
+    await expect(sheet).toHaveAttribute('data-snap', 'full')
+    await page.waitForTimeout(700)
+    await inView('全屏')
+    const g2 = await headerCenter(page)
+    await swipe(page, g2, { x: g2.x, y: g2.y + 200 }, 10, 24)
+    await expect(sheet).toHaveAttribute('data-snap', 'half')
+    await page.waitForTimeout(700)
+    await inView('回到半屏')
+    await input.tap()
+    await expect(input).toBeFocused()
+  })
+
   test('展开按钮：关闭面板，跳到整页助手', async ({ page }) => {
     await openMobile(page)
     await assistantButton(page).tap()

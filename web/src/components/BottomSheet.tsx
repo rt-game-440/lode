@@ -49,6 +49,9 @@ export function BottomSheet({ open, onClose, label, children, className }: Botto
   const pointsNow = () => sheetPoints(heights.current.layer, heights.current.panel)
   const snapY = (s: Snap) => (s === 'full' ? 0 : pointsNow().half)
 
+  /** 面板被推到屏幕下方的那一截：内容区在底部留出同样的空白，输入框就贴在可见区域底部 */
+  const below = useTransform(() => Math.max(0, Math.min(y.get(), heights.current.panel || y.get())))
+
   const scrimOpacity = useTransform(() => {
     if (reduced) return fade.get()
     const { half, closed } = pointsNow()
@@ -209,7 +212,9 @@ export function BottomSheet({ open, onClose, label, children, className }: Botto
         <div className="sheet-grip" data-sheet-drag="" aria-hidden="true">
           <span />
         </div>
-        {children}
+        <motion.div className="sheet-body" style={{ paddingBottom: below }}>
+          {children}
+        </motion.div>
       </motion.div>
     </div>
   )

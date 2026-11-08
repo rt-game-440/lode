@@ -52,3 +52,10 @@
 .sheet [data-sheet-drag] * {
   touch-action: none;
 }
+/* 内容区：底部的留白随面板位置变化（见 BottomSheet 的 below），让内容只占可见高度 */
+.sheet-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
