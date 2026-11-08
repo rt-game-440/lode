@@ -115,10 +115,11 @@ export function BottomSheet({ open, onClose, label, children, className }: Botto
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-      }
+      if (e.key !== 'Escape') return
+      // 面板里正开着自己的弹出层（例如输入框的 @ 补全）时，Esc 先交给它关掉，不连面板一起关
+      if (e.target instanceof Element && e.target.closest('[data-own-escape="true"]')) return
+      e.stopPropagation()
+      onClose()
     }
     // 与 Modal、Drawer 一致：捕获阶段处理，先于页面上其他 Esc 处理
     window.addEventListener('keydown', onKey, true)
