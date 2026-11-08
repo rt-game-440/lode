@@ -41,8 +41,6 @@ interface AgentState {
 
   chats: Chat[] | null
   loadChats: () => Promise<void>
-  /** 当前工作空间还不支持助手对话（服务端返回 501 workspace_agent_unsupported，#61 之前的非默认工作空间） */
-  unsupported: boolean
   /** 切换工作空间：断开事件流，回到新工作空间记住的对话（对话列表重新载入） */
   switchWorkspace: () => void
 
@@ -67,8 +65,6 @@ interface AgentState {
 function toastError(err: unknown) {
   useUI.getState().toast({ message: errorMessage(err), tone: 'error' })
 }
-
-const isUnsupported = (err: unknown) => err instanceof ApiError && err.code === 'workspace_agent_unsupported'
 
 export const useAgent = create<AgentState>((set, get) => {
   let source: EventSource | null = null
@@ -198,25 +194,21 @@ export const useAgent = create<AgentState>((set, get) => {
       const ws = currentWorkspace()
       try {
         const chats = await agentApi.chats()
-        if (ws === currentWorkspace()) set({ chats, unsupported: false })
+        if (ws === currentWorkspace()) set({ chats })
       } catch (err) {
         if (ws !== currentWorkspace()) return
-        if (isUnsupported(err)) set({ chats: [], unsupported: true })
-        else {
-          toastError(err)
-          set({ chats: [] })
-        }
+        toastError(err)
+        set({ chats: [] })
       }
     },
 
-    unsupported: false,
     switchWorkspace: () => {
       disconnect()
       if (frame) cancelAnimationFrame(frame)
       frame = 0
       // 草稿里 @ 的笔记属于原来的工作空间
       useAgentDraft.setState({ mentions: [], attachments: [], suppressed: [] })
-      set({ chats: null, unsupported: false, activeId: localStorage.getItem(activeKey()), current: null })
+      set({ chats: null, activeId: localStorage.getItem(activeKey()), current: null })
     },
 
     activeId: localStorage.getItem(activeKey()),
@@ -236,10 +228,6 @@ export const useAgent = create<AgentState>((set, get) => {
         ensureConnected()
       } catch (err) {
         if (get().activeId !== id) return
-        if (isUnsupported(err)) {
-          set({ unsupported: true, current: null })
-          return
-        }
         // 对话已在别处删除：回到空白状态
         localStorage.removeItem(activeKey())
         set({ activeId: null, current: null })

@@ -49,8 +49,6 @@ export function errorMessage(err: unknown): string {
         return '网络不可用'
       case 'workspace_not_found':
         return '工作空间不存在'
-      case 'workspace_agent_unsupported':
-        return '助手暂时只能在默认工作空间使用'
     }
     return err.message || '操作失败'
   }

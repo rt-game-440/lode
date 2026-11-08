@@ -362,7 +362,7 @@ test('两个标签页分别打开两个空间，各自实时同步，互不收�
   await c.close()
 })
 
-test('键盘可以打开列表并切换；新组件通过无障碍扫描；助手在其他工作空间给出提示', async ({ browser }) => {
+test('键盘可以打开列表并切换；新组件通过无障碍扫描', async ({ browser }) => {
   expect(wsId).not.toBe('')
   for (const scheme of ['light', 'dark'] as const) {
     const { c, p } = await open(browser, { colorScheme: scheme, reducedMotion: 'reduce' })
@@ -386,18 +386,6 @@ test('键盘可以打开列表并切换；新组件通过无障碍扫描；助�
     await p.keyboard.press('Enter')
     await expect(p).toHaveURL(new RegExp(`/w/${wsId}$`))
     await expect(homeTitle(p)).toHaveText('工作')
-
-    // 助手对话暂时只支持默认工作空间（#61 之前）：给出提示和切回去的按钮
-    if (scheme === 'light') {
-      await p.getByTestId('open-agent').click()
-      await expect(p).toHaveURL(new RegExp(`/w/${wsId}/agent$`))
-      const notice = p.getByTestId('agent-unsupported')
-      await expect(notice).toContainText('这个工作空间暂时不能用助手')
-      await shot(p, 'ws-agent-unsupported')
-      await notice.getByRole('button', { name: '切换到“笔记”' }).click()
-      await expect(switcher(p)).toHaveAccessibleName('工作空间：笔记')
-      expect(new URL(p.url()).pathname).toBe('/')
-    }
     await c.close()
   }
 })
