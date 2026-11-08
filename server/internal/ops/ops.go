@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/rt-game-440/lode/server/internal/db"
+	"github.com/rt-game-440/lode/server/internal/keyprotect"
 )
 
 const (
@@ -249,10 +250,15 @@ func Restore(ctx context.Context, dataDir, archive string) (string, error) {
 		return "", fmt.Errorf("%w；已回滚，数据目录没有改动", cause)
 	}
 	restoreNames := append([]string{dbName}, dataDirs...)
+	moveNames := []string{dbName + "-wal", dbName + "-shm"}
 	if _, err := os.Stat(filepath.Join(staging, secretName)); err == nil {
 		restoreNames = append(restoreNames, secretName) // 备份带了主密钥才替换现有的
+	} else if protectedDB(ctx, filepath.Join(staging, dbName)) {
+		// 备份里的 API key 由通行密钥保护（#29）：现有的 secret.key 对它没用，启动时还会被当作残留删除，
+		// 所以和原有数据一起移走保留
+		moveNames = append(moveNames, secretName)
 	}
-	moveNames := append([]string{dbName + "-wal", dbName + "-shm"}, restoreNames...)
+	moveNames = append(moveNames, restoreNames...)
 	for _, name := range moveNames {
 		src := filepath.Join(dataDir, name)
 		if _, err := os.Lstat(src); err != nil {
@@ -377,14 +383,30 @@ func writeEntry(r io.Reader, target string, mtime time.Time) error {
 	return os.Chtimes(target, mtime, mtime)
 }
 
+// openRO 只读打开 SQLite 数据库文件。
+func openRO(p string) (*sql.DB, error) {
+	// URI 里 % ? # 有特殊含义，路径中出现时要转义
+	esc := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(filepath.ToSlash(p))
+	return sql.Open("sqlite", "file:"+esc+"?mode=ro")
+}
+
+// protectedDB 判断数据库是否开启了“用通行密钥保护 API key”；读不出来（旧版本没有这项设置等）按未开启处理。
+func protectedDB(ctx context.Context, p string) bool {
+	d, err := openRO(p)
+	if err != nil {
+		return false
+	}
+	defer d.Close()
+	on, _ := keyprotect.Enabled(ctx, d)
+	return on
+}
+
 // checkDB 确认数据库能打开且完整。
 func checkDB(ctx context.Context, p string) error {
 	if _, err := os.Stat(p); err != nil {
 		return errors.New("备份里没有数据库")
 	}
-	// URI 里 % ? # 有特殊含义，路径中出现时要转义
-	esc := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(filepath.ToSlash(p))
-	d, err := sql.Open("sqlite", "file:"+esc+"?mode=ro")
+	d, err := openRO(p)
 	if err != nil {
 		return err
 	}

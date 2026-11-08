@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -12,9 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/auth"
 	"github.com/rt-game-440/lode/server/internal/config"
 	"github.com/rt-game-440/lode/server/internal/db"
+	"github.com/rt-game-440/lode/server/internal/keyprotect"
 	"github.com/rt-game-440/lode/server/internal/ops"
 	"github.com/rt-game-440/lode/server/internal/passkey"
 	"golang.org/x/term"
@@ -25,11 +28,13 @@ const usage = `用法：
   lode backup <输出文件.tar.gz> [--no-secret]
                                  备份数据库、全部笔记文件和助手 API key 的主密钥 secret.key，
                                  服务运行中也可以执行；备份文件等同于含有你的 API key，请妥善保管。
-                                 --no-secret 不包含 secret.key
+                                 --no-secret 不包含 secret.key；开启了“用通行密钥保护 API key”时没有 secret.key，
+                                 备份里的 API key 只能用加入保护的通行密钥解锁
   lode restore <备份文件> [-y]    从备份恢复，必须先停止服务；-y 跳过确认
   lode reset-password [--clear-passkeys]
                                  重置登录密码（从终端输入，或从标准输入读一行）；默认保留已登记的通行密钥，
-                                 --clear-passkeys 同时删除全部通行密钥
+                                 --clear-passkeys 同时删除全部通行密钥（开启了通行密钥保护时一并关闭保护，
+                                 已保存的 API key 无法再解开，会被清除）
   lode healthcheck               检查本机服务是否正常（容器健康检查用）
   lode --version                 显示版本
 
@@ -69,7 +74,9 @@ func runBackup(cfg config.Config, args []string) error {
 	}
 	st, _ := os.Stat(args[0])
 	fmt.Printf("已备份到 %s（%.1f MB）\n", args[0], float64(st.Size())/(1<<20))
-	if !opts.ExcludeSecret {
+	if protected, _ := keyprotect.Enabled(ctx, d); protected {
+		fmt.Println("API key 由通行密钥保护，备份里没有主密钥：恢复后用加入保护的通行密钥登录即可解锁，通行密钥都丢了时需要重新填写 API key。")
+	} else if !opts.ExcludeSecret {
 		fmt.Println("备份文件包含助手 API key 的主密钥，等同于含有你的 API key，请妥善保管。")
 	}
 	return nil
@@ -177,9 +184,38 @@ func runResetPassword(cfg config.Config, args []string) error {
 			return fmt.Errorf("密码已重置，但清除通行密钥失败：%w", err)
 		}
 		fmt.Println("已删除", n, "个通行密钥。")
+		if err := resetKeyProtection(ctx, cfg, d); err != nil {
+			return fmt.Errorf("通行密钥已清除，但关闭 API key 保护失败：%w", err)
+		}
 	} else {
 		fmt.Println("已登记的通行密钥保留不变；如需一并清除，加 --clear-passkeys。")
 	}
+	return nil
+}
+
+// resetKeyProtection 在删除全部通行密钥后关闭“用通行密钥保护 API key”：包裹的主密钥已经没有通行密钥能解开，
+// 清除已保存的 API key，下次启动时自动生成新的 secret.key。服务正在运行时不改动，提示在设置里关闭。
+func resetKeyProtection(ctx context.Context, cfg config.Config, d *sql.DB) error {
+	on, err := keyprotect.Enabled(ctx, d)
+	if err != nil || !on {
+		return err
+	}
+	unlock, err := ops.Lock(cfg.DataDir)
+	if errors.Is(err, ops.ErrLocked) {
+		fmt.Println("API key 由通行密钥保护，但服务正在运行，未改动：请在“设置 → 通行密钥”里关闭保护（需要时选择放弃已保存的 key），或停止服务后再执行一次本命令。")
+		return nil
+	}
+	if err != nil && !errors.Is(err, ops.ErrLockUnsupported) {
+		return err
+	}
+	if unlock != nil {
+		defer unlock()
+	}
+	_, n, err := keyprotect.ResetOffline(ctx, d, agent.NewStore(d, nil))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("已关闭“用通行密钥保护 API key”，清除了 %d 个无法再解开的 API key，请启动服务后在“设置 → 助手”里重新填写。\n", n)
 	return nil
 }
 

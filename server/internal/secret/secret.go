@@ -1,6 +1,7 @@
 // Package secret 用 AES-256-GCM 加密保存在数据库里的 API key。
 // 加密密钥由主密钥经 HKDF-SHA256 派生。主密钥优先取环境变量 LODE_SECRET_KEY；
 // 没设置时使用数据目录里的 secret.key，文件不存在则自动生成（见 Load）。
+// 也可以开启“用通行密钥保护”：主密钥由通行密钥的 PRF 输出包裹，解开后只保存在内存里（见 Keeper、Wrap）。
 package secret
 
 import (
@@ -32,40 +33,48 @@ const (
 // Load 返回可用的 Box。envKey 非空（只含空白不算）时优先使用，不碰文件；否则读 dataDir/secret.key，
 // 不存在就生成 32 字节随机值写进去（仅所有者可读写，Windows 上权限位基本无效，尽力而为）。
 func Load(envKey, dataDir string) (*Box, Source, error) {
+	master, src, err := loadMaster(envKey, dataDir)
+	if err != nil {
+		return nil, "", err
+	}
+	return New(master), src, nil
+}
+
+func loadMaster(envKey, dataDir string) (string, Source, error) {
 	if strings.TrimSpace(envKey) != "" {
-		return New(envKey), SourceEnv, nil
+		return strings.TrimSpace(envKey), SourceEnv, nil
 	}
 	p := filepath.Join(dataDir, FileName)
 	if b, err := os.ReadFile(p); err == nil {
 		if strings.TrimSpace(string(b)) == "" {
-			return nil, "", fmt.Errorf("%s 是空的：请删除它让 Lode 重新生成（已保存的 API key 需要重新填写）", p)
+			return "", "", fmt.Errorf("%s 是空的：请删除它让 Lode 重新生成（已保存的 API key 需要重新填写）", p)
 		}
-		return New(string(b)), SourceFile, nil
+		return strings.TrimSpace(string(b)), SourceFile, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, "", err
+		return "", "", err
 	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return nil, "", err
+		return "", "", err
 	}
 	master := base64.StdEncoding.EncodeToString(raw)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		return nil, "", err
+		return "", "", err
 	}
 	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
 	if err != nil {
-		return nil, "", err
+		return "", "", err
 	}
 	if _, err := f.WriteString(master + "\n"); err != nil {
 		f.Close()
 		os.Remove(p)
-		return nil, "", err
+		return "", "", err
 	}
 	if err := f.Close(); err != nil {
 		os.Remove(p)
-		return nil, "", err
+		return "", "", err
 	}
-	return New(master), SourceNew, nil
+	return master, SourceNew, nil
 }
 
 // ErrNoKey 表示没有设置 LODE_SECRET_KEY。

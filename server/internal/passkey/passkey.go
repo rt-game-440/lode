@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -85,6 +86,29 @@ type Info struct {
 	Name       string `json:"name"`
 	CreatedAt  int64  `json:"created_at"`
 	LastUsedAt int64  `json:"last_used_at"` // 0 表示从未使用
+	PRF        *bool  `json:"prf"`          // 认证器是否支持 PRF 扩展；null 表示还不知道
+	KeyWrapped bool   `json:"key_wrapped"`  // 是否持有一份包裹的主密钥（能解锁 API key，#29）
+}
+
+// Result 是一次通过校验的仪式：通行密钥信息，以及 PRF 输出（请求了 PRF 且认证器给出结果时才有）。
+// PRF 是密钥材料，只能在内存里使用，绝不能写日志、返回给前端或持久化。
+type Result struct {
+	Info
+	PRF []byte `json:"-"`
+	Tag string `json:"-"` // BeginAssert 时调用方给的用途标记
+}
+
+// Extra 是 passkeys.extra 列的内容。
+type Extra struct {
+	PRF  *bool  `json:"prf,omitempty"`      // 认证器是否支持 PRF：登记时报告的 enabled，或者已经拿到过 PRF 输出
+	Wrap string `json:"key_wrap,omitempty"` // 用这个通行密钥的 PRF 输出包裹的主密钥（secret.Wrap 的结果）
+}
+
+// DBTX 是 *sql.DB 和 *sql.Tx 的公共部分，让包裹数据的读写能放进调用方的事务。
+type DBTX interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // Service 管理通行密钥。
@@ -93,21 +117,24 @@ type Service struct {
 	log *slog.Logger
 	now func() time.Time
 
-	// RegistrationOptions 和 LoginOptions 追加到每次仪式的选项里，是加扩展的入口：
-	// #29 在这里加 webauthn.WithExtensions(webauthn.WithExtensionPRFSupport()) 等 PRF 选项，
-	// 把 PRF 结果用于包裹每个通行密钥各自的 API key 主密钥（存在 passkeys.extra）。
+	// RegistrationOptions 和 LoginOptions 追加到每次仪式的选项里，是加扩展的入口。
 	RegistrationOptions []webauthn.RegistrationOption
 	LoginOptions        []webauthn.LoginOption
+
+	// PRFSalt 返回登录和登记时要让认证器计算的 PRF 盐，返回 nil 表示不需要（API key 保护没有开启，#29）。
+	// 登记时无论如何都会请求 PRF（不带盐，只探测是否支持）：有的认证器只有登记时请求过才能在之后计算 PRF。
+	PRFSalt func() []byte
 
 	mu      sync.Mutex
 	pending map[string]*ceremony
 }
 
 type ceremony struct {
-	kind    string // register | login
+	kind    string // register | login | assert
 	rp      RP
 	session webauthn.SessionData
 	name    string
+	tag     string
 	expires time.Time
 }
 
@@ -251,6 +278,7 @@ func (s *Service) BeginRegistration(ctx context.Context, rp RP, name string) (st
 		}),
 		webauthn.WithExclusions(exclude),
 		webauthn.WithRegistrationOrigin(rp.Origin),
+		webauthn.WithExtensions(s.prfExtension(true)...),
 	}
 	opts = append(opts, s.RegistrationOptions...)
 	creation, session, err := w.BeginRegistration(&user{handle: h, creds: creds}, opts...)
@@ -262,36 +290,81 @@ func (s *Service) BeginRegistration(ctx context.Context, rp RP, name string) (st
 }
 
 // FinishRegistration 校验认证器返回的新凭据（请求体是 PublicKeyCredential 的 JSON）并保存。
-func (s *Service) FinishRegistration(ctx context.Context, id string, r *http.Request) (Info, error) {
+// 浏览器在登记时就给出 PRF 结果的（Chrome 147+ 的部分平台、虚拟认证器等），结果里带上 PRF 输出。
+func (s *Service) FinishRegistration(ctx context.Context, id string, r *http.Request) (Result, error) {
 	c, err := s.take(id, "register")
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
 	w, err := newWebAuthn(c.rp)
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
 	h, err := s.userHandle(ctx)
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
-	cred, err := w.FinishRegistration(&user{handle: h}, c.session, r)
+	parsed, err := protocol.ParseCredentialCreationResponse(r)
+	if err != nil {
+		s.log.Debug("通行密钥登记响应无法解析", "err", err)
+		return Result{}, fmt.Errorf("%w: %v", ErrVerify, err)
+	}
+	cred, err := w.CreateCredential(&user{handle: h}, c.session, parsed)
 	if err != nil {
 		s.log.Debug("通行密钥登记校验失败", "err", err)
-		return Info{}, fmt.Errorf("%w: %v", ErrVerify, err)
+		return Result{}, fmt.Errorf("%w: %v", ErrVerify, err)
 	}
 	raw, err := json.Marshal(cred)
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
+	prf := prfOutput(parsed.ClientExtensionResults)
+	var ex Extra
+	switch out := parsed.ClientExtensionResults.PRF; {
+	case prf != nil:
+		ex.PRF = ptr(true)
+	case out != nil && out.Enabled != nil:
+		ex.PRF = ptr(*out.Enabled)
+	}
+	extra, _ := json.Marshal(ex)
 	now := s.now().UnixMilli()
-	info := Info{ID: base64.RawURLEncoding.EncodeToString(cred.ID), Name: c.name, CreatedAt: now}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO passkeys(id, name, rp_id, credential, created_at) VALUES (?,?,?,?,?)`,
-		info.ID, info.Name, c.rp.ID, string(raw), now)
+	info := Info{ID: base64.RawURLEncoding.EncodeToString(cred.ID), Name: c.name, CreatedAt: now, PRF: ex.PRF}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO passkeys(id, name, rp_id, credential, extra, created_at) VALUES (?,?,?,?,?,?)`,
+		info.ID, info.Name, c.rp.ID, string(raw), string(extra), now)
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
-	return info, nil
+	return Result{Info: info, PRF: prf}, nil
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// prfExtension 返回 PRF 扩展的选项：有盐时请求计算；登记时没有盐也请求（只探测是否支持）。
+func (s *Service) prfExtension(register bool) []webauthn.ExtensionOption {
+	var salt []byte
+	if s.PRFSalt != nil {
+		salt = s.PRFSalt()
+	}
+	return prfOptions(salt, register)
+}
+
+func prfOptions(salt []byte, register bool) []webauthn.ExtensionOption {
+	var opts []webauthn.ExtensionOption
+	if register {
+		opts = append(opts, webauthn.WithExtensionPRFSupport())
+	}
+	if len(salt) > 0 {
+		opts = append(opts, webauthn.WithExtensionPRF(protocol.PRFValues{First: salt}))
+	}
+	return opts
+}
+
+// prfOutput 取出 PRF 的第一个输出；没有或长度不对时返回 nil。
+func prfOutput(o protocol.AuthenticationExtensionsClientOutputs) []byte {
+	if o.PRF == nil || o.PRF.Results == nil || len(o.PRF.Results.First) != 32 {
+		return nil
+	}
+	return []byte(o.PRF.Results.First)
 }
 
 // ---- 登录 ----
@@ -307,6 +380,9 @@ func (s *Service) BeginLogin(rp RP) (string, *protocol.CredentialAssertion, erro
 		webauthn.WithUserVerification(protocol.VerificationRequired),
 		webauthn.WithLoginOrigin(rp.Origin),
 	}
+	if ext := s.prfExtension(false); len(ext) > 0 {
+		opts = append(opts, webauthn.WithAssertionExtensions(ext...))
+	}
 	opts = append(opts, s.LoginOptions...)
 	assertion, session, err := w.BeginDiscoverableLogin(opts...)
 	if err != nil {
@@ -317,18 +393,19 @@ func (s *Service) BeginLogin(rp RP) (string, *protocol.CredentialAssertion, erro
 }
 
 // FinishLogin 校验认证器的签名（请求体是 PublicKeyCredential 的 JSON）。通过时更新签名计数和最后使用时间。
-func (s *Service) FinishLogin(ctx context.Context, id string, r *http.Request) (Info, error) {
+// 登录请求了 PRF（API key 保护已开启）且认证器给出结果时，结果里带上 PRF 输出。
+func (s *Service) FinishLogin(ctx context.Context, id string, r *http.Request) (Result, error) {
 	c, err := s.take(id, "login")
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
 	w, err := newWebAuthn(c.rp)
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
 	h, err := s.userHandle(ctx)
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
 	handler := func(rawID, userHandle []byte) (webauthn.User, error) {
 		if subtle.ConstantTimeCompare(userHandle, h) != 1 {
@@ -340,11 +417,21 @@ func (s *Service) FinishLogin(ctx context.Context, id string, r *http.Request) (
 		}
 		return &user{handle: h, creds: creds}, nil
 	}
-	cred, err := w.FinishDiscoverableLogin(handler, c.session, r)
+	parsed, err := protocol.ParseCredentialRequestResponse(r)
+	if err != nil {
+		s.log.Debug("通行密钥登录响应无法解析", "err", err)
+		return Result{}, fmt.Errorf("%w: %v", ErrVerify, err)
+	}
+	cred, err := w.ValidateDiscoverableLogin(handler, c.session, parsed)
 	if err != nil {
 		s.log.Debug("通行密钥登录校验失败", "err", err)
-		return Info{}, fmt.Errorf("%w: %v", ErrVerify, err)
+		return Result{}, fmt.Errorf("%w: %v", ErrVerify, err)
 	}
+	return s.afterAssert(ctx, cred, parsed, c.tag)
+}
+
+// afterAssert 在断言通过后更新签名计数和最后使用时间；拿到了 PRF 输出时记下“支持 PRF”。
+func (s *Service) afterAssert(ctx context.Context, cred *webauthn.Credential, parsed *protocol.ParsedCredentialAssertionData, tag string) (Result, error) {
 	pid := base64.RawURLEncoding.EncodeToString(cred.ID)
 	if cred.Authenticator.CloneWarning {
 		// 签名计数没有递增：凭据可能被复制。有密码兜底，只记录不拒绝。
@@ -352,20 +439,213 @@ func (s *Service) FinishLogin(ctx context.Context, id string, r *http.Request) (
 	}
 	raw, err := json.Marshal(cred)
 	if err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
 	now := s.now().UnixMilli()
 	if _, err := s.db.ExecContext(ctx, `UPDATE passkeys SET credential = ?, last_used_at = ? WHERE id = ?`, string(raw), now, pid); err != nil {
-		return Info{}, err
+		return Result{}, err
 	}
-	return s.get(ctx, pid)
+	prf := prfOutput(parsed.ClientExtensionResults)
+	if prf != nil {
+		if err := s.updateExtra(ctx, s.db, pid, func(e *Extra) { e.PRF = ptr(true) }); err != nil {
+			return Result{}, err
+		}
+	}
+	info, err := s.get(ctx, pid)
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Info: info, PRF: prf, Tag: tag}, nil
+}
+
+// ---- 指定凭据的验证（API key 保护的开启、解锁、加入，#29） ----
+
+// BeginAssert 开始一次限定凭据的验证：浏览器只列出 ids 里的通行密钥（必须属于这个 RP ID，否则返回 ErrNotFound），
+// salt 非空时请求计算 PRF。tag 原样带到 FinishAssert 的结果里，用来区分用途。
+func (s *Service) BeginAssert(ctx context.Context, rp RP, ids []string, salt []byte, tag string) (string, *protocol.CredentialAssertion, error) {
+	w, err := newWebAuthn(rp)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %v", ErrUnsupportedHost, err)
+	}
+	h, err := s.userHandle(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	all, err := s.credentials(ctx, rp.ID)
+	if err != nil {
+		return "", nil, err
+	}
+	var creds []webauthn.Credential
+	for _, c := range all {
+		if slices.Contains(ids, base64.RawURLEncoding.EncodeToString(c.ID)) {
+			creds = append(creds, c)
+		}
+	}
+	if len(creds) == 0 {
+		return "", nil, ErrNotFound
+	}
+	opts := []webauthn.LoginOption{
+		webauthn.WithUserVerification(protocol.VerificationRequired),
+		webauthn.WithLoginOrigin(rp.Origin),
+	}
+	if ext := prfOptions(salt, false); len(ext) > 0 {
+		opts = append(opts, webauthn.WithAssertionExtensions(ext...))
+	}
+	assertion, session, err := w.BeginLogin(&user{handle: h, creds: creds}, opts...)
+	if err != nil {
+		return "", nil, err
+	}
+	id := s.put(&ceremony{kind: "assert", rp: rp, session: *session, tag: tag})
+	return id, assertion, nil
+}
+
+// FinishAssert 校验 BeginAssert 开始的验证，通过时与登录一样更新签名计数和最后使用时间。
+func (s *Service) FinishAssert(ctx context.Context, id string, r *http.Request) (Result, error) {
+	c, err := s.take(id, "assert")
+	if err != nil {
+		return Result{}, err
+	}
+	w, err := newWebAuthn(c.rp)
+	if err != nil {
+		return Result{}, err
+	}
+	h, err := s.userHandle(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	creds, err := s.credentials(ctx, c.rp.ID)
+	if err != nil {
+		return Result{}, err
+	}
+	parsed, err := protocol.ParseCredentialRequestResponse(r)
+	if err != nil {
+		s.log.Debug("通行密钥验证响应无法解析", "err", err)
+		return Result{}, fmt.Errorf("%w: %v", ErrVerify, err)
+	}
+	// 会话里记着开始时允许的凭据，用户只能用其中之一
+	cred, err := w.ValidateLogin(&user{handle: h, creds: creds}, c.session, parsed)
+	if err != nil {
+		s.log.Debug("通行密钥验证失败", "err", err)
+		return Result{}, fmt.Errorf("%w: %v", ErrVerify, err)
+	}
+	return s.afterAssert(ctx, cred, parsed, c.tag)
+}
+
+// ---- 附加数据（passkeys.extra） ----
+
+func readExtra(ctx context.Context, q DBTX, id string) (Extra, error) {
+	var raw string
+	err := q.QueryRowContext(ctx, `SELECT extra FROM passkeys WHERE id = ?`, id).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Extra{}, ErrNotFound
+	}
+	if err != nil {
+		return Extra{}, err
+	}
+	var e Extra
+	_ = json.Unmarshal([]byte(raw), &e) // 内容损坏时当作空
+	return e, nil
+}
+
+func (s *Service) updateExtra(ctx context.Context, q DBTX, id string, fn func(*Extra)) error {
+	e, err := readExtra(ctx, q, id)
+	if err != nil {
+		return err
+	}
+	fn(&e)
+	raw, _ := json.Marshal(e)
+	_, err = q.ExecContext(ctx, `UPDATE passkeys SET extra = ? WHERE id = ?`, string(raw), id)
+	return err
+}
+
+// Wrap 返回某个通行密钥持有的包裹主密钥，没有时返回空串；通行密钥不存在时返回 ErrNotFound。
+func (s *Service) Wrap(ctx context.Context, q DBTX, id string) (string, error) {
+	e, err := readExtra(ctx, q, id)
+	return e.Wrap, err
+}
+
+// SetWrap 保存（wrap 为空时清除）某个通行密钥的包裹主密钥；通行密钥不存在时返回 ErrNotFound。
+func (s *Service) SetWrap(ctx context.Context, q DBTX, id, wrap string) error {
+	return s.updateExtra(ctx, q, id, func(e *Extra) {
+		e.Wrap = wrap
+		if wrap != "" {
+			e.PRF = ptr(true)
+		}
+	})
+}
+
+// ClearWraps 清除全部通行密钥的包裹主密钥。
+func (s *Service) ClearWraps(ctx context.Context, q DBTX) error {
+	rows, err := q.QueryContext(ctx, `SELECT id FROM passkeys`)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := s.updateExtra(ctx, q, id, func(e *Extra) { e.Wrap = "" }); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Wrapped 返回持有包裹主密钥的通行密钥 id（rpID 非空时只算这个域名下的），按创建时间排序。
+func (s *Service) Wrapped(ctx context.Context, rpID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, rp_id, extra FROM passkeys ORDER BY created_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id, rp, raw string
+		if err := rows.Scan(&id, &rp, &raw); err != nil {
+			return nil, err
+		}
+		var e Extra
+		_ = json.Unmarshal([]byte(raw), &e)
+		if e.Wrap != "" && (rpID == "" || rp == rpID) {
+			out = append(out, id)
+		}
+	}
+	return out, rows.Err()
+}
+
+// IDs 返回某个 RP ID 下全部通行密钥的 id，按创建时间排序。
+func (s *Service) IDs(ctx context.Context, rpID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM passkeys WHERE rp_id = ? ORDER BY created_at, id`, rpID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ---- 管理 ----
 
 // List 返回全部通行密钥，按创建时间排序。
 func (s *Service) List(ctx context.Context) ([]Info, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, created_at, last_used_at FROM passkeys ORDER BY created_at, id`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, created_at, last_used_at, extra FROM passkeys ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -373,22 +653,38 @@ func (s *Service) List(ctx context.Context) ([]Info, error) {
 	out := []Info{}
 	for rows.Next() {
 		var i Info
-		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.LastUsedAt); err != nil {
+		var extra string
+		if err := rows.Scan(&i.ID, &i.Name, &i.CreatedAt, &i.LastUsedAt, &extra); err != nil {
 			return nil, err
 		}
+		i.fill(extra)
 		out = append(out, i)
 	}
 	return out, rows.Err()
 }
 
+func (i *Info) fill(extra string) {
+	var e Extra
+	_ = json.Unmarshal([]byte(extra), &e)
+	i.PRF, i.KeyWrapped = e.PRF, e.Wrap != ""
+}
+
+// Get 返回一个通行密钥的信息，不存在时返回 ErrNotFound。
+func (s *Service) Get(ctx context.Context, id string) (Info, error) { return s.get(ctx, id) }
+
 func (s *Service) get(ctx context.Context, id string) (Info, error) {
 	var i Info
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, created_at, last_used_at FROM passkeys WHERE id = ?`, id).
-		Scan(&i.ID, &i.Name, &i.CreatedAt, &i.LastUsedAt)
+	var extra string
+	err := s.db.QueryRowContext(ctx, `SELECT id, name, created_at, last_used_at, extra FROM passkeys WHERE id = ?`, id).
+		Scan(&i.ID, &i.Name, &i.CreatedAt, &i.LastUsedAt, &extra)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Info{}, ErrNotFound
 	}
-	return i, err
+	if err != nil {
+		return Info{}, err
+	}
+	i.fill(extra)
+	return i, nil
 }
 
 // Delete 删除一个通行密钥；删除后它不能再用于登录。

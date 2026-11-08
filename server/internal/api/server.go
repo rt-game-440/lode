@@ -17,6 +17,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/audit"
 	"github.com/rt-game-440/lode/server/internal/auth"
+	"github.com/rt-game-440/lode/server/internal/keyprotect"
 	"github.com/rt-game-440/lode/server/internal/notes"
 	"github.com/rt-game-440/lode/server/internal/passkey"
 )
@@ -47,6 +48,8 @@ type Server struct {
 	Agent *agent.Service
 	// Passkeys 是通行密钥服务；为 nil 时不提供 /api/auth/passkey/* 和 /api/passkeys。
 	Passkeys *passkey.Service
+	// KeyProtect 是“用通行密钥保护 API key”（#29）；为 nil 时不提供 /api/key-protection/*。需要 Passkeys。
+	KeyProtect *keyprotect.Service
 	// SSEPingInterval 是助手事件流的心跳间隔，默认 15 秒。
 	SSEPingInterval time.Duration
 
@@ -119,6 +122,9 @@ func (s *Server) Handler() http.Handler {
 		p.HandleFunc("POST /api/passkeys/begin", s.passkeyRegisterBegin)
 		p.HandleFunc("POST /api/passkeys/finish", s.passkeyRegisterFinish)
 		p.HandleFunc("DELETE /api/passkeys/{id}", s.deletePasskey)
+		if s.KeyProtect != nil {
+			s.routeKeyProtect(p)
+		}
 	}
 	if s.Agent != nil {
 		s.routeAgent(p)

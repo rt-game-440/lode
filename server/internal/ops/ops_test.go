@@ -167,6 +167,40 @@ func TestBackupRestoreIncludesSecretKeyFile(t *testing.T) {
 	}
 }
 
+// 开启了“用通行密钥保护 API key”的备份里没有 secret.key：恢复时把现有的 secret.key 和原有数据一起移走保留
+// （它解不开备份里的 key，留着启动时还会被当作残留删除）；回到未开启的备份时照旧保留现有 secret.key。
+func TestRestoreProtectedBackupKeepsOldSecretKey(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "data")
+	e := open(t, dir)
+	if _, err := e.db.Exec(`INSERT INTO settings(key, value) VALUES ('key_protection', 'passkey')`); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), "p.tar.gz")
+	if err := Backup(ctx, e.db, dir, archive); err != nil {
+		t.Fatal(err)
+	}
+	e.db.Close()
+	os.RemoveAll(dir)
+
+	r := open(t, dir)
+	r.db.Close()
+	if _, _, err := secret.Load("", dir); err != nil { // 现在的数据目录有自己的 secret.key
+		t.Fatal(err)
+	}
+	old, _ := os.ReadFile(filepath.Join(dir, "secret.key"))
+	kept, err := Restore(ctx, dir, archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "secret.key")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("恢复受保护的备份后不应留下现有的 secret.key：%v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(kept, "secret.key")); len(old) == 0 || string(b) != string(old) {
+		t.Fatal("现有的 secret.key 应移到 pre-restore 目录保留")
+	}
+}
+
 // 恢复时原有数据移到 pre-restore-* 目录保留；服务正在运行（持有锁）时拒绝恢复。
 func TestRestoreKeepsOldDataAndRefusesWhileRunning(t *testing.T) {
 	ctx := context.Background()

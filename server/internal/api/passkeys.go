@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rt-game-440/lode/server/internal/keyprotect"
 	"github.com/rt-game-440/lode/server/internal/passkey"
 )
 
@@ -91,7 +92,8 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limitCredentialBody(w, r)
-	_, err := s.Passkeys.FinishLogin(r.Context(), r.URL.Query().Get("ceremony"), r)
+	res, err := s.Passkeys.FinishLogin(r.Context(), r.URL.Query().Get("ceremony"), r)
+	defer clear(res.PRF)
 	switch {
 	case errors.Is(err, passkey.ErrNoCeremony):
 		writeError(w, http.StatusBadRequest, "ceremony_expired", "验证已过期，请重试", nil)
@@ -106,6 +108,10 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Auth.Limiter.Success(ip)
+	if s.KeyProtect != nil {
+		// 开启了 API key 保护时，登录顺便带回 PRF 输出：用它解锁（或在已解锁时把这个通行密钥加入保护）
+		s.KeyProtect.AfterLogin(r.Context(), res.ID, res.PRF)
+	}
 	s.startSession(w, r)
 }
 
@@ -144,7 +150,9 @@ func (s *Server) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	limitCredentialBody(w, r)
-	info, err := s.Passkeys.FinishRegistration(r.Context(), r.URL.Query().Get("ceremony"), r)
+	ctx := r.Context()
+	res, err := s.Passkeys.FinishRegistration(ctx, r.URL.Query().Get("ceremony"), r)
+	defer clear(res.PRF)
 	switch {
 	case errors.Is(err, passkey.ErrNoCeremony):
 		writeError(w, http.StatusBadRequest, "ceremony_expired", "登记已过期，请重试", nil)
@@ -156,11 +164,38 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	info := res.Info
+	if s.KeyProtect != nil && res.PRF != nil {
+		// 开启了保护且已解锁时，登记就给出 PRF 输出的通行密钥直接加入保护；其余情况由前端再做一次验证（action: enroll）
+		if err := s.KeyProtect.Enroll(ctx, res.ID, res.PRF); err == nil {
+			if fresh, err := s.Passkeys.Get(ctx, res.ID); err == nil {
+				info = fresh
+			}
+		} else if !errors.Is(err, keyprotect.ErrLocked) && !errors.Is(err, keyprotect.ErrDisabled) {
+			s.Log.Warn("把新登记的通行密钥加入 API key 保护失败", "err", err)
+		}
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"passkey": info})
 }
 
+// deletePasskey 删除通行密钥。开启了 API key 保护且它是最后一个能解锁的通行密钥时，
+// 不带 ?force=1 返回 409 last_key_passkey；带上则删除并自动关闭保护（锁定时已保存的 key 会被清除）。
 func (s *Server) deletePasskey(w http.ResponseWriter, r *http.Request) {
-	err := s.Passkeys.Delete(r.Context(), r.PathValue("id"))
+	ctx := r.Context()
+	id := r.PathValue("id")
+	if s.KeyProtect != nil && r.URL.Query().Get("force") != "1" {
+		last, err := s.KeyProtect.LastWrapped(ctx, id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if last {
+			writeError(w, http.StatusConflict, "last_key_passkey",
+				"这是最后一个能解锁 API key 的通行密钥：删除后会关闭通行密钥保护，如果当前处于锁定状态，已保存的 API key 也会被清除", nil)
+			return
+		}
+	}
+	err := s.Passkeys.Delete(ctx, id)
 	if errors.Is(err, passkey.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "通行密钥不存在", nil)
 		return
@@ -168,6 +203,14 @@ func (s *Server) deletePasskey(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if s.KeyProtect != nil {
+		if off, n, err := s.KeyProtect.AfterDelete(ctx); err != nil {
+			s.fail(w, r, err)
+			return
+		} else if off {
+			s.Log.Info("删除了最后一个能解锁 API key 的通行密钥，已关闭通行密钥保护", "cleared_keys", n)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
