@@ -1,6 +1,6 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
-import { type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react'
-import { VelocityTracker, lockAxis, rubberband, shouldComplete } from '../../lib/gesture'
+import { type PointerEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { VelocityTracker, consumeTouchMoves, lockAxis, rubberband, shouldComplete } from '../../lib/gesture'
 import { useEditor } from '../../stores/editor'
 import { type Route, useUI } from '../../stores/ui'
 import { springPanel, springSheet } from '../../styles/tokens/motion'
@@ -71,6 +71,14 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
 
   // ---- 左缘返回手势 ----
   const g = useRef<{ id: number; x0: number; y0: number; axis: 'x' | 'y' | null; v: VelocityTracker } | null>(null)
+  const strip = useRef<HTMLDivElement>(null)
+  // 接管后这次触摸的 touchmove 不再交给浏览器，否则返回后的第一次点按会被吞掉（见 consumeTouchMoves）
+  const hasStrip = shown !== null
+  useEffect(() => {
+    const el = strip.current
+    if (!hasStrip || !el) return
+    return consumeTouchMoves(el, () => g.current?.axis === 'x')
+  }, [hasStrip])
   const onDown = (e: PointerEvent<HTMLDivElement>) => {
     if (pane !== 'detail' || (e.pointerType === 'mouse' && e.button !== 0)) return
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -126,6 +134,7 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
         >
           {detail(shown)}
           <div
+            ref={strip}
             className="edge-swipe"
             data-testid="edge-swipe"
             aria-hidden="true"
