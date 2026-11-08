@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/db"
 	"github.com/rt-game-440/lode/server/internal/notes"
 	"github.com/rt-game-440/lode/server/internal/vault"
@@ -273,6 +274,7 @@ func (m *Manager) openWorkspace(ctx context.Context, id string) (*Workspace, err
 	log := m.log.With("workspace", id)
 	w := newWorkspace(id, notes.New(notes.Options{DB: d, Vault: v, TrashDir: p.Trash, Logger: log}))
 	w.db = d
+	w.Chats = agent.NewChatStore(d)
 	log.Info("已打开工作空间")
 	return w, nil
 }

@@ -143,8 +143,8 @@ func serve(cfg config.Config, log *slog.Logger) error {
 		log.Info("API key 由通行密钥保护，当前处于锁定状态：用加入保护的通行密钥登录一次即可解锁", "removed_stale_secret_key", keySrc == secret.SourcePasskeyStale)
 	}
 	store := agent.NewStore(database, keys)
-	agentSvc := &agent.Service{Store: store, Tools: def.Tools, Notes: def.Notes, Log: log}
-	defer agentSvc.Close() // 在关闭数据库之前停止生成（defer 逆序执行）
+	agentSvc := &agent.Service{Store: store, Log: log}
+	defer agentSvc.Close() // 兜底；正常退出时下面先于关闭工作空间的索引库调用
 
 	passkeys := passkey.New(database, log)
 	keyProtect, err := keyprotect.New(ctx, database, keys, passkeys, store, log)
@@ -171,6 +171,7 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	defer func() {
 		cancelBg()
 		bg.Wait()
+		agentSvc.Close() // 生成任务会写各工作空间的对话库，必须先于 workspaces.Close 关闭它们
 		workspaces.Close()
 	}()
 	workspaces.Start(bgCtx)

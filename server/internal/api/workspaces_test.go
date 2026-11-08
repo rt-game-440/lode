@@ -247,22 +247,86 @@ func TestWorkspaceWebSocketIsolated(t *testing.T) {
 	}
 }
 
-// 助手对话在非默认工作空间暂时返回 501（#61 之前），不会悄悄用默认工作空间的对话。
-func TestAgentChatsOnlyInDefaultWorkspace(t *testing.T) {
+// 助手（#61）：对话按工作空间存放，对话列表只显示当前工作空间的；供应商、模型、设置全局共用；
+// 在 A 空间里生成不影响默认空间，按对话 id 跨空间访问是 404。
+func TestAgentChatsPerWorkspace(t *testing.T) {
 	opt, _ := withAgent(t, "m", &lockedBuffer{})
-	var srv *Server
-	c := newServer(t, opt, func(s *Server) { srv = s })
+	c := newServer(t, opt)
 	c.setup()
+	llmSrv := fakeOpenAI(t, "sk-ws")
+	p := c.mustDo("POST", "/api/agent/providers", map[string]any{"name": "本地", "kind": "openai", "base_url": llmSrv.URL + "/v1", "api_key": "sk-ws"}, 201)
+	c.mustDo("POST", "/api/agent/providers/"+p["id"].(string)+"/models", map[string]any{"model": "fake-model", "context_window": 32000, "max_output": 4096}, 201)
 	_, pa := c.newWorkspace("甲")
-	c.mustDo("POST", "/api/agent/chats", map[string]any{}, 201)
-	for _, rt := range srv.agentChatRoutes() {
-		method, rest := samplePath(rt.pattern)
-		st, out := c.do(method, pa+rest, map[string]any{})
-		if st != 501 || out["code"] != "workspace_agent_unsupported" {
-			t.Errorf("%s %s%s = %d %v，期望 501 workspace_agent_unsupported", method, pa, rest, st, out)
+	_, pb := c.newWorkspace("乙")
+
+	// 全局默认模型在每个空间新建对话时都生效
+	dc := c.mustDo("POST", "/api/agent/chats", map[string]any{}, 201)
+	ac := c.mustDo("POST", pa+"/agent/chats", map[string]any{}, 201)
+	if ac["model_id"] == "" || ac["model_id"] != dc["model_id"] {
+		t.Fatalf("甲空间的对话应使用全局默认模型：%v / %v", ac, dc)
+	}
+	ids := func(prefix string) []string {
+		var out []string
+		for _, x := range c.mustDo("GET", prefix+"/agent/chats", nil, 200)["chats"].([]any) {
+			out = append(out, x.(map[string]any)["id"].(string))
+		}
+		return out
+	}
+	if got := ids("/api"); len(got) != 1 || got[0] != dc["id"] {
+		t.Fatalf("默认空间的对话 = %v", got)
+	}
+	if got := ids(pa); len(got) != 1 || got[0] != ac["id"] {
+		t.Fatalf("甲空间的对话 = %v", got)
+	}
+	if got := ids(pb); len(got) != 0 {
+		t.Fatalf("乙空间的对话 = %v", got)
+	}
+
+	// 在甲空间里对话
+	aid := ac["id"].(string)
+	c.mustDo("POST", pa+"/agent/chats/"+aid+"/messages", map[string]any{"text": "你好"}, 202)
+	deadline := time.Now().Add(5 * time.Second)
+	var view map[string]any
+	for time.Now().Before(deadline) {
+		view = c.mustDo("GET", pa+"/agent/chats/"+aid, nil, 200)
+		if msgs, _ := view["messages"].([]any); len(msgs) == 2 && view["running"] == false {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if msgs, _ := view["messages"].([]any); len(msgs) != 2 || view["running"] != false {
+		t.Fatalf("甲空间的对话没有完成：%v", view)
+	}
+
+	// 跨空间访问同一个对话 id：404
+	for _, tc := range [][3]string{
+		{"GET", "/api", "/agent/chats/" + aid},
+		{"GET", pb, "/agent/chats/" + aid},
+		{"POST", pb, "/agent/chats/" + aid + "/messages"},
+		{"GET", pb, "/agent/chats/" + aid + "/stream"},
+		{"PATCH", pb, "/agent/chats/" + aid},
+		{"DELETE", "/api", "/agent/chats/" + aid},
+	} {
+		body := any(nil)
+		if tc[0] != "GET" {
+			body = map[string]any{"text": "x", "title": "x"}
+		}
+		if st, out := c.do(tc[0], tc[1]+tc[2], body); st != 404 {
+			t.Errorf("%s %s%s = %d %v，期望 404", tc[0], tc[1], tc[2], st, out)
 		}
 	}
-	if chats := c.mustDo("GET", "/api/agent/chats", nil, 200)["chats"].([]any); len(chats) != 1 {
-		t.Fatalf("默认工作空间的对话 = %v", chats)
+	// 默认空间的对话没有被动过，删除甲空间的对话不影响别处
+	if got := ids("/api"); len(got) != 1 || got[0] != dc["id"] {
+		t.Fatalf("默认空间的对话 = %v", got)
+	}
+	c.mustDo("PATCH", pa+"/agent/chats/"+aid, map[string]any{"title": "新标题"}, 200)
+	if st, _ := c.do("DELETE", pa+"/agent/chats/"+aid, nil); st != 204 {
+		t.Errorf("删除甲空间的对话 = %d", st)
+	}
+	if got := ids(pa); len(got) != 0 {
+		t.Fatalf("甲空间的对话 = %v", got)
+	}
+	if got := ids("/api"); len(got) != 1 {
+		t.Fatalf("默认空间的对话 = %v", got)
 	}
 }

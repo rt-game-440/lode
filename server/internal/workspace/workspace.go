@@ -4,7 +4,7 @@
 // 默认工作空间（id = default）的索引在 app.db，vault 在 data/vault，和引入工作空间之前完全一样；
 // 其他工作空间登记在 app.db 的 workspaces 表里（registry.go），文件在 data/workspaces/<id>/{index.db,vault,trash}，
 // 第一次被访问时才打开，打开后保持到 Close。
-// 之后的票在这里扩展：外部目录、改名排序删除、每个工作空间的助手对话（#61）。
+// 之后的票在这里扩展：外部目录、改名排序删除。助手对话按工作空间存放（#61）：非默认工作空间的 Chats 在自己的 index.db 里。
 package workspace
 
 import (
@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/notes"
 	"github.com/rt-game-440/lode/server/internal/tools"
 )
@@ -46,6 +47,10 @@ type Workspace struct {
 	Notes *notes.Service
 	// Tools 是绑定到本工作空间笔记的工具注册表，助手和 MCP 共用。
 	Tools *tools.Registry
+	// Chats 是本工作空间的助手对话库（对话、消息、待批准操作），在本工作空间自己的 index.db 里。
+	// 默认工作空间为 nil：它的对话和供应商同在 app.db，用 agent.Store.DefaultChats()。
+	// 用 AgentSpace 得到助手需要的依赖。
+	Chats *agent.ChatStore
 
 	db     *sql.DB            // 本工作空间的索引库，由 Manager 打开和关闭；默认工作空间为 nil（app.db 归调用方）
 	cancel context.CancelFunc // 停止后台任务；未启动时为 nil
@@ -115,6 +120,16 @@ func New(o Options) *Manager {
 		open: map[string]*Workspace{}, opening: map[string]chan struct{}{}}
 	m.add(newWorkspace(DefaultID, o.Default))
 	return m
+}
+
+// AgentSpace 返回助手在本工作空间里工作所需的依赖。defaultChats 是默认工作空间的对话库
+// （agent.Store.DefaultChats()），只在本工作空间是默认工作空间时使用。
+func (w *Workspace) AgentSpace(defaultChats *agent.ChatStore) agent.Space {
+	chats := w.Chats
+	if w.ID == DefaultID || chats == nil {
+		chats = defaultChats
+	}
+	return agent.Space{ID: w.ID, Chats: chats, Tools: w.Tools, Notes: w.Notes}
 }
 
 func newWorkspace(id string, svc *notes.Service) *Workspace {
