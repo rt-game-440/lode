@@ -1,9 +1,11 @@
 import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, PanelLeft, Search, Settings, Sparkles, Sun, Trash } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { confirmDialog } from '../../components/overlays'
 import { EmptyState, IconButton } from '../../components/ui'
 import { useSession } from '../../stores/session'
 import { type SidebarTab, type Theme, useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { useSync } from '../../sync/engine'
 import { newFolder, newNote } from '../actions'
 import { FileTree } from './FileTree'
 import { SearchPanel } from './SearchPanel'
@@ -68,6 +70,28 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
   const route = useUI((s) => s.route)
   const navigate = useUI((s) => s.navigate)
   const logout = useSession((s) => s.logout)
+
+  // 退出时写队列保留在本机 IndexedDB（clearCache 不动队列），重新登录后由同步引擎重放，所以提示“保留在本机”
+  const askLogout = async () => {
+    const pending = useSync.getState().pending
+    const ok = await confirmDialog({
+      title: '退出登录？',
+      message: (
+        <>
+          <p>退出后需要重新输入密码。</p>
+          {pending > 0 && (
+            <p>
+              本机还有 {pending} 项未同步的修改，退出后会保留在本机，重新登录后自动同步。
+            </p>
+          )}
+        </>
+      ),
+      confirmLabel: '退出登录',
+      danger: true,
+      initialFocus: 'cancel',
+    })
+    if (ok) await logout()
+  }
 
   return (
     <nav className="sidebar" aria-label="侧栏">
@@ -141,7 +165,7 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
         <IconButton label={`主题：${THEME_LABEL[theme]}（点击切换）`} onClick={() => setTheme(THEME_NEXT[theme])}>
           {THEME_ICON[theme]}
         </IconButton>
-        <IconButton label="退出登录" onClick={() => void logout()}>
+        <IconButton label="退出登录" onClick={() => void askLogout()}>
           <LogOut size={17} />
         </IconButton>
       </footer>

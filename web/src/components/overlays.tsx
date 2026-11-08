@@ -29,6 +29,8 @@ interface ConfirmRequest {
   message?: ReactNode
   confirmLabel?: string
   danger?: boolean
+  /** 默认焦点：默认在确认按钮上；破坏性操作可设为取消，避免回车误确认 */
+  initialFocus?: 'cancel' | 'confirm'
   resolve: (ok: boolean) => void
 }
 
@@ -122,7 +124,8 @@ function PromptBody({ req }: { req: PromptRequest }) {
 
 function ConfirmBody({ req }: { req: ConfirmRequest }) {
   const ok = useRef<HTMLButtonElement>(null)
-  useLayoutEffect(() => ok.current?.focus(), [])
+  const cancelBtn = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => (req.initialFocus === 'cancel' ? cancelBtn : ok).current?.focus(), [req])
   return (
     <div className="dialog">
       <h2 className="dialog-title" id="dialog-title">
@@ -131,6 +134,7 @@ function ConfirmBody({ req }: { req: ConfirmRequest }) {
       {req.message && <div className="dialog-message">{req.message}</div>}
       <div className="dialog-actions">
         <Button
+          ref={cancelBtn}
           variant="secondary"
           onClick={() => {
             req.resolve(false)
