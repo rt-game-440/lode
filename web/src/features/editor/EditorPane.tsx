@@ -1,6 +1,6 @@
 import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { ArrowLeft, Ellipsis, FileText, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
+import { ArrowLeft, CaseSensitive, Ellipsis, FileText, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { openMenu } from '../../components/overlays'
@@ -21,6 +21,9 @@ import { editorRef, takeTitleFocus } from './editorRef'
 import { takeNoteScroll } from '../../lib/scrollMemory'
 import { useEditorPrefs } from '../../stores/editorPrefs'
 import { PanelToggleSlot } from '../shell/PanelToggle'
+import { useNoteAppearance } from '../../stores/noteAppearance'
+import { AppearancePanelHost, closeAppearancePanel, openAppearancePanel } from './AppearancePanel'
+import { bodyStart } from './cm/appearance'
 import { FormatToolbar } from './FormatToolbar'
 import { MobileToolbar } from './MobileToolbar'
 import './editor.css'
@@ -76,6 +79,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
 
   useEffect(() => {
     void open(id)
+    return closeAppearancePanel
   }, [id, open])
 
   // 创建编辑器（只创建一次）
@@ -100,6 +104,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         headingTimer.current = setTimeout(() => useEditor.getState().setHeadings(extractHeadings(content)), 300)
       },
       onSave: () => void saverRef.current?.flush(),
+      onAppearance: (a, animate) => useNoteAppearance.getState().publish(a, animate),
     }
     const extensions = editorExtensions(env)
     const view = new EditorView({ parent: host.current!, state: EditorState.create({ doc: '', extensions }) })
@@ -174,7 +179,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         },
         isComposing: () => viewRef.current?.composing ?? false,
       })
-      view.setState(EditorState.create({ doc: doc.content, extensions: editorRef.extensions }))
+      // 光标放在正文开头：front matter 里只有外观设置时它是藏起来的（cm/appearance）
+      view.setState(EditorState.create({ doc: doc.content, selection: { anchor: bodyStart(doc.content) }, extensions: editorRef.extensions }))
       // 从助手页返回同一篇笔记时回到进入前的滚动位置，其余情况回到顶部
       const restore = takeNoteScroll(id)
       scrollRef.current?.scrollTo({ top: restore ?? 0 })
@@ -215,6 +221,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   }, [])
 
   const showToolbar = useEditorPrefs((s) => s.formatToolbar)
+  const pageWidth = useNoteAppearance((s) => s.width)
+  const animateWidth = useNoteAppearance((s) => s.animate)
   const showEditor = !!doc && doc.id === id && !notFound
 
   return (
@@ -242,8 +250,9 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         {note && (
           <IconButton
             label="更多操作"
-            onClick={(e) =>
-              openMenu(e.currentTarget, [
+            onClick={(e) => {
+              const anchor = e.currentTarget
+              openMenu(anchor, [
                 {
                   label: '重命名',
                   icon: <Pencil size={16} />,
@@ -252,9 +261,11 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
                     titleRef.current?.select()
                   },
                 },
+                { label: '外观和布局', icon: <CaseSensitive size={16} />, submenu: true, run: () => openAppearancePanel(anchor) },
+                'separator',
                 { label: '移到回收站', icon: <Trash size={16} />, danger: true, run: () => void deleteNote(note) },
               ])
-            }
+            }}
           >
             <Ellipsis size={18} />
           </IconButton>
@@ -270,7 +281,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         />
       )}
 
-      <div className="editor-scroll" ref={scrollRef}>
+      {/* 页宽只在桌面端生效（editor.css）；切换时过渡，载入笔记时直接到位 */}
+      <div className="editor-scroll" ref={scrollRef} data-width={pageWidth} data-animate={animateWidth ? '' : undefined}>
         {note && showEditor && (
           <TitleInput
             key={note.id + note.title}
@@ -292,6 +304,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
           </EmptyState>
         )}
       </div>
+      <AppearancePanelHost mobile={mobile} />
       {mobile && (
         <MobileToolbar
           view={view}

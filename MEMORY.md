@@ -2,6 +2,12 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 17:36 #47 按笔记的外观写进 front matter
+
+- **键名**：front matter 顶层的 `lode` 映射，子键 `width`（`narrow` / `standard` / `wide`）和 `font`（`sans` / `serif` / `mono`）。默认值（`standard`、`sans`）不写；`lode` 下没有键时删掉 `lode` 行，front matter 因此变空时整块删除。读写都在 `web/src/lib/noteAppearance.ts`（纯函数）：新建时写块状 YAML（两格缩进），已有行内写法 `lode: {width: wide}` 时沿用；`lode` 下认不出的子键原样保留；保留 CRLF。front matter 的识别与编辑器的 Lezer 扩展一致（第 1 行 `---`，下一行像 YAML 键），服务端 `mdparse` 只读 `tags`，`lode` 不影响标签和链接（`TestFrontmatterAppearanceKeyIgnored`）。
+- **写入路径**：“外观和布局”面板调用 `applyNoteAppearance(view, patch)`，把新旧全文的 diff 作为一次普通编辑派发给 CodeMirror（带 `appearanceWrite` 标记、可撤销），之后由 Autosaver → `sync.save` 走正常的版本号、三方合并和冲突处理。外观状态从文档派生（`cm/appearance.ts` 的 StateField），载入、远端合并、撤销都会自动更新，界面读 `stores/noteAppearance`。
+- **编辑器里藏起 `lode`**：front matter 只有 `lode` 时整块藏起（block replace 装饰），有别的键时只藏 `lode` 几行。光标进不去（transactionFilter 把选区挪到正文开头或相邻行），普通编辑改不到（changeFilter 连同两端的换行一起保护，两端插入不受影响）；`appearanceWrite`、撤销重做、`remoteSync` 事务不受限制。载入笔记时光标放在 `bodyStart()`。
+
 ## 2026-11-08 14:22 #29 用通行密钥（PRF）保护 API key
 
 - **结构**：`secret.Keeper` 统一管理主密钥（`env` / `file` / `passkey` 三种模式，`passkey` 模式锁定时加解密返回 `secret.ErrLocked`），`agent.Store` 只依赖 `secret.Cipher` 接口；`internal/keyprotect` 管开关（`settings.key_protection='passkey'`）和开启、解锁、加入、锁定、关闭；HTTP 在 `api/keyprotect.go`。启动顺序：`keyprotect.Enabled` → `secret.OpenKeeper` → `agent.NewStore` → `passkey.New` → `keyprotect.New`，再把 `passkey.Service.PRFSalt` 设为 `keyProtect.LoginSalt`（只在开启时给登录/登记加 PRF 盐）。

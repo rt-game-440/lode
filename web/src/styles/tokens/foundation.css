@@ -97,7 +97,9 @@
   --resizer-hit: 8px; /* 侧栏调宽手柄的命中宽度 */
   --edge-swipe-width: 16px; /* 手机左缘返回手势的感应宽度 */
   --toolbar-height: 2.75rem; /* 手机编辑工具栏 */
-  --editor-max-width: 46rem;
+  --editor-max-width: 46rem; /* 正文列的默认页宽（“适中”） */
+  --editor-width-narrow: 36rem; /* 页宽“窄” */
+  --editor-gutter-wide: var(--space-12); /* 页宽“宽”：占满编辑区，两侧各留这么宽 */
   --z-bar: 10;
   --z-popover: 40;
   --z-modal: 50;

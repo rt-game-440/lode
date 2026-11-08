@@ -17,7 +17,8 @@ export const editorTheme = EditorView.theme({
     overflow: 'visible',
   },
   '.cm-content': {
-    maxWidth: 'var(--editor-max-width)',
+    // 按笔记的页宽（editor.css 的 --note-width）
+    maxWidth: 'var(--note-width, var(--editor-max-width))',
     margin: '0 auto',
     padding: 'var(--space-3) var(--space-6) 40vh',
     caretColor: 'var(--color-accent)',

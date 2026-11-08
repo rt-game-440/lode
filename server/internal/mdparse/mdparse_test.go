@@ -75,3 +75,19 @@ func TestParseTagsFrontmatterList(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
+
+// 笔记外观写在 front matter 的 lode 键下（#47），不能被当成标签，也不能影响紧挨着的 tags 列表和正文链接。
+func TestFrontmatterAppearanceKeyIgnored(t *testing.T) {
+	src := "---\ntags:\n  - alpha\nlode:\n  width: wide\n  font: serif\n---\n正文 #beta [[目标]]"
+	if got, want := ParseTags(src), []string{"alpha", "beta"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("tags: got %v, want %v", got, want)
+	}
+	links := ParseLinks(src)
+	if len(links) != 1 || links[0].Target != "目标" {
+		t.Fatalf("links: got %+v", links)
+	}
+	only := "---\nlode:\n  font: mono\n---\n#gamma"
+	if got, want := ParseTags(only), []string{"gamma"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("tags: got %v, want %v", got, want)
+	}
+}

@@ -315,6 +315,9 @@
 .menu-item:focus-visible svg {
   color: inherit;
 }
+.menu-item-chevron {
+  margin-left: auto;
+}
 .menu-item.is-danger {
   color: var(--color-danger);
 }
