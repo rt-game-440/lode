@@ -478,61 +478,67 @@ function ProviderForm({
   }
 
   return (
-    <Modal open={open} onClose={onClose} label={provider ? `编辑“${provider.name}”` : '添加供应商'} className="dialog agent-form">
-      <form onSubmit={(e) => void submit(e)} className="agent-form-body">
-        <h2 className="dialog-title">{provider ? '编辑供应商' : '添加供应商'}</h2>
-        <TextField label="名称" placeholder="例如 OpenAI、DeepSeek、本地 Ollama" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} autoComplete="off" data-testid="provider-name" />
-        <div className="field">
-          <span className="field-label" id={kindLabel}>
-            接口类型
-          </span>
-          <div className="segmented" role="radiogroup" aria-labelledby={kindLabel}>
-            {(Object.keys(KIND_LABEL) as ProviderKind[]).map((k) => (
-              <button key={k} type="button" role="radio" aria-checked={kind === k} className={`segment${kind === k ? ' is-selected' : ''}`} onClick={() => setKind(k)}>
-                {KIND_LABEL[k]}
-              </button>
-            ))}
-          </div>
+    <Modal open={open} onClose={onClose} label={provider ? `编辑“${provider.name}”` : '添加供应商'} className="modal-form agent-form">
+      <form onSubmit={(e) => void submit(e)} className="modal-form-inner">
+        <div className="modal-form-head">
+          <h2 className="dialog-title">{provider ? '编辑供应商' : '添加供应商'}</h2>
         </div>
-        <TextField
-          label="接口地址"
-          placeholder={DEFAULT_BASE[kind]}
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          autoComplete="off"
-          inputMode="url"
-          data-testid="provider-base-url"
-        />
-        <p className="settings-meta">留空使用官方地址。OpenRouter、DeepSeek、Ollama 等兼容服务选“OpenAI 兼容”并填写地址。</p>
-        <TextField
-          label="API key"
-          type="password"
-          placeholder={provider?.has_key ? `留空不修改（当前 ••••${provider.key_last4}）` : ''}
-          value={key}
-          disabled={!secretKeySet}
-          onChange={(e) => setKey(e.target.value)}
-          autoComplete="new-password"
-          spellCheck={false}
-          data-testid="provider-key"
-        />
-        {provider?.has_key && !key && (
-          <label className="check-row">
-            <input type="checkbox" checked={clearKey} onChange={(e) => setClearKey(e.target.checked)} />
-            清除已保存的 key
-          </label>
-        )}
-        {error && (
-          <p className="field-error" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="dialog-actions">
-          <Button variant="secondary" onClick={onClose}>
-            取消
-          </Button>
-          <Button type="submit" variant="primary" disabled={busy} data-testid="provider-save">
-            {busy ? '正在保存…' : '保存'}
-          </Button>
+        <div className="modal-form-fields">
+          <TextField label="名称" placeholder="例如 OpenAI、DeepSeek、本地 Ollama" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} autoComplete="off" data-testid="provider-name" />
+          <div className="field">
+            <span className="field-label" id={kindLabel}>
+              接口类型
+            </span>
+            <div className="segmented" role="radiogroup" aria-labelledby={kindLabel}>
+              {(Object.keys(KIND_LABEL) as ProviderKind[]).map((k) => (
+                <button key={k} type="button" role="radio" aria-checked={kind === k} className={`segment${kind === k ? ' is-selected' : ''}`} onClick={() => setKind(k)}>
+                  {KIND_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <TextField
+            label="接口地址"
+            placeholder={DEFAULT_BASE[kind]}
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            autoComplete="off"
+            inputMode="url"
+            data-testid="provider-base-url"
+          />
+          <p className="settings-meta">留空使用官方地址。OpenRouter、DeepSeek、Ollama 等兼容服务选“OpenAI 兼容”并填写地址。</p>
+          <TextField
+            label="API key"
+            type="password"
+            placeholder={provider?.has_key ? `留空不修改（当前 ••••${provider.key_last4}）` : ''}
+            value={key}
+            disabled={!secretKeySet}
+            onChange={(e) => setKey(e.target.value)}
+            autoComplete="new-password"
+            spellCheck={false}
+            data-testid="provider-key"
+          />
+          {provider?.has_key && !key && (
+            <label className="check-row">
+              <input type="checkbox" checked={clearKey} onChange={(e) => setClearKey(e.target.checked)} />
+              清除已保存的 key
+            </label>
+          )}
+        </div>
+        <div className="modal-form-foot">
+          {error && (
+            <p className="field-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="dialog-actions">
+            <Button variant="secondary" onClick={onClose}>
+              取消
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy} data-testid="provider-save">
+              {busy ? '正在保存…' : '保存'}
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>
@@ -619,60 +625,66 @@ function ModelForm({
   }
 
   return (
-    <Modal open={open} onClose={onClose} label={model ? '编辑模型' : '添加模型'} className="dialog agent-form">
-      <form onSubmit={(e) => void submit(e)} className="agent-form-body">
-        <h2 className="dialog-title">{model ? '编辑模型' : '添加模型'}</h2>
-        <TextField label="模型 ID" placeholder="例如 gpt-4.1、claude-sonnet-4-5" value={f.model} onChange={(e) => set('model', e.target.value)} autoComplete="off" spellCheck={false} data-testid="model-id" />
-        <TextField label="显示名（可选）" value={f.name} maxLength={64} onChange={(e) => set('name', e.target.value)} autoComplete="off" />
-        <div className="form-pair">
-          <TextField label="上下文窗口（token）" inputMode="numeric" value={ctx} onChange={(e) => setCtx(e.target.value)} data-testid="model-context" />
-          <TextField label="最大输出（token）" inputMode="numeric" value={max} onChange={(e) => setMax(e.target.value)} data-testid="model-max-output" />
+    <Modal open={open} onClose={onClose} label={model ? '编辑模型' : '添加模型'} className="modal-form agent-form">
+      <form onSubmit={(e) => void submit(e)} className="modal-form-inner">
+        <div className="modal-form-head">
+          <h2 className="dialog-title">{model ? '编辑模型' : '添加模型'}</h2>
         </div>
-        <Check2 checked={f.tools} onChange={(v) => set('tools', v)} hint="让助手搜索、读取和修改笔记。模型不支持工具调用时关闭。">
-          工具调用
-        </Check2>
-        <Check2 checked={f.reasoning} onChange={(v) => set('reasoning', v)} hint="支持思考的模型（o 系列、Claude 扩展思考、Gemini 2.5 等）。" testId="model-reasoning">
-          推理
-        </Check2>
-        {f.reasoning && (
-          <div className="field">
-            <span className="field-label" id={effortLabel}>
-              默认推理强度
-            </span>
-            <div className="segmented" role="radiogroup" aria-labelledby={effortLabel}>
-              {(Object.keys(EFFORT_LABEL) as Effort[]).map((k) => (
-                <button key={k} type="button" role="radio" aria-checked={f.effort === k} className={`segment${f.effort === k ? ' is-selected' : ''}`} onClick={() => set('effort', k)}>
-                  {EFFORT_LABEL[k]}
-                </button>
-              ))}
-            </div>
+        <div className="modal-form-fields">
+          <TextField label="模型 ID" placeholder="例如 gpt-4.1、claude-sonnet-4-5" value={f.model} onChange={(e) => set('model', e.target.value)} autoComplete="off" spellCheck={false} data-testid="model-id" />
+          <TextField label="显示名（可选）" value={f.name} maxLength={64} onChange={(e) => set('name', e.target.value)} autoComplete="off" />
+          <div className="form-pair">
+            <TextField label="上下文窗口（token）" inputMode="numeric" value={ctx} onChange={(e) => setCtx(e.target.value)} data-testid="model-context" />
+            <TextField label="最大输出（token）" inputMode="numeric" value={max} onChange={(e) => setMax(e.target.value)} data-testid="model-max-output" />
           </div>
-        )}
-        <fieldset className="field check-group">
-          <legend className="field-label">还能读取（文本总是支持）</legend>
-          {(Object.keys(MODALITY_LABEL) as Exclude<Modality, 'text'>[]).map((m) => (
-            <label key={m} className="check-row">
-              <input type="checkbox" checked={f.modalities.includes(m)} onChange={(e) => toggleModality(m, e.target.checked)} data-testid={`modality-${m}`} />
-              {MODALITY_LABEL[m]}
-            </label>
-          ))}
-        </fieldset>
-        <TextField label="temperature（可选，0–2）" inputMode="decimal" placeholder="留空用模型默认值" value={temp} onChange={(e) => setTemp(e.target.value)} />
-        <Check2 checked={f.enabled} onChange={(v) => set('enabled', v)}>
-          启用
-        </Check2>
-        {error && (
-          <p className="field-error" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="dialog-actions">
-          <Button variant="secondary" onClick={onClose}>
-            取消
-          </Button>
-          <Button type="submit" variant="primary" disabled={busy} data-testid="model-save">
-            {busy ? '正在保存…' : '保存'}
-          </Button>
+          <Check2 checked={f.tools} onChange={(v) => set('tools', v)} hint="让助手搜索、读取和修改笔记。模型不支持工具调用时关闭。">
+            工具调用
+          </Check2>
+          <Check2 checked={f.reasoning} onChange={(v) => set('reasoning', v)} hint="支持思考的模型（o 系列、Claude 扩展思考、Gemini 2.5 等）。" testId="model-reasoning">
+            推理
+          </Check2>
+          {f.reasoning && (
+            <div className="field">
+              <span className="field-label" id={effortLabel}>
+                默认推理强度
+              </span>
+              <div className="segmented" role="radiogroup" aria-labelledby={effortLabel}>
+                {(Object.keys(EFFORT_LABEL) as Effort[]).map((k) => (
+                  <button key={k} type="button" role="radio" aria-checked={f.effort === k} className={`segment${f.effort === k ? ' is-selected' : ''}`} onClick={() => set('effort', k)}>
+                    {EFFORT_LABEL[k]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <fieldset className="field check-group">
+            <legend className="field-label">还能读取（文本总是支持）</legend>
+            {(Object.keys(MODALITY_LABEL) as Exclude<Modality, 'text'>[]).map((m) => (
+              <label key={m} className="check-row">
+                <input type="checkbox" checked={f.modalities.includes(m)} onChange={(e) => toggleModality(m, e.target.checked)} data-testid={`modality-${m}`} />
+                {MODALITY_LABEL[m]}
+              </label>
+            ))}
+          </fieldset>
+          <TextField label="temperature（可选，0–2）" inputMode="decimal" placeholder="留空用模型默认值" value={temp} onChange={(e) => setTemp(e.target.value)} />
+          <Check2 checked={f.enabled} onChange={(v) => set('enabled', v)}>
+            启用
+          </Check2>
+        </div>
+        <div className="modal-form-foot">
+          {error && (
+            <p className="field-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="dialog-actions">
+            <Button variant="secondary" onClick={onClose}>
+              取消
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy} data-testid="model-save">
+              {busy ? '正在保存…' : '保存'}
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>
