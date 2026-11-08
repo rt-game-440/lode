@@ -139,7 +139,7 @@ function NoModels({ secretKeySet }: { secretKeySet: boolean }) {
       <EmptyState icon={<Sparkles size={28} strokeWidth={1.5} />} title="还没有可用的模型">
         {secretKeySet
           ? '在设置的“助手”里添加一个模型供应商（OpenAI 兼容、Anthropic 或 Gemini）和模型。'
-          : '服务器还没有设置 LODE_SECRET_KEY，暂时不能保存 API key。设置后重启 Lode，再到设置里添加模型。'}
+          : '服务器暂时没有可用的主密钥，不能保存 API key。请检查数据目录是否可写后重启 Lode。'}
         <div className="agent-empty-action">
           <Button size="sm" variant="primary" icon={<Settings size={14} />} onClick={() => navigate({ view: 'settings', sub: ['agent'] })}>
             打开设置

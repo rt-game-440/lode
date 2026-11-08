@@ -58,15 +58,15 @@ export function agentSummary(config: { providers: Provider[] } | null): string {
   return `${n} 个供应商 · ${models} 个模型`
 }
 
-/** 服务器没有主密钥时不能保存 API key 的提示（第一级页面和供应商页都显示）。 */
+/**
+ * API key 相关的提示，助手页和供应商页共用。主密钥由服务器自动生成并保存在数据目录的 secret.key 里（#27），
+ * 正常情况下不显示；只有服务器拿不到主密钥（例如数据目录不可写）时才提示，文案与助手面板一致。
+ */
 function SecretKeyNotice() {
   return (
     <p className="settings-warning" role="note">
       <AlertTriangle size={16} aria-hidden="true" />
-      <span>
-        服务器没有设置 <code>LODE_SECRET_KEY</code>，现在不能保存 API key。用 <code>openssl rand -base64 32</code>{' '}
-        生成一个，设置为环境变量后重启 Lode。只连接不需要 key 的本地模型（如 Ollama）时可以不设。
-      </span>
+      <span>服务器暂时没有可用的主密钥，不能保存 API key。请检查数据目录是否可写后重启 Lode。</span>
     </p>
   )
 }
@@ -83,7 +83,7 @@ export function AgentPage({ sub }: { sub: string[] }) {
   return (
     <SettingsPage sub={sub} title={SECTION_TITLE.agent}>
       <p className="settings-desc">
-        接入 OpenAI 兼容接口、Anthropic 或 Gemini。API key 加密保存在服务器上，之后不会再显示，只显示末 4 位。
+        接入 OpenAI 兼容接口、Anthropic 或 Gemini。API key 加密保存在服务器上，之后不会再显示，只显示末 4 位。加密用的主密钥在数据目录的 secret.key 里，备份文件等同于含有你的 API key，请妥善保管。
       </p>
       {config && !config.secret_key_set && <SecretKeyNotice />}
 
@@ -494,7 +494,7 @@ function ProviderForm({
         <TextField
           label="API key"
           type="password"
-          placeholder={provider?.has_key ? `留空不修改（当前 ••••${provider.key_last4}）` : secretKeySet ? '' : '需要先设置 LODE_SECRET_KEY'}
+          placeholder={provider?.has_key ? `留空不修改（当前 ••••${provider.key_last4}）` : ''}
           value={key}
           disabled={!secretKeySet}
           onChange={(e) => setKey(e.target.value)}

@@ -1,10 +1,11 @@
-import { EyeOff, History, KeyRound, Keyboard, Palette, Plug, Sparkles } from 'lucide-react'
+import { EyeOff, History, KeyRound, Keyboard, Palette, PenLine, Plug, Sparkles } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { EmptyState } from '../../components/ui'
 import { useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
+import { useEditorPrefs } from '../../stores/editorPrefs'
 import { AgentPage, ProviderPage, agentSummary } from './AgentSettings'
-import { AppearancePage, KeyboardPage, SHORTCUT_COUNT, THEME_LABEL } from './GeneralSettings'
+import { AppearancePage, EditorPage, KeyboardPage, SHORTCUT_COUNT, THEME_LABEL } from './GeneralSettings'
 import { NavStack } from './NavStack'
 import { useSettingsData } from './data'
 import { settingsBack } from './nav'
@@ -58,6 +59,8 @@ function Page({ sub }: { sub: string[] }) {
       return <SettingsHome />
     case 'appearance':
       return <AppearancePage sub={sub} />
+    case 'editor':
+      return <EditorPage sub={sub} />
     case 'keyboard':
       return <KeyboardPage sub={sub} />
     case 'agent':
@@ -84,6 +87,7 @@ function Page({ sub }: { sub: string[] }) {
 /** 第一级：分组列表。 */
 function SettingsHome() {
   const theme = useUI((s) => s.theme)
+  const formatToolbar = useEditorPrefs((s) => s.formatToolbar)
   const config = useAgent((s) => s.config)
   const tokens = useSettingsData((s) => s.tokens)
   const audit = useSettingsData((s) => s.audit)
@@ -104,7 +108,18 @@ function SettingsHome() {
               value={THEME_LABEL[theme]}
             />
           </li>
-          {/* “编辑器”（编辑相关的开关）放在这里，路径 ['editor']，见 stack.ts */}
+          <li>
+            <NavRow
+              to={['editor']}
+              icon={
+                <RowIcon tone="azure">
+                  <PenLine size={17} />
+                </RowIcon>
+              }
+              label={SECTION_TITLE.editor}
+              value={formatToolbar ? '显示格式工具栏' : '隐藏格式工具栏'}
+            />
+          </li>
           <li>
             <NavRow
               to={['keyboard']}

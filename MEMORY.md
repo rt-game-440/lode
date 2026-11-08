@@ -4,7 +4,8 @@
 
 ## 2026-11-08 12:49 #23 设置多级页面
 
-- **路由**：`Route` 的 settings 带 `sub?: string[]`，地址是 `/settings/<段>/...`；页面表和标题在 `web/src/features/settings/stack.ts`。新增设置页时在那里加路径和标题，再在 `SettingsView` 的 `Page` 里加一个分支。
+- **路由**：`Route` 的 settings 带 `sub?: string[]`，地址是 `/settings/<段>/...`；页面表和标题在 `web/src/features/settings/stack.ts`。新增设置页时在那里加路径和标题，再在 `SettingsView` 的 `Page` 里加一个分支，并在首页加一行。#26 的“显示格式工具栏”开关在 `/settings/editor`（`GeneralSettings.tsx` 的 `EditorPage`）。
+- **e2e 里的假 key**：GitGuardian 会把 `api_key: 'sk-mock-e2e-1234'` 这种写在对象字面量里的值报成 Generic High Entropy Secret。截图之类不需要 key 的种子数据就不要带 key。
 - **历史**：设置内的链接用 `openSettings()`：pushState 后在这条历史记录的 state 里写 `lodeFrom`（来源路径）。返回按钮只在 `lodeFrom` 正好是上一级时用 `history.back()`，否则 `navigate(上一级, replace)`，所以直接打开深层地址再点返回不会跳出应用，正常进入再返回也不会在历史里多出记录。
 - **导航栈**（`NavStack.tsx`）：从首页到当前页的每一层都保持挂载（返回时保留滚动位置），只有最上层的 x 是 motion value，下层的视差和遮暗由它推导；动画结束时最上层的 transform 是 none，层内的 `position: fixed` 弹窗不受影响。
 - **两个返回手势不冲突**：手机上设置的子页面有自己的左缘手势区（`settings-edge-swipe`），外层 MobileStack 的手势区在设置深度大于 0 时用 CSS `:has()` 隐藏（`settings.css`），没有改 MobileStack。

@@ -4,6 +4,7 @@
  * 路径是 /settings 之后的各段，每多一段就深一级：
  *   []                    设置首页
  *   ['appearance']        外观
+ *   ['editor']            编辑器
  *   ['keyboard']          键盘
  *   ['agent']             助手
  *   ['agent', <供应商 id>] 单个供应商
@@ -12,13 +13,14 @@
  *   ['tokens', <token id>] 单个 token
  *   ['audit']             调用记录
  *
- * 新增一级页面（例如编辑相关开关的“编辑器”，路径 ['editor']）：在 SettingsPageId 和 SECTION_TITLE 里加上它，
- * 在 SettingsView 的 Page 里加一个分支，并在首页“通用”分组里加一行（那里留了注释）。
+ * 新增一级页面：在 SettingsPageId 和 SECTION_TITLE 里加上它，在 SettingsView 的 Page 里加一个分支，
+ * 并在首页对应分组里加一行。
  */
 
 export type SettingsPageId =
   | 'root'
   | 'appearance'
+  | 'editor'
   | 'keyboard'
   | 'agent'
   | 'provider'
@@ -36,6 +38,7 @@ export interface SettingsPageRef {
 /** 第一级页面（路径只有一段）及其标题；第二级页面的标题来自数据（供应商名、token 名）。 */
 export const SECTION_TITLE = {
   appearance: '外观',
+  editor: '编辑器',
   keyboard: '键盘',
   agent: '助手',
   mcp: 'MCP 接入',

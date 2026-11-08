@@ -48,6 +48,7 @@ test('设置首页是分组列表，每行有图标、名称、状态摘要和 �
 
   const row = (name: string) => home.getByRole('link', { name: new RegExp(`^${name}`) })
   await expect(row('外观')).toContainText('跟随系统')
+  await expect(row('编辑器')).toContainText('显示格式工具栏')
   await expect(row('键盘')).toContainText(/\d+ 个快捷键/)
   await expect(row('助手')).toContainText(/未配置|\d+ 个供应商/)
   await expect(row('MCP 接入')).toContainText(`${new URL(p.url()).host}/mcp`)
@@ -55,7 +56,7 @@ test('设置首页是分组列表，每行有图标、名称、状态摘要和 �
   await expect(row('调用记录')).toContainText(/暂无|最近/)
   // 每行都是链接，有图标和 ›
   const links = home.getByRole('link')
-  await expect(links).toHaveCount(6)
+  await expect(links).toHaveCount(7)
   for (const l of await links.all()) {
     await expect(l.locator('.row-icon')).toHaveCount(1)
     await expect(l.locator('.nav-row-chevron')).toHaveCount(1)
@@ -118,6 +119,7 @@ test('子页面地址可以直接打开，刷新后停在原页面，返回按�
 
   for (const [path, title] of [
     ['appearance', '外观'],
+    ['editor', '编辑器'],
     ['keyboard', '键盘'],
     ['agent', '助手'],
     ['mcp', 'MCP 接入'],
@@ -283,13 +285,13 @@ test('截图：桌面端和手机端的设置页面', async ({ browser }) => {
   test.skip(!shotDir, '设置 LODE_SCREENSHOTS 后才截图')
   test.setTimeout(90_000)
   mkdirSync(shotDir, { recursive: true })
-  // 没有供应商时建一个（只用于截图的测试 key，不会真的请求）
+  // 没有供应商时建一个（只用于截图，不带 API key，也不会真的请求）
   const seed = await browser.newContext()
   await signIn(seed)
   const config = await (await seed.request.get('/api/agent/config')).json()
   if (!config.providers?.length) {
     const res = await seed.request.post('/api/agent/providers', {
-      data: { name: '示例供应商', kind: 'openai', base_url: 'http://127.0.0.1:9/v1', api_key: 'sk-mock-e2e-1234' },
+      data: { name: '示例供应商', kind: 'openai', base_url: 'http://127.0.0.1:9/v1' },
     })
     expect(res.ok()).toBe(true)
     const provider = await res.json()
@@ -309,6 +311,7 @@ test('截图：桌面端和手机端的设置页面', async ({ browser }) => {
       const pages: [string, string, string][] = [
         ['home', '/settings', '设置'],
         ['appearance', '/settings/appearance', '外观'],
+        ['editor', '/settings/editor', '编辑器'],
         ['keyboard', '/settings/keyboard', '键盘'],
         ['agent', '/settings/agent', '助手'],
         ['mcp', '/settings/mcp', 'MCP 接入'],

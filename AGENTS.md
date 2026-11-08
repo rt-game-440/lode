@@ -46,11 +46,11 @@ Lode：自托管、单用户的 Markdown 笔记 PWA，多端即时同步，自�
 每个脚本都有 `.sh` 和 `.ps1` 两个版本，参数相同（PowerShell 用 `-E2E` 这类写法）。
 
 - 开发：`scripts/dev.sh`，Go 服务在 127.0.0.1:8787（数据在 `data-dev/`，日志在 `logs/`），Vite 在 5173 并代理 `/api`。
-- 构建：`scripts/build.sh`，先构建前端再嵌入，输出 `bin/lode`（Windows 为 `bin/lode.exe`）。运行：`bin/lode serve`，配置见环境变量 `LODE_ADDR`、`LODE_DATA_DIR`、`LODE_LOG_LEVEL`、`LODE_TRUSTED_PROXIES`、`LODE_SECRET_KEY`（加密助手 API key 的主密钥，`openssl rand -base64 32` 生成；不设置就不能保存 key，更换后已存的 key 失效）。
+- 构建：`scripts/build.sh`，先构建前端再嵌入，输出 `bin/lode`（Windows 为 `bin/lode.exe`）。运行：`bin/lode serve`，配置见环境变量 `LODE_ADDR`、`LODE_DATA_DIR`、`LODE_LOG_LEVEL`、`LODE_TRUSTED_PROXIES`、`LODE_SECRET_KEY`（可选，加密助手 API key 的主密钥，`openssl rand -base64 32` 生成；不设置则自动生成数据目录里的 `secret.key`，设置了则优先使用；更换主密钥后已存的 key 失效）。`lode backup` 默认包含 `secret.key`（`--no-secret` 可排除），`restore` 会恢复它；备份文件等同于含有 API key，请妥善保管。
 - 测试：`scripts/test.sh` 跑 Go 单测和前端单测；`scripts/test.sh --e2e` 再构建并跑 Playwright。
   - 单独跑：`cd server && go test ./...`、`pnpm -C web test`、`pnpm -C web typecheck`、`pnpm -C web e2e`（需要先构建 `bin/lode`）。
   - Playwright 启动的测试实例在 18787 端口，数据在 `web/.e2e-data/`，每次运行前清空。
-  - 规格文件按文件名字母序串行执行（1 个 worker）。`visual.spec`（axe、reduced motion、三种宽度布局、2500 篇笔记虚拟滚动）会写入大量笔记，必须排在最后；`touch.spec` 用 CDP 派发触摸手势；`talk-to-agent.spec` 内置模拟的 OpenAI 兼容服务，跑助手完整流程，需要排在 smoke 之后（首次设置）。
+  - 规格文件按文件名字母序串行执行（1 个 worker）。`visual.spec`（axe、reduced motion、三种宽度布局、2500 篇笔记虚拟滚动）会写入大量笔记，必须排在最后；`touch.spec` 用 CDP 派发触摸手势；`talk-to-agent.spec` 内置模拟的 OpenAI 兼容服务，跑助手完整流程，需要排在 smoke 之后（首次设置）；`split-view.spec` 逐帧采样桌面侧栏 / 右栏展开收起（按钮可见、正文无跳变、中途反向、拖拽调宽、减弱动态效果），同样排在 smoke 之后。
   - `pnpm -C web test` 里的 `tokens.lint.test.ts` 检查组件没有硬编码颜色和动画时长，规则见 [docs/design.md](docs/design.md)。
 - 截图：`LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e screenshots`，输出到 `docs/screenshots/stage-<N>/`。同步相关截图（离线、冲突）用 `LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e sync`。手势录屏加上 touch：`LODE_SCREENSHOTS=stage-<N> pnpm -C web e2e screenshots touch`，录屏输出到 `video/`（webm，需要时用 ffmpeg 转 mp4）。设了这个变量时不要跑全量 e2e：screenshots.spec 会先完成密码设置，导致 smoke 的首启用例失败。
 - PWA 图标：`node web/scripts/gen-icons.mjs` 从 SVG 重新生成 `web/public/` 下的图标。
