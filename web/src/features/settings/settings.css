@@ -738,20 +738,14 @@
 /* 供应商与模型表单 */
 .agent-form {
   width: min(30rem, 100%);
-  max-height: calc(100dvh - 2 * var(--space-4));
-  overflow-y: auto;
 }
-.agent-form-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.agent-form-body .settings-meta {
+.agent-form .settings-meta {
   margin-top: calc(-1 * var(--space-2));
 }
 .form-pair {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …)：输入框的固有宽度不撑破窄屏（手机 390px）下的两列 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-3);
 }
 .check-group {
