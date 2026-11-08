@@ -1,8 +1,9 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Copy, PanelLeft } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
 import { type ButtonHTMLAttributes, type MouseEvent, type ReactNode, createContext, useContext, useId } from 'react'
 import { IconButton } from '../../components/ui'
 import { copyText } from '../../lib/clipboard'
 import { useUI } from '../../stores/ui'
+import { PanelToggleSlot } from '../shell/PanelToggle'
 import { openSettings, settingsBack } from './nav'
 import { parentTitle, settingsPath } from './stack'
 
@@ -23,22 +24,16 @@ export function RowIcon({ tone, children }: { tone: Tone; children: ReactNode })
 
 /**
  * 页面顶栏：子页面左侧是返回按钮（显示上一级的标题），标题居中，右侧放页面操作。
- * 首页在手机上返回笔记列表；桌面端侧栏收起时显示展开侧栏的按钮。
+ * 首页在手机上返回笔记列表；桌面端侧栏收起时，左上角让位给浮动的展开侧栏按钮（#19）。
  */
 function SettingsBar({ sub, title, actions }: { sub: string[]; title: string; actions?: ReactNode }) {
   const { mobile } = useContext(SettingsContext)
-  const sidebarOpen = useUI((s) => s.sidebarOpen)
-  const toggleSidebar = useUI((s) => s.toggleSidebar)
   const navigate = useUI((s) => s.navigate)
   const parent = parentTitle(sub)
   return (
     <header className="view-bar settings-bar">
       <div className="settings-bar-lead">
-        {!mobile && !sidebarOpen && (
-          <IconButton label="显示侧栏 (Ctrl+\)" onClick={() => toggleSidebar(true)}>
-            <PanelLeft size={18} />
-          </IconButton>
-        )}
+        {!mobile && <PanelToggleSlot side="left" />}
         {sub.length > 0 ? (
           <button type="button" className="settings-back" aria-label={`返回${parent}`} onClick={() => settingsBack(sub)}>
             <ChevronLeft size={22} aria-hidden="true" />

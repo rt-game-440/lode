@@ -190,7 +190,23 @@ export function PanelToggleAnchor({ side }: { side: Side }) {
 }
 
 /**
- * 主区域标题栏里给收起按钮让位的空白，放在标题栏的第一个（左）或最后一个（右）子元素。
+ * 占位离主区域同侧边缘的距离（标题栏内边距，嵌在分组容器里时再加上容器的偏移）。
+ * 用 offsetLeft 累加，不受页面切换动画里的 transform 影响；不在主区域里时返回 null。
+ */
+function edgeDistance(el: HTMLElement, side: Side): number | null {
+  const main = el.closest<HTMLElement>('.shell-main')
+  let left = 0
+  let n: HTMLElement | null = el
+  while (n && n !== main) {
+    left += n.offsetLeft
+    n = n.offsetParent as HTMLElement | null
+  }
+  if (!main || n !== main) return null
+  return side === 'left' ? left : main.clientWidth - left - el.offsetWidth
+}
+
+/**
+ * 主区域标题栏里给收起按钮让位的空白，放在标题栏（或标题栏最外侧分组）的第一个（左）或最后一个（右）子元素。
  * 宽度逐帧跟着按钮变化；用负外边距抵消一份间距，宽度为 0 时标题栏和原来完全一样。
  * 只在桌面三栏里生效（手机布局里返回 null）。
  */
@@ -200,10 +216,11 @@ export function PanelToggleSlot({ side }: { side: Side }) {
   const pad = useMotionValue(8)
   const gap = useMotionValue(4)
   useLayoutEffect(() => {
-    const bar = ref.current?.parentElement
-    if (!bar) return
+    const el = ref.current
+    const bar = el?.parentElement
+    if (!el || !bar) return
     const cs = getComputedStyle(bar)
-    pad.set(parseFloat(side === 'left' ? cs.paddingLeft : cs.paddingRight) || 0)
+    pad.set(edgeDistance(el, side) ?? (parseFloat(side === 'left' ? cs.paddingLeft : cs.paddingRight) || 0))
     gap.set(parseFloat(cs.columnGap) || 0)
   }, [side, pad, gap])
   const cover = layout?.cover[side]
