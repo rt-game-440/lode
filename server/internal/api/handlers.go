@@ -119,7 +119,7 @@ func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
 // ---- 笔记 ----
 
 func (s *Server) tree(w http.ResponseWriter, r *http.Request) {
-	t, err := s.Notes.Tree(r.Context())
+	t, err := wsNotes(r).Tree(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -129,7 +129,7 @@ func (s *Server) tree(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	ns, err := s.Notes.List(r.Context(), q.Get("prefix"), q.Get("recursive") != "false")
+	ns, err := wsNotes(r).List(r.Context(), q.Get("prefix"), q.Get("recursive") != "false")
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -151,14 +151,14 @@ func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {
 	}
 	p := req.Path
 	if req.AutoRename {
-		free, err := s.Notes.FreePath(r.Context(), p)
+		free, err := wsNotes(r).FreePath(r.Context(), p)
 		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
 		p = free
 	}
-	n, err := s.Notes.Create(r.Context(), p, req.Content)
+	n, err := wsNotes(r).Create(r.Context(), p, req.Content)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -167,7 +167,7 @@ func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readNote(w http.ResponseWriter, r *http.Request) {
-	n, err := s.Notes.Read(r.Context(), r.PathValue("id"))
+	n, err := wsNotes(r).Read(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -176,7 +176,7 @@ func (s *Server) readNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readNoteByPath(w http.ResponseWriter, r *http.Request) {
-	n, err := s.Notes.ReadByPath(r.Context(), r.URL.Query().Get("path"))
+	n, err := wsNotes(r).ReadByPath(r.Context(), r.URL.Query().Get("path"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -200,7 +200,7 @@ func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "需要 base_rev 和 content", nil)
 		return
 	}
-	n, err := s.Notes.Update(r.Context(), r.PathValue("id"), *req.BaseRev, *req.Content)
+	n, err := wsNotes(r).Update(r.Context(), r.PathValue("id"), *req.BaseRev, *req.Content)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -218,7 +218,7 @@ func (s *Server) patchNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "需要 base_rev 和 edits", nil)
 		return
 	}
-	n, err := s.Notes.Patch(r.Context(), r.PathValue("id"), *req.BaseRev, req.Edits)
+	n, err := wsNotes(r).Patch(r.Context(), r.PathValue("id"), *req.BaseRev, req.Edits)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -227,7 +227,7 @@ func (s *Server) patchNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
-	item, err := s.Notes.Delete(r.Context(), r.PathValue("id"))
+	item, err := wsNotes(r).Delete(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -251,7 +251,7 @@ func (s *Server) moveNote(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	res, err := s.Notes.Move(r.Context(), r.PathValue("id"), req.Path)
+	res, err := wsNotes(r).Move(r.Context(), r.PathValue("id"), req.Path)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -260,7 +260,7 @@ func (s *Server) moveNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) backlinks(w http.ResponseWriter, r *http.Request) {
-	bl, err := s.Notes.Backlinks(r.Context(), r.PathValue("id"))
+	bl, err := wsNotes(r).Backlinks(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -269,7 +269,7 @@ func (s *Server) backlinks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) noteTags(w http.ResponseWriter, r *http.Request) {
-	tags, err := s.Notes.NoteTags(r.Context(), r.PathValue("id"))
+	tags, err := wsNotes(r).NoteTags(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -280,7 +280,7 @@ func (s *Server) noteTags(w http.ResponseWriter, r *http.Request) {
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
-	res, err := s.Notes.Search(r.Context(), notes.SearchQuery{Query: q.Get("q"), Limit: limit, PathPrefix: q.Get("path_prefix")})
+	res, err := wsNotes(r).Search(r.Context(), notes.SearchQuery{Query: q.Get("q"), Limit: limit, PathPrefix: q.Get("path_prefix")})
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -289,7 +289,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tags(w http.ResponseWriter, r *http.Request) {
-	tags, err := s.Notes.Tags(r.Context())
+	tags, err := wsNotes(r).Tags(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -298,7 +298,7 @@ func (s *Server) tags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) notesByTag(w http.ResponseWriter, r *http.Request) {
-	ns, err := s.Notes.NotesByTag(r.Context(), r.URL.Query().Get("tag"))
+	ns, err := wsNotes(r).NotesByTag(r.Context(), r.URL.Query().Get("tag"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -314,7 +314,7 @@ func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	p, err := s.Notes.CreateFolder(r.Context(), req.Path)
+	p, err := wsNotes(r).CreateFolder(r.Context(), req.Path)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -328,7 +328,7 @@ func (s *Server) moveFolder(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	res, err := s.Notes.MoveFolder(r.Context(), req.From, req.To)
+	res, err := wsNotes(r).MoveFolder(r.Context(), req.From, req.To)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -337,7 +337,7 @@ func (s *Server) moveFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteFolder(w http.ResponseWriter, r *http.Request) {
-	n, err := s.Notes.DeleteFolder(r.Context(), r.URL.Query().Get("path"))
+	n, err := wsNotes(r).DeleteFolder(r.Context(), r.URL.Query().Get("path"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -348,7 +348,7 @@ func (s *Server) deleteFolder(w http.ResponseWriter, r *http.Request) {
 // ---- 回收站 ----
 
 func (s *Server) listTrash(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Notes.ListTrash(r.Context())
+	items, err := wsNotes(r).ListTrash(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -357,7 +357,7 @@ func (s *Server) listTrash(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) restoreTrash(w http.ResponseWriter, r *http.Request) {
-	n, err := s.Notes.Restore(r.Context(), r.PathValue("id"))
+	n, err := wsNotes(r).Restore(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -366,7 +366,7 @@ func (s *Server) restoreTrash(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) purgeTrash(w http.ResponseWriter, r *http.Request) {
-	if err := s.Notes.Purge(r.Context(), r.PathValue("id")); err != nil {
+	if err := wsNotes(r).Purge(r.Context(), r.PathValue("id")); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -374,7 +374,7 @@ func (s *Server) purgeTrash(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) emptyTrash(w http.ResponseWriter, r *http.Request) {
-	if err := s.Notes.EmptyTrash(r.Context()); err != nil {
+	if err := wsNotes(r).EmptyTrash(r.Context()); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -403,17 +403,17 @@ func (s *Server) uploadAttachment(w http.ResponseWriter, r *http.Request) {
 		}
 		name = "pasted-" + time.Now().Format("20060102-150405") + ext
 	}
-	rel, err := s.Notes.SaveAttachment(r.Context(), name, file, s.MaxUploadBytes)
+	rel, err := wsNotes(r).SaveAttachment(r.Context(), name, file, s.MaxUploadBytes)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"path": rel, "url": "/api/files/" + escapePath(rel)})
+	writeJSON(w, http.StatusCreated, map[string]string{"path": rel, "url": apiPrefix(currentWorkspace(r)) + "/files/" + escapePath(rel)})
 }
 
 // listImages 列出 vault 里的图片，供助手选择附件。
 func (s *Server) listImages(w http.ResponseWriter, r *http.Request) {
-	imgs, err := s.Notes.Images(500)
+	imgs, err := wsNotes(r).Images(500)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -422,7 +422,7 @@ func (s *Server) listImages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
-	f, info, err := s.Notes.OpenFile(r.PathValue("path"))
+	f, info, err := wsNotes(r).OpenFile(r.PathValue("path"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -445,7 +445,7 @@ func escapePath(p string) string {
 func (s *Server) changes(w http.ResponseWriter, r *http.Request) {
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	cs, latest, err := s.Notes.Changes(r.Context(), since, limit)
+	cs, latest, err := wsNotes(r).Changes(r.Context(), since, limit)
 	if err != nil {
 		s.fail(w, r, err)
 		return

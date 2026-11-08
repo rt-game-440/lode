@@ -1,4 +1,5 @@
 import { deviceId, deviceName } from '../lib/device'
+import { apiPrefix, currentWorkspace, workspaceOfApiUrl } from '../lib/workspace'
 import type {
   ApiToken,
   AuditEntry,
@@ -17,6 +18,7 @@ import type {
   TokenScope,
   TrashItem,
   Tree,
+  WorkspaceInfo,
 } from './types'
 
 /** 接口返回的错误：status 为 HTTP 状态码，code 为 docs/api.md 中的错误码。 */
@@ -45,6 +47,8 @@ export function errorMessage(err: unknown): string {
         return '笔记已在别处被修改'
       case 'network':
         return '网络不可用'
+      case 'workspace_not_found':
+        return '工作空间不存在'
     }
     return err.message || '操作失败'
   }
@@ -55,6 +59,12 @@ export function errorMessage(err: unknown): string {
 let onUnauthorized: (() => void) | null = null
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn
+}
+
+/** 请求的工作空间不存在（被删除或地址写错）时的回调，参数是工作空间 id；由工作空间 store 注册。 */
+let onWorkspaceMissing: ((ws: string) => void) | null = null
+export function setWorkspaceMissingHandler(fn: (ws: string) => void) {
+  onWorkspaceMissing = fn
 }
 
 export async function request<T>(method: string, url: string, body?: unknown, init: RequestInit = {}): Promise<T> {
@@ -88,6 +98,10 @@ export async function request<T>(method: string, url: string, body?: unknown, in
   if (!res.ok) {
     const d = (data ?? {}) as Record<string, unknown>
     if (res.status === 401 && d.code === 'unauthorized') onUnauthorized?.()
+    if (res.status === 404 && d.code === 'workspace_not_found') {
+      const ws = workspaceOfApiUrl(url)
+      if (ws) onWorkspaceMissing?.(ws)
+    }
     throw new ApiError(res.status, String(d.code ?? 'error'), String(d.message ?? res.statusText), d)
   }
   return data as T
@@ -100,7 +114,10 @@ const q = (params: Record<string, string | number | boolean | undefined>) => {
   return s ? `?${s}` : ''
 }
 
-export const api = {
+/**
+ * 全局接口（鉴权、通行密钥、token、审计、工作空间登记等），不挂工作空间前缀。
+ */
+const globalApi = {
   health: () => request<{ status: string; version: string }>('GET', '/api/health'),
 
   authStatus: () => request<AuthStatus>('GET', '/api/auth/status'),
@@ -128,52 +145,85 @@ export const api = {
   keyProtectionDisable: (discard = false) =>
     request<{ key_protection: KeyProtection; cleared_keys: number }>('POST', '/api/key-protection/disable', { discard }),
 
-  tree: () => request<Tree>('GET', '/api/tree'),
-  readNote: (id: string) => request<NoteContent>('GET', `/api/notes/${encodeURIComponent(id)}`),
-  createNote: (path: string, content = '', autoRename = false) =>
-    request<NoteContent>('POST', '/api/notes', { path, content, auto_rename: autoRename }),
-  updateNote: (id: string, baseRev: number, content: string, init?: RequestInit) =>
-    request<NoteContent>('PUT', `/api/notes/${encodeURIComponent(id)}`, { base_rev: baseRev, content }, init),
-  moveNote: (id: string, path: string) => request<MoveResult>('POST', `/api/notes/${encodeURIComponent(id)}/move`, { path }),
-  deleteNote: (id: string) => request<TrashItem>('DELETE', `/api/notes/${encodeURIComponent(id)}`),
-  backlinks: (id: string) =>
-    request<{ backlinks: Backlink[] }>('GET', `/api/notes/${encodeURIComponent(id)}/backlinks`).then((r) => r.backlinks),
-  noteTags: (id: string) =>
-    request<{ tags: string[] }>('GET', `/api/notes/${encodeURIComponent(id)}/tags`).then((r) => r.tags ?? []),
-
-  search: (query: string, limit = 30) =>
-    request<{ results: SearchResult[] }>('GET', `/api/search${q({ q: query, limit })}`).then((r) => r.results),
-  tags: () => request<{ tags: TagCount[] }>('GET', '/api/tags').then((r) => r.tags),
-  notesByTag: (tag: string) => request<{ notes: Note[] }>('GET', `/api/tags/notes${q({ tag })}`).then((r) => r.notes),
-
-  createFolder: (path: string) => request<{ path: string }>('POST', '/api/folders', { path }),
-  moveFolder: (from: string, to: string) =>
-    request<{ path: string; moved: number; updated: Note[] }>('POST', '/api/folders/move', { from, to }),
-  deleteFolder: (path: string) => request<{ trashed: number }>('DELETE', `/api/folders${q({ path })}`),
-
-  trash: () => request<{ items: TrashItem[] }>('GET', '/api/trash').then((r) => r.items),
-  restore: (id: string) => request<Note>('POST', `/api/trash/${encodeURIComponent(id)}/restore`),
-  purge: (id: string) => request<void>('DELETE', `/api/trash/${encodeURIComponent(id)}`),
-  emptyTrash: () => request<void>('DELETE', '/api/trash'),
-
-  uploadAttachment: (file: File | Blob, name?: string) => {
-    const fd = new FormData()
-    fd.append('file', file, name ?? (file instanceof File ? file.name : 'image.png'))
-    return request<{ path: string; url: string }>('POST', '/api/attachments', fd)
-  },
-
-  images: () => request<{ images: { path: string; size: number; mtime: number }[] }>('GET', '/api/images').then((r) => r.images),
-
-  changes: (since: number) => request<{ changes: Change[]; seq: number }>('GET', `/api/changes${q({ since })}`),
+  workspaces: () => request<{ workspaces: WorkspaceInfo[] }>('GET', '/api/workspaces').then((r) => r.workspaces),
+  /** vaultDir 非空时把服务器上已有的文件夹（绝对路径）接入为外部工作空间 */
+  createWorkspace: (name: string, vaultDir?: string) =>
+    request<WorkspaceInfo>('POST', '/api/workspaces', vaultDir ? { name, vault_dir: vaultDir } : { name }),
+  /** name：改名；sort：移到列表里的第几位（从 0 开始）。 */
+  updateWorkspace: (id: string, patch: { name?: string; sort?: number }) =>
+    request<WorkspaceInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}`, patch),
+  /** 删除工作空间：目录移到数据目录的 trash-workspaces/ 下，绑定它的 token 一并作废。 */
+  deleteWorkspace: (id: string) =>
+    request<{ trash: string; revoked_tokens: number }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}`),
 
   tokens: () => request<{ tokens: ApiToken[] }>('GET', '/api/tokens').then((r) => r.tokens),
-  createToken: (name: string, scope: TokenScope) =>
-    request<{ token: ApiToken; secret: string }>('POST', '/api/tokens', { name, scope }),
+  createToken: (name: string, scope: TokenScope, workspace: string) =>
+    request<{ token: ApiToken; secret: string }>('POST', '/api/tokens', { name, scope, workspace }),
   revokeToken: (id: string) => request<void>('DELETE', `/api/tokens/${encodeURIComponent(id)}`),
-  audit: (limit = 100) => request<{ entries: AuditEntry[] }>('GET', `/api/audit${q({ limit })}`).then((r) => r.entries),
+  audit: (limit = 100, workspace?: string) =>
+    request<{ entries: AuditEntry[] }>('GET', `/api/audit${q({ limit, workspace })}`).then((r) => r.entries),
 }
 
-/** vault 内文件的访问 URL。 */
+/**
+ * 按工作空间区分的接口（笔记、树、文件夹、搜索、标签、附件、回收站、增量变更）。
+ * prefix() 在每次调用时求值：`/api` 或 `/api/w/<id>`。
+ */
+function notesApi(prefix: () => string) {
+  const enc = encodeURIComponent
+  return {
+    tree: () => request<Tree>('GET', `${prefix()}/tree`),
+    readNote: (id: string) => request<NoteContent>('GET', `${prefix()}/notes/${enc(id)}`),
+    createNote: (path: string, content = '', autoRename = false) =>
+      request<NoteContent>('POST', `${prefix()}/notes`, { path, content, auto_rename: autoRename }),
+    updateNote: (id: string, baseRev: number, content: string, init?: RequestInit) =>
+      request<NoteContent>('PUT', `${prefix()}/notes/${enc(id)}`, { base_rev: baseRev, content }, init),
+    moveNote: (id: string, path: string) => request<MoveResult>('POST', `${prefix()}/notes/${enc(id)}/move`, { path }),
+    deleteNote: (id: string) => request<TrashItem>('DELETE', `${prefix()}/notes/${enc(id)}`),
+    backlinks: (id: string) =>
+      request<{ backlinks: Backlink[] }>('GET', `${prefix()}/notes/${enc(id)}/backlinks`).then((r) => r.backlinks),
+    noteTags: (id: string) =>
+      request<{ tags: string[] }>('GET', `${prefix()}/notes/${enc(id)}/tags`).then((r) => r.tags ?? []),
+
+    search: (query: string, limit = 30) =>
+      request<{ results: SearchResult[] }>('GET', `${prefix()}/search${q({ q: query, limit })}`).then((r) => r.results),
+    tags: () => request<{ tags: TagCount[] }>('GET', `${prefix()}/tags`).then((r) => r.tags),
+    notesByTag: (tag: string) => request<{ notes: Note[] }>('GET', `${prefix()}/tags/notes${q({ tag })}`).then((r) => r.notes),
+
+    createFolder: (path: string) => request<{ path: string }>('POST', `${prefix()}/folders`, { path }),
+    moveFolder: (from: string, to: string) =>
+      request<{ path: string; moved: number; updated: Note[] }>('POST', `${prefix()}/folders/move`, { from, to }),
+    deleteFolder: (path: string) => request<{ trashed: number }>('DELETE', `${prefix()}/folders${q({ path })}`),
+
+    trash: () => request<{ items: TrashItem[] }>('GET', `${prefix()}/trash`).then((r) => r.items),
+    restore: (id: string) => request<Note>('POST', `${prefix()}/trash/${enc(id)}/restore`),
+    purge: (id: string) => request<void>('DELETE', `${prefix()}/trash/${enc(id)}`),
+    emptyTrash: () => request<void>('DELETE', `${prefix()}/trash`),
+
+    uploadAttachment: (file: File | Blob, name?: string) => {
+      const fd = new FormData()
+      fd.append('file', file, name ?? (file instanceof File ? file.name : 'image.png'))
+      return request<{ path: string; url: string }>('POST', `${prefix()}/attachments`, fd)
+    },
+
+    images: () =>
+      request<{ images: { path: string; size: number; mtime: number }[] }>('GET', `${prefix()}/images`).then((r) => r.images),
+
+    changes: (since: number) => request<{ changes: Change[]; seq: number }>('GET', `${prefix()}/changes${q({ since })}`),
+  }
+}
+
+/** 固定在某个工作空间上的笔记接口：同步引擎用它，切换工作空间后旧引擎里还没完成的请求仍发往原来的工作空间。 */
+export type WorkspaceApi = ReturnType<typeof notesApi>
+
+export function workspaceApi(ws: string): WorkspaceApi {
+  const prefix = apiPrefix(ws)
+  return notesApi(() => prefix)
+}
+
+/** 界面用的客户端：笔记相关接口发往当前工作空间（见 lib/workspace），其余是全局接口。 */
+export const api = { ...globalApi, ...notesApi(() => apiPrefix(currentWorkspace())) }
+
+/** 当前工作空间里 vault 文件的访问 URL。 */
 export function fileUrl(path: string): string {
-  return '/api/files/' + path.split('/').map(encodeURIComponent).join('/')
+  return `${apiPrefix(currentWorkspace())}/files/` + path.split('/').map(encodeURIComponent).join('/')
 }

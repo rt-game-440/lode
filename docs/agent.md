@@ -109,3 +109,9 @@ Lode 统一用 4 档：`off`、`low`、`medium`、`high`。模型设置里“推
 - 每轮（一条用户消息开始到模型给出最终回答）最多 20 次工具调用。超出的调用直接返回“已达到上限”的错误结果，模型再请求一次工具就结束本轮。
 - 上下文预算 = 上下文窗口 − 最大输出 − 窗口的 5%。估算：中日韩字符每字 1 token，其他字符每 4 个 1 token。超出预算时先截断较早的工具结果；仍超出时用当前模型把较早的轮次压缩成摘要（单独一次请求，计入对话用量），摘要缓存在对话记录里，之后再超出时只把新增的轮次合并进已有摘要；模型调用失败时退回本地规则生成的摘要（每轮的提问、调用过的工具和回答开头）。系统提示和最近一轮始终保留。
 - 停止：点“停止”或对话的所有客户端都断开超过 30 秒（`Service.DisconnectGrace`）时取消请求上下文，向供应商的请求随之中断，已生成的部分保存并标记“已停止”。宽限时间内重连则继续生成。只用 `POST /messages` 而不订阅事件流的脚本同样受此限制。
+
+## 按工作空间隔离（阶段 7）
+
+- 全局（`app.db`，`agent.Store`）：供应商、模型、`agent_settings`、API key 与主密钥。按工作空间（`agent.ChatStore`）：`agent_chats`、`agent_messages`、`agent_pending`。三张表有外键，必须同库：默认工作空间在 `app.db`（`Store.DefaultChats()`，升级前的旧对话自然属于它），其他工作空间在各自的 `index.db`（`workspace.Workspace.Chats`，`index.db` 与 `app.db` 同构，已有这三张表）。
+- `agent.Service` 全局一个。每次调用传入 `agent.Space{ID, Chats, Tools, Notes}`（api 层用 `workspace.Workspace.AgentSpace(Store.DefaultChats())` 得到）：工具调用、`@` 提及读取、预览都用对话所属工作空间的 `Tools/Notes`，对话读写用它的 `Chats`。一次生成从开始到结束固定用同一个 `Space`，所以前端切换工作空间不影响正在生成的任务。生成中的任务、事件订阅都按“工作空间 id + 对话 id”区分。
+- **删除工作空间时**（#59）：先让工作空间不再可访问，再调用 `agent.Service.CloseWorkspace(id)` —— 取消并等待该工作空间名下所有生成任务结束（已生成的部分写进它自己的库），之后该 id 不再接受新的生成，其他工作空间的任务不受影响；然后才能关闭它的 `index.db`、移走目录。对话随 `index.db` 一起移走，不需要单独删除。进程退出时 `main.go` 先 `agentSvc.Close()` 再 `workspaces.Close()`。

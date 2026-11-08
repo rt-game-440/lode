@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { api } from '../api/client'
 import type { Change, MoveResult, Note, TagCount } from '../api/types'
 import { dirname, join } from '../lib/paths'
+import { currentWorkspace } from '../lib/workspace'
 import { sync } from '../sync/engine'
 import { useEditor } from './editor'
 
@@ -41,7 +42,10 @@ export const useVault = create<VaultState>((set, get) => ({
   tags: [],
 
   load: async () => {
-    const t = await sync.loadTree()
+    const engine = sync
+    const t = await engine.loadTree()
+    // 等待期间切换了工作空间：这是旧工作空间的树，丢掉
+    if (engine !== sync) return
     const notes: Record<string, Note> = {}
     for (const n of t.notes) notes[n.id] = n
     set((s) => ({ loaded: true, fromCache: t.fromCache, folders: t.folders, notes, version: s.version + 1 }))
@@ -61,8 +65,10 @@ export const useVault = create<VaultState>((set, get) => ({
     }),
 
   refreshTags: async () => {
+    const ws = currentWorkspace()
     try {
-      set({ tags: await api.tags() })
+      const tags = await api.tags()
+      if (ws === currentWorkspace()) set({ tags })
     } catch {
       /* 忽略：标签只是辅助信息 */
     }
@@ -179,7 +185,24 @@ useVault.subscribe((s, prev) => {
   if (!s.loaded || s.fromCache || (s.notes === prev.notes && s.folders === prev.folders)) return
   if (cacheTimer) clearTimeout(cacheTimer)
   cacheTimer = setTimeout(() => {
-    const { folders, notes } = useVault.getState()
-    sync.cacheTree(folders, Object.values(notes))
+    const { folders, notes, loaded, fromCache } = useVault.getState()
+    if (loaded && !fromCache) sync.cacheTree(folders, Object.values(notes))
   }, 500)
 })
+
+/** 切换工作空间：清空笔记树，等新工作空间的树载入（还没写进缓存的旧树变化已在切换前写入，见 stores/workspace）。 */
+export function resetVault() {
+  if (changeTimer) clearTimeout(changeTimer)
+  if (cacheTimer) clearTimeout(cacheTimer)
+  changeTimer = cacheTimer = null
+  useVault.setState((s) => ({ loaded: false, fromCache: false, folders: [], notes: {}, tags: [], version: s.version + 1 }))
+}
+
+/** 立即把待写的笔记树缓存写进当前引擎的 IndexedDB（切换工作空间之前调用）。 */
+export function flushTreeCache() {
+  if (!cacheTimer) return
+  clearTimeout(cacheTimer)
+  cacheTimer = null
+  const { folders, notes, loaded, fromCache } = useVault.getState()
+  if (loaded && !fromCache) sync.cacheTree(folders, Object.values(notes))
+}

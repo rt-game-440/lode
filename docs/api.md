@@ -15,6 +15,7 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
   - 两边改动重叠，或 `base_rev` 那一版已被清理：服务器版本不变，请求内容另存为冲突副本 `名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md`（与原笔记同目录，设备名取 `X-Device-Name`，缺省为“未知设备”），返回 `409 conflict`，带 `current_rev`、`conflict_id`、`conflict_path`。
   - 阶段 1 中 `base_rev` 过期一律返回 409；阶段 2 起只有无法自动合并时才返回 409，且 409 意味着请求内容已经保存在冲突副本里，客户端不需要重试。
 - **请求体上限**：JSON 32 MB；附件 20 MB。
+- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。工作空间的列出和新建见下文“工作空间”一节，设计见 [workspaces.md](workspaces.md)。助手对话（`agent/chats*`）按工作空间隔离（阶段 7，见下文“助手”一节）。
 
 ### 错误格式
 
@@ -30,6 +31,9 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
 | 401 | `unauthorized` | 未登录或会话过期 | |
 | 401 | `wrong_password` | 密码错误 | |
 | 404 | `not_found` | 笔记、文件夹、回收站条目或文件不存在 | |
+| 400 | `vault_dir_<原因>` | 新建工作空间时 `vault_dir` 不合法，原因见“工作空间”一节的“外部目录” | `reason`（`<原因>`） |
+| 404 | `workspace_not_found` | `/api/w/{ws}/...` 里的工作空间不存在 | `error`（同 `code`） |
+| 503 | `workspace_vault_unavailable` | `/api/w/{ws}/...` 的外部工作空间的笔记文件夹不存在（被删、被移动或所在磁盘没挂载）；不会代为重建 | |
 | 409 | `conflict` | `base_rev` 过期且无法自动合并，请求内容已另存为冲突副本（PATCH 在 base 版本缺失时不生成副本） | `current_rev`、`conflict_id`、`conflict_path` |
 | 409 | `exists` | 目标路径已被占用 | |
 | 409 | `already_initialized` | 密码已经设置过 | |
@@ -119,6 +123,50 @@ RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直�
 | POST | `/api/key-protection/disable` | `{"discard":bool}` | `200 {"key_protection":{…},"cleared_keys":n}`：已解锁时把主密钥写回 `secret.key`，已保存的 key 不受影响；锁定时必须 `discard: true`，生成新的 `secret.key` 并清除已保存的 API key |
 
 错误码：`409 env_secret_key`（设置了 `LODE_SECRET_KEY`）、`409 already_enabled` / `not_enabled`、`400 prf_unsupported`（通行密钥没有给出 PRF 输出）、`409 not_enrolled`（这个通行密钥没加入保护）、`400 unwrap_failed`（PRF 输出解不开包裹）、`409 keys_locked`（需要先解锁）、`400 passkey_failed` / `ceremony_expired`、`404 not_found`（当前域名下没有可用的通行密钥）。
+
+## 工作空间（阶段 7）
+
+全局接口，不挂工作空间前缀。
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| GET | `/api/workspaces` | | `200 {"workspaces":[Workspace]}`，按 `sort`（相同时按创建时间）排序；不会打开任何工作空间 |
+| POST | `/api/workspaces` | `{"name":"…","vault_dir"?:"<绝对路径>"}`；`vault_dir` 也可写成 `vaultDir`（两个都给且不一致时 `400 bad_request`） | `201 Workspace`；名称去掉首尾空白后为空、超过 64 个字符或含控制字符时 `400 bad_request`；`vault_dir` 校验失败时 `400 vault_dir_<原因>`，见下文“外部目录” |
+| PATCH | `/api/workspaces/{id}` | `{"name"?:"…","sort"?:n}`，至少给一个 | `200 Workspace`。`name` 规则同新建，默认工作空间也可以改名；`sort` 是目标位置（从 0 开始，超出范围按两端处理），移动后所有工作空间的 `sort` 重新编号为 0、1、2…，默认工作空间也可以挪位置。两个都没给、名称不合法或 `sort` 为负数时 `400 bad_request` |
+| DELETE | `/api/workspaces/{id}` | | `200 {"trash":"trash-workspaces/<id>-<时间>","revoked_tokens":n}`；默认工作空间 `403 forbidden` |
+
+管理接口里工作空间不存在返回 `404 not_found`（不是 `workspace_not_found`，后者只用于 `/api/w/<id>/...` 的访问）。
+
+`Workspace`：`{"id":"k3f9a2","name":"工作","external":false,"sort":1,"created_at":1794142854549,"note_count":0,"path":"workspaces/k3f9a2/vault"}`。`path` 是笔记文件所在位置：内置空间相对数据目录，外部目录是绝对路径。`id` 是 6 位小写字母或数字，创建后不变；`default` 是默认工作空间（名称“笔记”）。`vault_dir` 只对外部目录返回。`note_count` 是索引里的笔记数，还没打开过的工作空间读的是上次的索引。
+
+新建的工作空间放在数据目录的 `workspaces/<id>/` 下（`index.db`、`vault/`、`trash/`），之后用 `/api/w/<id>/...` 访问。它在第一次被访问时才打开（建立文件监听、全量对账，直接放进 `vault/` 的文件这时进入索引），之后保持到服务退出。各工作空间的笔记、搜索、标签、反链、回收站、变更序号和 WebSocket 推送互不影响。
+
+### 外部目录
+
+`POST /api/workspaces` 带 `vault_dir`（服务器上已有文件夹的绝对路径，比如现有的 Obsidian 库）时，这个文件夹直接作为工作空间的 vault，不再在数据目录里建 `vault/`。外部目录里只放笔记文件：**Lode 不会往里面写别的东西**，索引（`index.db`）、回收站（`trash/`）和对话仍在数据目录的 `workspaces/<id>/` 下；在 Lode 里删除笔记是移到那个回收站（跨磁盘时自动退回到复制 + 删除）。`.obsidian` 等以点开头的目录、非 Markdown 文件不会被索引，也不会被改动。接入后第一次访问时对账出全部笔记，之后在外部（比如 Obsidian）直接修改文件会被文件监听到。
+
+`vault_dir` 的校验规则与错误码（HTTP 400，`code` 为 `vault_dir_<原因>`，响应另带 `reason`，`message` 是可直接展示的中文说明）：
+
+| `code` | 含义 |
+| --- | --- |
+| `vault_dir_not_absolute` | 不是绝对路径 |
+| `vault_dir_not_found` | 路径不存在（不会代为创建） |
+| `vault_dir_not_directory` | 路径是文件 |
+| `vault_dir_unreadable` | 目录读不了（没有权限等） |
+| `vault_dir_invalid` | 含控制字符或不是合法的 UTF-8 |
+| `vault_dir_root` | 磁盘根目录（`/`、`C:\`） |
+| `vault_dir_home` | 运行 Lode 的用户的主目录本身（里面的子文件夹可以） |
+| `vault_dir_data_dir` | 就是 Lode 的数据目录 |
+| `vault_dir_inside_data_dir` | 在 Lode 的数据目录里面 |
+| `vault_dir_contains_data_dir` | Lode 的数据目录在它里面 |
+| `vault_dir_same_vault` | 已经是另一个外部工作空间的目录 |
+| `vault_dir_nested_vault` | 与另一个外部工作空间的目录互相嵌套 |
+
+比较前会解析符号链接，Windows 和 macOS 上忽略大小写。登记表里保存的是解析后的绝对路径，`Workspace.vault_dir` 返回它（内置空间没有这个字段）。外部目录已经不在时，访问该空间返回 `503 workspace_vault_unavailable`（不会重建目录，也不会把索引清空），设置页里仍可删除。同一个文件夹被两个 Lode 实例使用无法完全阻止，请避免。
+
+删除外部工作空间：**外部目录里的笔记文件一个都不动**，只有 `workspaces/<id>/`（索引、回收站里已删除的笔记、助手对话）和内置空间一样移到 `trash-workspaces/<id>-<时间>/`，绑定它的 token 作废。删除后可以重新接入同一个文件夹。
+
+删除内置工作空间时：先让它不能再被访问，停掉文件监听和后台任务、关闭 `index.db`，再把整个 `workspaces/<id>/` 目录移到数据目录的 `trash-workspaces/<id>-<yyyyMMdd-HHmmss>/`（不直接删除，可以在服务器上手动取回），从登记表移除，并删除绑定它的所有 API token（立即返回 401）。该空间上还没断开的 WebSocket 会被关闭。目录移动失败时整体回滚，空间保持可用。
 
 ## 笔记
 
@@ -217,9 +265,9 @@ PATCH 的 `edits` 按顺序应用，每处 `old` 必须在当时的正文里恰�
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
 | GET | `/api/tokens` | | `200 {"tokens":ApiToken[]}`，按创建时间倒序（吊销即删除，不再出现在列表里） |
-| POST | `/api/tokens` | `{"name":"…","scope":"read"\|"write"}` | `201 {"token":ApiToken,"secret":"lode_…"}`；名称为空、超过 64 个字符或权限不合法时 `400 bad_request` |
+| POST | `/api/tokens` | `{"name":"…","scope":"read"\|"write","workspace"?:"<id>"}`，`workspace` 省略时是 `default` | `201 {"token":ApiToken,"secret":"lode_…"}`；名称为空、超过 64 个字符、权限不合法或工作空间不存在时 `400 bad_request` |
 | DELETE | `/api/tokens/{id}` | | `204`；`404 not_found` |
-| GET | `/api/audit?limit=` | `limit` 默认 100，超过 1000 按 1000 处理；不是正整数时 `400 bad_request` | `200 {"entries":AuditEntry[]}`，按时间倒序 |
+| GET | `/api/audit?limit=&workspace=` | `limit` 默认 100，超过 1000 按 1000 处理；不是正整数时 `400 bad_request`；`workspace` 只返回该工作空间的记录，省略返回全部 | `200 {"entries":AuditEntry[]}`，按时间倒序 |
 | POST | `/mcp` | MCP JSON-RPC（Streamable HTTP） | 见 [docs/mcp.md](mcp.md) |
 
 ```ts
@@ -227,6 +275,7 @@ type ApiToken = {
   id: string
   name: string
   scope: 'read' | 'write'
+  workspace: string      // 绑定的工作空间 id，旧 token 是 'default'
   created_at: number
   last_used_at: number   // 0 表示从未使用
 }
@@ -235,6 +284,7 @@ type AuditEntry = {
   at: number
   token_id: string
   token_name: string
+  workspace: string      // 调用发生的工作空间 id
   tool: string
   target: string         // 工具涉及的路径或搜索词，可能为空
   ok: boolean
@@ -254,6 +304,8 @@ type AuditEntry = {
 ## 助手（阶段 5）
 
 需要会话 cookie。API key 用主密钥派生的密钥（HKDF-SHA256 → AES-256-GCM）加密后存进 SQLite，任何响应里都不会出现明文 key，只返回 `has_key` 和末 4 位 `key_last4`。主密钥优先取环境变量 `LODE_SECRET_KEY`，否则取数据目录里自动生成的 `secret.key`；两者都不可用（例如数据目录不可写）时，带 key 的保存请求返回 `400`。开启了“用通行密钥保护 API key”且服务重启后还没解锁时，用到已保存 key 的请求（测试连接、发送消息）返回 `409 keys_locked`，`message` 说明要先用通行密钥登录或在设置里解锁；保存新 key 返回 `400`。
+
+**按工作空间隔离**（阶段 7）：供应商、模型、助手设置和 API key 全局只配置一份（`/api/agent/config`、`providers*`、`models*`、`settings`，不挂工作空间前缀）；对话、消息和待批准操作按工作空间存放（`/api/agent/chats*` 和 `/api/w/{ws}/agent/chats*`），对话列表只含所在工作空间的对话，用别的工作空间的对话 id 访问返回 `404 not_found`。助手的工具调用（搜索、读取、写入等）和 `@` 提及只作用于对话所属的工作空间；正在生成的任务记在对应工作空间名下，请求结束或浏览器切换到别的工作空间都不影响它。升级前的对话都属于默认工作空间。
 
 错误码：对象不存在 `404 not_found`；参数不合法 `400 bad_request`（`message` 是中文说明）；对话正在运行时删除对话、或重复发送 `409 conflict`。
 

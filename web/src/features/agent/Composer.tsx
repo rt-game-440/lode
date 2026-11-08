@@ -230,7 +230,7 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
             onMouseDown={(e) => e.preventDefault()}
           >
             {items.length > 0 ? (
-              <ul id={listId} role="listbox" aria-label="笔记" className="mention-list">
+              <ul id={listId} role="listbox" aria-label="笔记" className="mention-list" tabIndex={0}>
                 {items.map((n, i) => (
                   <li
                     key={n.id}

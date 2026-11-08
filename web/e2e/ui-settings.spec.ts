@@ -44,7 +44,7 @@ test('设置首页是分组列表，每行有图标、名称、状态摘要和 �
   await p.goto('/settings')
   await expect(heading(p, '设置')).toBeVisible()
   const home = p.getByTestId('settings-home')
-  for (const g of ['通用', '助手', 'agent 接入']) await expect(home.getByRole('heading', { name: g, level: 2 })).toBeVisible()
+  for (const g of ['通用', '工作空间', '助手', 'agent 接入']) await expect(home.getByRole('heading', { name: g, level: 2 })).toBeVisible()
 
   const row = (name: string) => home.getByRole('link', { name: new RegExp(`^${name}`) })
   await expect(row('外观')).toContainText('跟随系统')
@@ -56,7 +56,7 @@ test('设置首页是分组列表，每行有图标、名称、状态摘要和 �
   await expect(row('调用记录')).toContainText(/暂无|最近/)
   // 每行都是链接，有图标和 ›
   const links = home.getByRole('link')
-  await expect(links).toHaveCount(7)
+  await expect(links).toHaveCount(8)
   for (const l of await links.all()) {
     await expect(l.locator('.row-icon')).toHaveCount(1)
     await expect(l.locator('.nav-row-chevron')).toHaveCount(1)

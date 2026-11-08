@@ -61,7 +61,7 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	if err := e.auth.Setup(ctx, "correct-horse"); err != nil {
 		t.Fatal(err)
 	}
-	_, token, err := e.auth.CreateToken(ctx, "脚本", "write")
+	_, token, err := e.auth.CreateToken(ctx, "脚本", "write", "")
 	if err != nil {
 		t.Fatal(err)
 	}

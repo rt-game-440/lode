@@ -8,6 +8,7 @@ import { useVault } from '../../stores/vault'
 import { useSync } from '../../sync/engine'
 import { newFolder, newNote } from '../actions'
 import { PanelToggleAnchor } from '../shell/PanelToggle'
+import { WorkspaceSwitcher } from '../workspace/WorkspaceSwitcher'
 import { FileTree } from './FileTree'
 import { SearchPanel } from './SearchPanel'
 import { SyncIndicator } from './SyncIndicator'
@@ -97,7 +98,8 @@ export function Sidebar(_props: { mobile?: boolean }) {
   return (
     <nav className="sidebar" aria-label="侧栏">
       <header className="sidebar-head">
-        <span className="sidebar-brand">Lode</span>
+        {/* 当前工作空间名，点击切换或新建（原来是固定的 Lode 标题） */}
+        <WorkspaceSwitcher />
         <span className="spacer" />
         <IconButton label="新建文件夹" onClick={() => void newFolder('')}>
           <FolderPlus size={18} />

@@ -27,12 +27,15 @@ interface Schema extends DBSchema {
   meta: { key: string; value: unknown }
 }
 
-/** 本地持久化：笔记树快照、打开过的笔记正文、写队列。IndexedDB 不可用时退化为内存。 */
+/**
+ * 本地持久化：笔记树快照、打开过的笔记正文、写队列。IndexedDB 不可用时退化为内存。
+ * 每个工作空间一个库（名称见 lib/workspace 的 localDbName），默认工作空间沿用 `lode`。
+ */
 export class LocalDB {
   private db: Promise<IDBPDatabase<Schema> | null>
   private mem = { notes: new Map<string, NoteContent>(), queue: new Map<string, QueueEntry>(), meta: new Map<string, unknown>() }
 
-  constructor(name = 'lode') {
+  constructor(readonly name = 'lode') {
     this.db =
       typeof indexedDB === 'undefined'
         ? Promise.resolve(null)
@@ -95,6 +98,13 @@ export class LocalDB {
       this.mem.notes.clear()
       this.mem.meta.clear()
     }
+  }
+
+  /** 关闭连接（切换工作空间后不再使用的库）；之后的读写退化为内存。 */
+  async close(): Promise<void> {
+    const db = await this.db
+    this.db = Promise.resolve(null)
+    db?.close()
   }
 
   async getTree(): Promise<TreeSnapshot | undefined> {

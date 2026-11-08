@@ -20,7 +20,6 @@ import (
 	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/db"
 	"github.com/rt-game-440/lode/server/internal/secret"
-	"github.com/rt-game-440/lode/server/internal/tools"
 )
 
 // lockedBuffer 收集日志输出，供检查日志里有没有明文 key。
@@ -52,7 +51,7 @@ func withAgent(t *testing.T, master string, logs *lockedBuffer) (func(*Server), 
 	return func(s *Server) {
 		log := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		s.Log = log
-		s.Agent = &agent.Service{Store: agent.NewStore(adb, secret.New(master)), Tools: tools.New(s.Notes), Notes: s.Notes, Log: log}
+		s.Agent = &agent.Service{Store: agent.NewStore(adb, secret.New(master)), Log: log}
 		t.Cleanup(s.Agent.Close)
 	}, adb
 }

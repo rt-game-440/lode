@@ -19,6 +19,13 @@ type Tree struct {
 	Seq     int64    `json:"seq"` // 生成该树时的最新变更序号
 }
 
+// NoteCount 返回索引里的笔记数。
+func (s *Service) NoteCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM notes`).Scan(&n)
+	return n, err
+}
+
 // Tree 返回整个文件树。
 func (s *Service) Tree(ctx context.Context) (Tree, error) {
 	t := Tree{Folders: []string{}, Notes: []Note{}}

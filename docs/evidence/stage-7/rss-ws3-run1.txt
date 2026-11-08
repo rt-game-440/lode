@@ -1,0 +1,6 @@
+测量时间：2026-11-08 21:09；系统：Windows；二进制：bin/lode.exe
+口径：Windows WorkingSet（对应 Linux 的 RSS），启动后空闲 15s 读取；LODE_LOG_LEVEL=warn
+每个空间笔记数：1000；工作空间：默认 + 2 个（全部已打开）；保持的 WebSocket 连接（默认空间）：2
+首次启动到索引完成：0.79s；重启到对账完成：0.67s
+空闲 15s 后 RSS（WorkingSet）：33.4 MB；私有内存（已提交，含未驻留部分）：65.7 MB
+结果：通过（RSS ≤ 80MB）

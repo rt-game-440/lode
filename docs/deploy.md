@@ -69,6 +69,50 @@ sudo systemctl daemon-reload && sudo systemctl enable --now lode
 - 数据目录尽量放在 U 盘或 SSD 上，少写 SD 卡：二进制部署改 `LODE_DATA_DIR`，Docker 部署把 `/data` 挂到外接盘。
 - 首次导入大量笔记时建立索引比 PC 慢（PC 上 10000 篇约 6 秒，见 [benchmark.md](benchmark.md)），之后启动只比对文件的修改时间和大小。
 
+## 工作空间与外部目录
+
+一个 Lode 实例可以有多个互相隔离的工作空间（设计见 [workspaces.md](workspaces.md)）。默认工作空间就是数据目录里的 `vault/`；其他工作空间默认放在数据目录的 `workspaces/<id>/` 下，随数据卷一起备份和迁移。
+
+**外部目录**：新建工作空间时选“使用已有文件夹”，可以把服务器上已有的文件夹（比如 Obsidian 库）接入，笔记文件留在原处。外部目录里只放笔记文件，Lode 的索引、回收站在数据目录的 `workspaces/<id>/` 下，不会在你的文件夹里创建别的文件。接口和路径校验规则见 [api.md](api.md) 的“外部目录”。
+
+- **容器里要另外挂卷。** 路径是 Lode 进程看到的路径，不是宿主机路径：容器只能访问挂进来的目录。例如把宿主机的 Obsidian 库挂到容器的 `/vaults/obsidian`：
+
+  ```yaml
+  services:
+    lode:
+      volumes:
+        - lode-data:/data
+        - /srv/obsidian:/vaults/obsidian   # 外部目录，要读写，不要加 :ro
+  ```
+
+  然后新建工作空间时填 `/vaults/obsidian`。镜像以 uid 65532 运行（NAS 上见上面的 `chown`），挂进来的目录要让这个用户可读写。外部目录不能放在 `/data` 里面（会被拒绝）。
+- **不要让两个 Lode 实例指向同一个外部目录。** 数据目录的文件锁只能防止同一个数据目录被两个进程使用，管不了外部目录；两个实例各自有索引和回收站，同时改同一个文件会互相覆盖。同样不要把数据卷里的 `vault/` 或某个内置工作空间的目录再当作外部目录接入（会被拒绝）。
+- 外部目录所在的磁盘没挂载或文件夹被移走时，这个工作空间会显示“笔记文件夹不可用”，不会重建目录，也不会清空索引；恢复后重新访问即可。Linux 上大的库可能触到 `fs.inotify.max_user_watches` 上限（日志里会有文件监听失败的警告），调高它：`sudo sysctl fs.inotify.max_user_watches=524288`。
+- 外部目录里的 `.obsidian/` 等以点开头的目录和非 Markdown 文件，Lode 不索引也不会改动。Obsidian 和 Lode 可以同时打开同一个库交叉编辑：在 Obsidian 里改的文件 Lode 一两秒内同步，Lode 里的修改也会写回文件。
+- 在 Lode 里删除的笔记进的是数据目录里的回收站，不是 Obsidian 的 `.trash`。
+- 删除外部工作空间只删 Lode 的索引（连同回收站和助手对话移到 `trash-workspaces/`），外部文件夹里的笔记文件一个都不会动。
+- `lode backup` 默认连外部目录里的笔记一起打包，`lode restore` 把它们恢复到原路径或 `--external-to` 指定的新位置，见下面的“备份”和“恢复”。
+
+### 无界面管理：`lode workspace`
+
+没有浏览器可用的部署（SSH 上的服务器、容器）可以用命令行管理工作空间。**必须先停止服务**（和 `restore` 一样检查数据目录锁，服务运行中会报错退出），语义与设置页、`/api/workspaces` 一致：
+
+```bash
+lode workspace list [--json]                          # 列出全部（--json 与 GET /api/workspaces 的内容相同）
+lode workspace add 读书                                # 新建内置位置的工作空间
+lode workspace add 我的库 --dir /srv/obsidian          # 接入已有文件夹（绝对路径，规则同接口）
+lode workspace rename <id> 新名称
+lode workspace remove <id>                            # 内置：目录移到 trash-workspaces/；外部：只处理索引，笔记文件不动
+```
+
+Docker：
+
+```bash
+docker compose stop lode
+docker compose run --rm --no-deps lode workspace add 我的库 --dir /vaults/obsidian
+docker compose start lode
+```
+
 ## 升级
 
 数据库迁移在启动时自动执行。有待执行的迁移时，会先把数据库复制到 `backups/app-v<旧版本>-<时间>.db`。保险起见，升级前再做一次完整备份。
@@ -95,7 +139,7 @@ lode --version
 
 ## 备份
 
-`lode backup` 用 SQLite 的 `VACUUM INTO` 在线复制数据库，再把 `vault/` 和 `trash/` 一起打包成一个 tar.gz。服务运行中也可以执行，不影响使用。
+`lode backup` 用 SQLite 的 `VACUUM INTO` 在线复制全局库 `app.db` 和每个工作空间的 `index.db`，再把所有工作空间的笔记文件和回收站一起打包成一个 tar.gz。服务运行中也可以执行，不影响使用。
 
 ```bash
 # 二进制
@@ -107,6 +151,19 @@ docker compose cp lode:/data/lode-$(date +%F).tar.gz .
 ```
 
 运行镜像是 distroless，没有 shell 和 `rm`。备份文件留在卷里不影响服务（它不会被再次打包），也可以在宿主机上清理：`docker run --rm -v <项目名>_lode-data:/data alpine rm /data/lode-<日期>.tar.gz`（项目名默认是仓库目录名，完整卷名用 `docker volume ls` 查看）。
+
+备份默认包含**全部工作空间**：默认工作空间、`data/workspaces/<id>/` 下的内置工作空间，以及外部目录工作空间的笔记（外部文件夹里的所有普通文件，包括 `.obsidian/` 等，符号链接除外）。清单 `lode-backup.json` 列出每个工作空间，外部目录记下备份时的原路径；`lode backup` 完成后会打印这份列表。只备份一个工作空间用 `--workspace <id>`（id 见 `lode workspace list`）：
+
+```bash
+lode backup /srv/backup/obsidian.tar.gz --workspace 60xmu7
+```
+
+要点：
+
+- 外部目录不可用（卷没挂载、文件夹被移走）时，完整备份会**失败并报出是哪个目录**，而不是悄悄打出缺了笔记的备份；这时可以用 `--workspace` 备份其他空间，或先修好挂载。
+- 单空间备份只含该空间自己的数据（笔记、历史版本、回收站、助手对话），**不含** `secret.key` 和全局数据（密码、token、助手供应商配置、其他空间）；`--no-secret` 对它没有意义。备份默认工作空间时会带上 `app.db` 的快照（默认空间的索引和全局数据在同一个库里），恢复时只取属于它的表。
+- `data/trash-workspaces/`（已删除工作空间的回收目录）、`backups/`（升级迁移前的数据库副本）和旧的 `pre-restore-*/` 不在备份里。要保留已删除的工作空间，先把对应目录复制出去，或者先别删它。
+- 不同版本的备份可以互相恢复：阶段 6 之前生成的备份（格式 1，没有工作空间信息）按“只有默认工作空间”恢复。
 
 备份包含：全部笔记和附件、回收站、数据库里的设置、登录密码哈希、API token（哈希）、助手的供应商配置（API key 加密保存）和对话记录，以及加密用的主密钥 `secret.key`。
 
@@ -135,6 +192,29 @@ docker compose cp lode:/data/lode-$(date +%F).tar.gz .
 ## 恢复
 
 **风险提示**：恢复会用备份替换当前的全部数据（数据库、笔记、附件、回收站）。原有数据不会删除，而是移到数据目录下的 `pre-restore-<时间>/`，确认无误后再手动删除。恢复必须在服务停止时进行，`lode restore` 检测到服务在运行会拒绝执行。
+
+### 恢复多个工作空间
+
+**完整备份**（默认）恢复全部：数据库、默认工作空间、`workspaces/` 目录（所有内置工作空间的索引、笔记、回收站）和登记表都换成备份里的；`secret.key` 照旧（备份里有才替换）。现有的这些东西整体移到 `pre-restore-<时间>/`。备份里没有的工作空间（备份之后新建的）不再登记，它们的内置目录在 `pre-restore-<时间>/workspaces/` 里。**现有的外部目录不会被移动或删除**，不在备份里的外部工作空间只是不再登记，文件还在原处。阶段 6 的旧备份按只有默认工作空间处理，同样会把现有的 `workspaces/` 移走。
+
+**外部目录**恢复到备份时记下的原路径：
+
+- 原路径不存在或是空目录：直接恢复进去。
+- 原路径已存在且**非空**：拒绝恢复（什么都不改），提示用 `--external-to`。Lode 不会覆盖你的文件。
+- 用 `--external-to <目录>`（必须是绝对路径）：每个外部工作空间恢复到 `<目录>/<工作空间id>/`，登记的路径随之更新。这个选项对所有外部工作空间一起生效，目标同样必须不存在或为空，也不能在数据目录里面或与其他外部目录嵌套。
+
+```bash
+lode restore backup.tar.gz                              # 原路径
+lode restore backup.tar.gz --external-to /srv/vaults   # 外部库恢复到 /srv/vaults/<id>/
+```
+
+**单空间备份**（`--workspace` 生成的）只替换这一个工作空间，其他空间、全局数据和 `secret.key` 都不动：
+
+- 已登记的空间：沿用**现在的登记**（名称、排序、内置还是外部、外部路径）；该空间现有的索引、笔记、回收站移到 `pre-restore-<时间>/`。外部目录的路径同样要求不存在或为空，非空时拒绝，可用 `--external-to` 恢复到 `<目录>/<id>` 并更新登记。
+- 没登记的空间（比如已被删除）：按备份里的名称重新登记，排在最后；外部目录用备份里记的原路径（同样的检查）。数据目录里必须已有数据库（先启动过 Lode，或先恢复过完整备份）。
+- 恢复默认工作空间时，只替换 `app.db` 里属于它的表（笔记索引、全文索引、历史版本、变更记录、回收站、助手对话）和 `vault/`、`trash/`；密码、token、会话、通行密钥、助手供应商配置、工作空间登记都不动。现有的整库快照保存在 `pre-restore-<时间>/app.db`。变更序号回到备份时的值，与整库恢复一致（各设备按需重新同步）。
+
+恢复后启动服务，会对账每个工作空间的笔记文件，把备份与磁盘上的差异补进索引。
 
 二进制：
 

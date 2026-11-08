@@ -352,8 +352,8 @@
 }
 .menu-item:hover .menu-hint,
 .menu-item:focus-visible .menu-hint {
+  /* 小字号叠在强调色上，半透明会低于 4.5:1 */
   color: inherit;
-  opacity: 0.8;
 }
 .menu-heading {
   padding: var(--space-1-5) var(--space-2) var(--space-0-5);

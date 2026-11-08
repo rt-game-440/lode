@@ -5,9 +5,9 @@ import { Drawer } from '../../components/Drawer'
 import { DialogHost, MenuHost, ToastHost } from '../../components/overlays'
 import { useEditor } from '../../stores/editor'
 import { type Route, useUI } from '../../stores/ui'
-import { useVault } from '../../stores/vault'
+import { loadTree, syncWorkspaceFromLocation, useWorkspace } from '../../stores/workspace'
 import { sync } from '../../sync/engine'
-import { errorMessage, newNote } from '../actions'
+import { newNote } from '../actions'
 import { EditorPane } from '../editor/EditorPane'
 import { RightPanel } from '../right/RightPanel'
 import { Sidebar } from '../sidebar/Sidebar'
@@ -40,7 +40,10 @@ function useMedia(query: string): boolean {
   )
 }
 
-/** 实时同步：连接 WebSocket、重放离线写队列（替代阶段 1 的轮询）。 */
+/**
+ * 实时同步：连接 WebSocket、重放离线写队列（替代阶段 1 的轮询）。
+ * 切换工作空间时由 stores/workspace 换引擎（新引擎随即启动），这里只管外壳挂载和卸载（退出登录）。
+ */
 function useRealtimeSync() {
   useEffect(() => {
     sync.start()
@@ -98,8 +101,6 @@ function MainView({ mobile, route, contextNoteId }: { mobile: boolean; route: Ro
 }
 
 export function AppShell() {
-  const load = useVault((s) => s.load)
-  const syncFromLocation = useUI((s) => s.syncFromLocation)
   const route = useUI((s) => s.route)
   const rightOpen = useUI((s) => s.rightOpen)
   const toggleRight = useUI((s) => s.toggleRight)
@@ -107,22 +108,17 @@ export function AppShell() {
   const mobile = useMedia('(max-width: 767px)')
   const wide = useMedia('(min-width: 1100px)')
 
+  // 笔记树和工作空间列表；之后切换工作空间时由 stores/workspace 重新载入
   useEffect(() => {
-    const tryLoad = () =>
-      load().catch((err) =>
-        useUI.getState().toast({
-          message: `笔记列表加载失败：${errorMessage(err)}`,
-          tone: 'error',
-          action: { label: '重试', run: () => void tryLoad() },
-        }),
-      )
-    void tryLoad()
-  }, [load])
+    void loadTree()
+    void useWorkspace.getState().load()
+  }, [])
 
+  // 浏览器前进后退可能跨工作空间（/w/<id>/...）
   useEffect(() => {
-    window.addEventListener('popstate', syncFromLocation)
-    return () => window.removeEventListener('popstate', syncFromLocation)
-  }, [syncFromLocation])
+    window.addEventListener('popstate', syncWorkspaceFromLocation)
+    return () => window.removeEventListener('popstate', syncWorkspaceFromLocation)
+  }, [])
 
   // 窄屏下右栏以抽屉显示，默认收起（不写入布局偏好）
   useEffect(() => {

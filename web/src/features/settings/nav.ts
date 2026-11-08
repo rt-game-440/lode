@@ -1,3 +1,4 @@
+import { splitWorkspacePath } from '../../lib/workspace'
 import { useUI } from '../../stores/ui'
 import { backViaHistory } from './stack'
 
@@ -5,7 +6,8 @@ import { backViaHistory } from './stack'
 export function openSettings(sub: string[]) {
   const from = location.pathname
   useUI.getState().navigate({ view: 'settings', sub })
-  if (location.pathname !== from) history.replaceState({ ...(history.state ?? {}), lodeFrom: from }, '')
+  // 记工作空间内的路径（不含 /w/<id> 前缀），与 settingsPath 比较
+  if (location.pathname !== from) history.replaceState({ ...(history.state ?? {}), lodeFrom: splitWorkspacePath(from).rest }, '')
 }
 
 /**

@@ -20,6 +20,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/keyprotect"
 	"github.com/rt-game-440/lode/server/internal/notes"
 	"github.com/rt-game-440/lode/server/internal/passkey"
+	"github.com/rt-game-440/lode/server/internal/workspace"
 )
 
 // SessionCookie 是会话 cookie 名。
@@ -27,6 +28,10 @@ const SessionCookie = "lode_session"
 
 // Server 汇总 HTTP 层依赖。
 type Server struct {
+	// Workspaces 管理工作空间；按工作空间区分的接口从 request context 取当前工作空间（见 workspace.go）。
+	Workspaces *workspace.Manager
+	// Notes 是兼容旧调用方的写法：Workspaces 为 nil 时，Handler 用它构造一个只有默认工作空间的 Manager
+	// （不启动后台任务）。处理函数不直接使用它。
 	Notes   *notes.Service
 	Auth    *auth.Auth
 	Version string
@@ -71,6 +76,9 @@ func (s *Server) Handler() http.Handler {
 	if s.SSEPingInterval == 0 {
 		s.SSEPingInterval = 15 * time.Second
 	}
+	if s.Workspaces == nil {
+		s.Workspaces = workspace.New(workspace.Options{Default: s.Notes, Logger: s.Log})
+	}
 	s.done = make(chan struct{})
 	mux := http.NewServeMux()
 
@@ -87,36 +95,14 @@ func (s *Server) Handler() http.Handler {
 
 	// 需要会话的接口
 	p := http.NewServeMux()
-	p.HandleFunc("GET /api/tree", s.tree)
-	p.HandleFunc("GET /api/notes", s.listNotes)
-	p.HandleFunc("POST /api/notes", s.createNote)
-	p.HandleFunc("GET /api/notes/by-path", s.readNoteByPath)
-	p.HandleFunc("GET /api/notes/{id}", s.readNote)
-	p.HandleFunc("PUT /api/notes/{id}", s.updateNote)
-	p.HandleFunc("PATCH /api/notes/{id}", s.patchNote)
-	p.HandleFunc("DELETE /api/notes/{id}", s.deleteNote)
-	p.HandleFunc("POST /api/notes/{id}/move", s.moveNote)
-	p.HandleFunc("GET /api/notes/{id}/backlinks", s.backlinks)
-	p.HandleFunc("GET /api/notes/{id}/tags", s.noteTags)
-	p.HandleFunc("GET /api/search", s.search)
-	p.HandleFunc("GET /api/tags", s.tags)
-	p.HandleFunc("GET /api/tags/notes", s.notesByTag)
-	p.HandleFunc("POST /api/folders", s.createFolder)
-	p.HandleFunc("POST /api/folders/move", s.moveFolder)
-	p.HandleFunc("DELETE /api/folders", s.deleteFolder)
-	p.HandleFunc("GET /api/trash", s.listTrash)
-	p.HandleFunc("DELETE /api/trash", s.emptyTrash)
-	p.HandleFunc("POST /api/trash/{id}/restore", s.restoreTrash)
-	p.HandleFunc("DELETE /api/trash/{id}", s.purgeTrash)
-	p.HandleFunc("POST /api/attachments", s.uploadAttachment)
-	p.HandleFunc("GET /api/images", s.listImages)
-	p.HandleFunc("GET /api/files/{path...}", s.serveFile)
-	p.HandleFunc("GET /api/changes", s.changes)
-	p.HandleFunc("GET /api/ws", s.ws)
 	p.HandleFunc("GET /api/tokens", s.listTokens)
 	p.HandleFunc("POST /api/tokens", s.createToken)
 	p.HandleFunc("DELETE /api/tokens/{id}", s.revokeToken)
 	p.HandleFunc("GET /api/audit", s.listAudit)
+	p.HandleFunc("GET /api/workspaces", s.listWorkspaces)
+	p.HandleFunc("POST /api/workspaces", s.createWorkspace)
+	p.HandleFunc("PATCH /api/workspaces/{id}", s.patchWorkspace)
+	p.HandleFunc("DELETE /api/workspaces/{id}", s.deleteWorkspace)
 	if s.Passkeys != nil {
 		p.HandleFunc("GET /api/passkeys", s.listPasskeys)
 		p.HandleFunc("POST /api/passkeys/begin", s.passkeyRegisterBegin)
@@ -129,6 +115,14 @@ func (s *Server) Handler() http.Handler {
 	if s.Agent != nil {
 		s.routeAgent(p)
 	}
+	// 按工作空间区分的路由挂两份：原路径表示默认工作空间；/api/w/{ws}/<原路径> 由 wsMux 处理，
+	// 去掉前缀后按原路径匹配，所以两者的匹配、405、404 行为完全一样。
+	wsMux := http.NewServeMux()
+	for _, rt := range s.workspaceRoutes() {
+		p.Handle(rt.pattern, s.inWorkspace(workspace.DefaultID, rt.handler))
+		wsMux.HandleFunc(rt.pattern, rt.handler)
+	}
+	p.Handle("/api/w/", s.workspacePrefix(wsMux))
 	mux.Handle("/api/", s.requireSession(p))
 
 	if s.Web != nil {

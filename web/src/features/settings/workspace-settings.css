@@ -1,0 +1,87 @@
+/* 设置 → 工作空间：可排序的列表和删除确认 */
+
+.ws-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  background: var(--color-bg);
+}
+.ws-row.is-dragging {
+  z-index: 1;
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+.ws-row > .nav-row {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0;
+}
+.ws-handle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-label-tertiary);
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.ws-row.is-dragging .ws-handle {
+  cursor: grabbing;
+}
+.ws-handle:focus-visible {
+  color: var(--color-accent);
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -4px;
+  border-radius: var(--radius-md);
+}
+@media (hover: hover) {
+  .ws-handle:hover {
+    color: var(--color-label-secondary);
+  }
+}
+/* 没有拖动把手时（只有一个工作空间）文字不用让出位置 */
+.ws-row > .nav-row:first-child {
+  padding-left: var(--space-4);
+}
+
+.ws-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+}
+.ws-current {
+  flex: none;
+  padding: 0 var(--space-1-5);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+}
+
+.ws-confirm p {
+  margin: 0 0 var(--space-2);
+}
+.ws-confirm p:last-child {
+  margin-bottom: 0;
+}
+.ws-confirm code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--color-code-bg);
+}
+
+/* 调用记录里 token 名称下方的工作空间 */
+.audit-ws {
+  display: block;
+  font-size: var(--text-caption);
+  color: var(--color-label-tertiary);
+}

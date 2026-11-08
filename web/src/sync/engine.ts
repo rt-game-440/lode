@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import { ApiError, api } from '../api/client'
+import { ApiError, type WorkspaceApi, api, workspaceApi } from '../api/client'
 import type { Change, Note, NoteContent, Tree } from '../api/types'
 import { deviceId } from '../lib/device'
+import { DEFAULT_WORKSPACE, apiPrefix, currentWorkspace, localDbName } from '../lib/workspace'
 import { LocalDB, type QueueEntry } from './localdb'
 import { rebase } from './textdiff'
 
@@ -28,7 +29,12 @@ interface SyncState {
 /** 同步状态，供界面展示。 */
 export const useSync = create<SyncState>(() => ({ status: 'synced', pending: 0, connected: false, conflicts: [] }))
 
-type Transport = Pick<typeof api, 'updateNote' | 'readNote' | 'createNote' | 'changes' | 'tree'>
+type Transport = Pick<WorkspaceApi, 'updateNote' | 'readNote' | 'createNote' | 'changes' | 'tree'>
+/** 结构性操作（移动、删除、回收站、附件）用的接口，不经写队列 */
+type Rest = Pick<
+  WorkspaceApi,
+  'moveNote' | 'deleteNote' | 'restore' | 'createFolder' | 'moveFolder' | 'deleteFolder' | 'purge' | 'emptyTrash' | 'uploadAttachment'
+>
 
 /** 同步引擎对外发出的事件，由各个 store 订阅。 */
 export interface SyncEvents {
@@ -50,7 +56,11 @@ type Listener<K extends keyof SyncEvents> = (e: SyncEvents[K]) => void | Promise
 export const CONFLICT_RE = /\.conflict-.+-\d{8}-\d{6}\.md$/i
 
 export interface EngineOptions {
+  /** 所属工作空间，决定 WebSocket 地址；默认是默认工作空间 */
+  workspace?: string
   api?: Transport
+  /** 结构性操作的接口；默认与 api 相同（api 是完整的 WorkspaceApi 时），否则用全局客户端 */
+  rest?: Rest
   db?: LocalDB
   /** 浏览器是否认为自己在线；默认读 navigator.onLine */
   online?: () => boolean
@@ -67,8 +77,10 @@ export interface EngineOptions {
  * - WebSocket 只推送变更通知，收到后用 /api/changes?since 补齐（410 时全量重拉，不动写队列）。
  */
 export class SyncEngine {
+  readonly workspace: string
   readonly db: LocalDB
   private api: Transport
+  private rest: Rest
   private online: () => boolean
   isKnown: (c: Change) => boolean
 
@@ -99,9 +111,13 @@ export class SyncEngine {
   private lastMessage = 0
   private timers: ReturnType<typeof setTimeout>[] = []
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  /** 已被另一个工作空间的引擎取代：不再发事件、不再改 useSync */
+  private disposed = false
 
   constructor(opts: EngineOptions = {}) {
+    this.workspace = opts.workspace ?? DEFAULT_WORKSPACE
     this.api = opts.api ?? api
+    this.rest = opts.rest ?? ('moveNote' in this.api ? (this.api as WorkspaceApi) : api)
     this.db = opts.db ?? new LocalDB()
     this.online = opts.online ?? (() => globalThis.navigator?.onLine ?? true)
     this.isKnown = opts.isKnown ?? (() => false)
@@ -122,7 +138,33 @@ export class SyncEngine {
   }
 
   private async emit<K extends keyof SyncEvents>(type: K, e: SyncEvents[K]) {
+    if (this.disposed) return
     for (const fn of (this.listeners[type] ?? []) as Listener<K>[]) await fn(e)
+  }
+
+  /** 是否已被取代（切换到了别的工作空间）。 */
+  get isDisposed(): boolean {
+    return this.disposed
+  }
+
+  /**
+   * 接管 prev 的订阅者和 isKnown（切换工作空间时，各个 store 在模块加载时注册的监听转到新引擎上）。
+   * 两个引擎共用同一份监听列表，之前 on() 返回的取消函数仍然有效。
+   */
+  adopt(prev: SyncEngine) {
+    this.listeners = prev.listeners
+    this.isKnown = prev.isKnown
+  }
+
+  /**
+   * 停用：断开 WebSocket、移除监听，之后不再发事件、不再更新同步状态。
+   * 正在进行的发送照常完成并写进自己的 IndexedDB（写队列属于这个工作空间，切回来时继续补发），完成后关闭数据库连接。
+   */
+  dispose() {
+    if (this.disposed) return
+    this.stop()
+    this.disposed = true
+    void Promise.allSettled([this.draining, this.catching, this.ready]).then(() => this.db.close())
   }
 
   /** 等待写队列从 IndexedDB 载入完成。 */
@@ -345,7 +387,7 @@ export class SyncEngine {
   }
 
   async moveNote(id: string, path: string) {
-    const res = await api.moveNote(id, path)
+    const res = await this.rest.moveNote(id, path)
     const e = this.queue.get(id)
     if (e) {
       e.path = res.note.path
@@ -356,24 +398,25 @@ export class SyncEngine {
 
   /** 移到回收站；本地尚未同步的修改一并丢弃（回收站里保留的是服务器版本）。 */
   async deleteNote(id: string) {
-    const item = await api.deleteNote(id)
+    const item = await this.rest.deleteNote(id)
     this.queue.delete(id)
     await Promise.all([this.db.deleteEntry(id), this.db.deleteNote(id)])
     this.publish()
     return item
   }
 
-  restoreNote = (id: string) => api.restore(id)
-  createFolder = (path: string) => api.createFolder(path)
-  moveFolder = (from: string, to: string) => api.moveFolder(from, to)
-  deleteFolder = (path: string) => api.deleteFolder(path)
-  purgeTrash = (id: string) => api.purge(id)
-  emptyTrash = () => api.emptyTrash()
-  uploadAttachment = (file: File | Blob, name?: string) => api.uploadAttachment(file, name)
+  restoreNote = (id: string) => this.rest.restore(id)
+  createFolder = (path: string) => this.rest.createFolder(path)
+  moveFolder = (from: string, to: string) => this.rest.moveFolder(from, to)
+  deleteFolder = (path: string) => this.rest.deleteFolder(path)
+  purgeTrash = (id: string) => this.rest.purge(id)
+  emptyTrash = () => this.rest.emptyTrash()
+  uploadAttachment = (file: File | Blob, name?: string) => this.rest.uploadAttachment(file, name)
 
   // ---- 冲突列表 ----
 
   private addConflict(c: ConflictInfo) {
+    if (this.disposed) return
     const list = useSync.getState().conflicts.filter((x) => x.copyId !== c.copyId)
     useSync.setState({ conflicts: [...list, c] })
     this.publish()
@@ -447,7 +490,7 @@ export class SyncEngine {
 
   /** 开始实时同步：连接 WebSocket、监听网络状态，并重放积压的写队列。 */
   start() {
-    if (this.started || typeof window === 'undefined') return
+    if (this.started || this.disposed || typeof window === 'undefined') return
     this.started = true
     window.addEventListener('online', this.onOnline)
     window.addEventListener('offline', this.onOffline)
@@ -463,11 +506,17 @@ export class SyncEngine {
     void this.ready.then(() => this.drain())
   }
 
+  get isStarted(): boolean {
+    return this.started
+  }
+
   stop() {
     this.started = false
-    window.removeEventListener('online', this.onOnline)
-    window.removeEventListener('offline', this.onOffline)
-    document.removeEventListener('visibilitychange', this.onVisible)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.onOnline)
+      window.removeEventListener('offline', this.onOffline)
+      document.removeEventListener('visibilitychange', this.onVisible)
+    }
     for (const t of this.timers) clearInterval(t)
     this.timers = []
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
@@ -500,15 +549,17 @@ export class SyncEngine {
     if (!this.started || this.ws || !this.online()) return
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = null
-    const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + '/api/ws')
+    const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + apiPrefix(this.workspace) + '/ws')
     this.ws = ws
     this.lastMessage = Date.now()
     ws.onopen = () => {
+      if (this.disposed) return
       this.backoff = 1000
       useSync.setState({ connected: true })
       this.setNetDown(false)
     }
     ws.onmessage = (ev) => {
+      if (this.disposed) return
       this.lastMessage = Date.now()
       try {
         const m = JSON.parse(String(ev.data)) as { type?: string; seq?: number }
@@ -520,6 +571,7 @@ export class SyncEngine {
     }
     ws.onclose = () => {
       if (this.ws === ws) this.ws = null
+      if (this.disposed) return
       useSync.setState({ connected: false })
       if (!this.started) return
       this.reconnectTimer = setTimeout(() => this.connect(), this.backoff)
@@ -536,6 +588,7 @@ export class SyncEngine {
   }
 
   private publish() {
+    if (this.disposed) return
     const pending = this.queue.size
     const conflicts = useSync.getState().conflicts
     const status: SyncStatus =
@@ -550,5 +603,30 @@ export class SyncEngine {
   }
 }
 
-/** 全局唯一的同步引擎。 */
-export const sync = new SyncEngine()
+/** 某个工作空间的同步引擎：IndexedDB 用 localDbName(ws)，接口和 WebSocket 固定在这个工作空间上。 */
+export function createEngine(ws: string): SyncEngine {
+  return new SyncEngine({ workspace: ws, api: workspaceApi(ws), db: new LocalDB(localDbName(ws)) })
+}
+
+/**
+ * 当前工作空间的同步引擎。切换工作空间时整个换掉（见 switchSyncEngine）；
+ * 这是 ES 模块的活绑定，其他模块里的 `sync` 总是指向当前的引擎，不要把它存进别的变量里长期使用。
+ */
+export let sync = createEngine(currentWorkspace())
+
+/**
+ * 换成 ws 的同步引擎：旧引擎停用（WebSocket 断开，写队列留在它自己的 IndexedDB 里），
+ * 新引擎接管各个 store 的监听；旧引擎已经启动时新引擎也立即启动（连接 WebSocket、补发写队列）。
+ */
+export function switchSyncEngine(ws: string): SyncEngine {
+  const prev = sync
+  if (prev.workspace === ws && !prev.isDisposed) return prev
+  const wasStarted = prev.isStarted
+  const next = createEngine(ws)
+  next.adopt(prev)
+  prev.dispose()
+  useSync.setState({ status: 'synced', pending: 0, connected: false, conflicts: [] })
+  sync = next
+  if (wasStarted) next.start()
+  return next
+}

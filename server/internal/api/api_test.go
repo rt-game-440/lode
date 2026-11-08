@@ -24,8 +24,8 @@ import (
 	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
 	"github.com/rt-game-440/lode/server/internal/passkey"
-	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
+	"github.com/rt-game-440/lode/server/internal/workspace"
 )
 
 type client struct {
@@ -45,8 +45,11 @@ func newServer(t *testing.T, opts ...func(*Server)) *client {
 	v, _ := vault.New(filepath.Join(dir, "vault"))
 	svc := notes.New(notes.Options{DB: d, Vault: v, TrashDir: filepath.Join(dir, "trash")})
 	a, log := auth.New(d), audit.New(d)
-	s := &Server{Notes: svc, Auth: a, Version: "test", Audit: log, Passkeys: passkey.New(d, nil),
-		MCP: mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: a, Audit: log, Version: "test"})}
+	// 带登记表的 Manager，和 main.go 一样；后台任务默认不启动，需要的测试自己调用 Start。
+	ws := workspace.New(workspace.Options{Default: svc, DB: d, DataDir: dir, Debounce: 20 * time.Millisecond})
+	t.Cleanup(ws.Close) // 先于关闭 app.db 执行
+	s := &Server{Notes: svc, Workspaces: ws, Auth: a, Version: "test", Audit: log, Passkeys: passkey.New(d, nil),
+		MCP: mcpserver.Handler(mcpserver.Options{Workspaces: ws, Auth: a, Audit: log, Version: "test"})}
 	for _, o := range opts {
 		o(s)
 	}

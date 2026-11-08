@@ -168,7 +168,7 @@ func (s *Service) DeleteFolder(ctx context.Context, p string) (int, error) {
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return 0, err
 		}
-		if err := os.Rename(abs, dst); err != nil {
+		if err := vault.MoveDirOut(abs, dst); err != nil {
 			return 0, err
 		}
 	} else if err := os.RemoveAll(abs); err != nil {

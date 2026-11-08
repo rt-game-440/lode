@@ -6,6 +6,7 @@ import type { Note } from '../api/types'
 import { confirmDialog, promptDialog } from '../components/overlays'
 import { basename, dirname, invalidNameReason, join } from '../lib/paths'
 import { LinkResolver } from '../lib/wikilink'
+import { WORKSPACE_STORAGE, currentWorkspace, storageKey } from '../lib/workspace'
 import { requestTitleFocus } from './editor/editorRef'
 import { useEditor } from '../stores/editor'
 import { useUI } from '../stores/ui'
@@ -193,11 +194,12 @@ export async function openWikiLink(target: string, srcPath: string) {
 
 /* ---------- 最近打开 ---------- */
 
-const RECENT_KEY = 'lode.recent'
+/** 按工作空间记住：默认工作空间沿用 `lode.recent`，其他加 `:<id>`。 */
+const recentKey = () => storageKey(WORKSPACE_STORAGE.recent, currentWorkspace())
 
 export function recentIds(): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
+    const v = JSON.parse(localStorage.getItem(recentKey()) ?? '[]')
     return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
   } catch {
     return []
@@ -206,5 +208,5 @@ export function recentIds(): string[] {
 
 function rememberRecent(id: string) {
   const list = [id, ...recentIds().filter((x) => x !== id)].slice(0, 30)
-  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+  localStorage.setItem(recentKey(), JSON.stringify(list))
 }

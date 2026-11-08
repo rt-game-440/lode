@@ -17,12 +17,14 @@ import type { Note } from '../../api/types'
 import { type MenuEntry, openMenu } from '../../components/overlays'
 import { EmptyState } from '../../components/ui'
 import { dirname } from '../../lib/paths'
+import { WORKSPACE_STORAGE, storageKey } from '../../lib/workspace'
 import { type TreeNode, type VisibleRow, buildTree, visibleRows } from '../../lib/tree'
 import { flushSync } from 'react-dom'
 import { type VirtualWindow, scrollToShow, virtualWindow } from '../../lib/virtual'
 import { ListItem, ListPresence } from '../../components/AnimatedList'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { useWorkspace } from '../../stores/workspace'
 import {
   deleteFolder,
   deleteNote,
@@ -35,12 +37,12 @@ import {
   promptRenameNote,
 } from '../actions'
 
-const EXPANDED_KEY = 'lode.expanded'
 const DRAG_TYPE = 'application/x-lode-item'
 
-function loadExpanded(): Set<string> {
+/** 展开的文件夹按工作空间记住：默认工作空间沿用 `lode.expanded`，其他加 `:<id>`。 */
+function loadExpanded(key: string): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? '[]'))
+    return new Set(JSON.parse(localStorage.getItem(key) ?? '[]'))
   } catch {
     return new Set()
   }
@@ -48,14 +50,19 @@ function loadExpanded(): Set<string> {
 
 type DragItem = { kind: 'note'; id: string } | { kind: 'folder'; path: string }
 
-/** 文件树：文件夹在前，支持键盘导航、右键菜单和拖放移动。 */
+/** 文件树：文件夹在前，支持键盘导航、右键菜单和拖放移动。切换工作空间时整个重新挂载（展开状态各自记住）。 */
 export function FileTree() {
+  const ws = useWorkspace((s) => s.current)
+  return <WorkspaceTree key={ws} expandedKey={storageKey(WORKSPACE_STORAGE.expanded, ws)} />
+}
+
+function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
   const folders = useVault((s) => s.folders)
   const notes = useVault((s) => s.notes)
   const loaded = useVault((s) => s.loaded)
   const route = useUI((s) => s.route)
   const activeId = route.view === 'note' ? route.id : null
-  const [expanded, setExpanded] = useState(loadExpanded)
+  const [expanded, setExpanded] = useState(() => loadExpanded(expandedKey))
   const [focusPath, setFocusPath] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -77,8 +84,8 @@ export function FileTree() {
   }, [activePath]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    localStorage.setItem(EXPANDED_KEY, JSON.stringify([...expanded]))
-  }, [expanded])
+    localStorage.setItem(expandedKey, JSON.stringify([...expanded]))
+  }, [expanded, expandedKey])
 
   const rows = useMemo(() => visibleRows(root, expanded), [root, expanded])
 

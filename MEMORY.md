@@ -2,6 +2,82 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-09 00:40 全量 e2e 既有失败修复
+
+- **默认模型**：删除供应商或模型后，若 `settings.default_model` 指向的模型已不存在就清空（`agent/store.go` 的 `clearStaleDefault`），保证下一个新增模型自动成为默认。
+- **目录条避让（#47）**：≥768px 时 `--note-width` 取 `min(页宽, 100% - 2*space-12)`，标题和正文两侧各让出 3rem，不隐藏目录条。
+- **split-view 测量**：判断“跳变”要先按采样时间间隔把位移折算成速度再取变化，不要用按帧的位置二阶差分（rAF 抖动会被算成加速度）。
+- **执行顺序**：`talk-to-agent.spec` 开头自己清空供应商；@ 补全列表 `ul.mention-list` 可滚动，必须 `tabIndex=0`（axe `scrollable-region-focusable`）。
+
+## 2026-11-09 00:20 #62 多工作空间备份恢复
+
+- **备份格式 2**：清单 `Manifest{Format:2, Scope: all|workspace, Workspaces[]{id,name,sort,created_at,external,vault_dir}}`，工作空间清单从 `app.db` 快照里读（和打包的库一致）。默认空间保持顶层 `app.db`/`vault/`/`trash/`（所以格式 1 备份无需转换，`Manifest.Entries()` 对没有 workspaces 的清单返回只有默认空间）；其他空间 `workspaces/<id>/{index.db,vault/,trash/}`，外部 vault 也放 `workspaces/<id>/vault/`（原路径只在清单里）。恢复接受 format 1 和 2。外部目录不存在时完整备份直接失败（不打出缺笔记的备份）；`trash-workspaces/`、`backups/`、`pre-restore-*` 不进备份，已写进 deploy.md。
+- **`--external-to` 语义**：父目录，所有外部空间一起放到 `<目录>/<id>`（单空间备份同理），因为多个外部空间时一个目录无法表达。目标必须不存在或为空；校验在任何改动之前（数据目录重叠、与其他外部目录相同/嵌套、非绝对路径、根目录）。原路径非空返回 `ops.ErrExternalNotEmpty`（CLI 错误信息含 `--external-to` 提示）。`--external-to` 在没有外部空间的恢复里报错而不是静默忽略。
+- **单空间备份语义**：非默认空间整体替换 `index.db`/`trash`/`vault`（已登记的沿用现在的登记：名称、排序、内置还是外部、外部路径；未登记的追加登记在最后，需要数据目录里已有 `app.db`）。默认空间的索引和全局数据同在 `app.db`：备份带 `app.db` 快照，恢复时在一个事务里用 `ATTACH` 只替换 `defaultIndexTables`（notes、notes_fts、links、tags、folders、versions、changes、trash、agent_chats/messages/pending）和 settings 的 `changes_floor`，并清掉 `sqlite_sequence` 里 changes/agent_messages 的计数使其跟随备份（与整库恢复一致）。现有整库先 `VACUUM INTO` 到 `pre-restore-*/app.db`。`TestDefaultIndexTablesCoverSchema` 逼着以后新增迁移加表时给表分类。单空间备份不含 `secret.key`。
+- **恢复事务**：`internal/ops/txn.go` 的 `txn` 记录 `aside`（现有数据移到 `pre-restore-<时间>/`）、`place`（临时区放进来）、`placeExternal`（只放进空位；不存在先 rename，空目录或跨磁盘退回复制）并按相反顺序撤销；外部目录先放、数据目录后放。完整恢复会把现有 `workspaces/` 整体移走（即使是旧格式备份）；现有外部目录一律不动。`pre-restore-*` 名字同一秒重复时加 `-2` 序号（Windows 上重命名到已有目录会 Access denied，测试里连续恢复曾踩到）。
+- **API**：`ops.Backup(ctx, d, dataDir, out, BackupOptions{ExcludeSecret, Workspace})`；`ops.Restore(...)` 保持 `(kept, err)`，新增 `ops.RestoreArchive(ctx, dataDir, archive, RestoreOptions{ExternalTo}) (Result{Kept,Scope,Workspaces}, error)`、`ops.ReadManifest(archive)`（CLI 在确认前列出备份内容）、`ops.ExternalTarget`。`workspace` 包新增导出的 `SamePath`/`Within`。
+- **tar 安全**：`safeEntry` 允许 `app.db`、`secret.key`、`vault/…`、`trash/…`、`workspaces`、`workspaces/<id>`、`workspaces/<id>/index.db`、`workspaces/<id>/{vault,trash}/…`，`<id>` 必须是合法 id 且不是 default；其余一律拒绝。清单还会与解包出的 `app.db` 登记表交叉校验（id、是否外部、路径）。
+- **冒烟**：`.claude/smoke-backup.sh <lode.exe>`（未提交）起真实服务、`workspace add`、服务运行中备份、清空、拒绝/恢复/`--external-to`/单空间/旧格式，输出存 `docs/evidence/stage-7/backup-restore.txt`。Windows 下 Bash heredoc 会吃反斜杠，含转义序列的 Go/脚本代码用 Write/Edit 写。
+` 的 Go/脚本代码用 Write/Edit 写。
+
+## 2026-11-08 23:55 #60 外部目录工作空间与 lode workspace
+
+- **登记与路径（#62 备份恢复要用）**：登记表 `workspaces.vault_dir` 存**解析符号链接后的绝对路径**（空=内置）；`workspace.Info.External/VaultDir` 由它得出；`workspace.PathsFor(dataDir, id, vaultDir)` 给出 `Paths{Root,Index,Vault,Trash}`，外部目录只替换 Vault，Root（`data/workspaces/<id>`）、Index、Trash 仍在数据目录。`Manager.List/Info` 取登记信息；`Manager.Create(ctx, CreateOptions{Name, VaultDir})`；`Manager.CheckVaultDir(ctx, dir)` 单独校验（恢复到新位置时可复用，会拿 adminMu）；`Manager.DataDir()`。外部 vault 不在 `data/` 里，所以备份必须按登记表遍历 `vault_dir` 并在清单里记原路径。
+- **校验（`internal/workspace/vaultdir.go`）**：`*VaultDirError{Reason, Msg}`，满足 `errors.Is(err, ErrInvalid)`；API 错误码 `vault_dir_<Reason>`，响应带 `reason`。顺序：非法字符 → 非绝对 → 不存在 → 非目录 → 读不了 → 根目录 → 主目录 → 数据目录相同/在里面/包含它 → 与已有外部目录相同/嵌套。比较前 `EvalSymlinks`，Windows/macOS 小写比较并用 `os.SameFile` 兜底。内置空间和默认 vault 都在数据目录里，由“数据目录”几条覆盖，不必逐个比。
+- **外部目录消失不重建**：`openWorkspace` 对外部目录先 `checkVaultPresent`，不存在返回 `ErrVaultUnavailable`（API 503 `workspace_vault_unavailable`）。原因：`vault.New` 会 MkdirAll，卷没挂载时会得到空库，启动对账会把索引里的笔记全清掉。该空间仍可删除。
+- **删除**：`disposeFiles` 没有为外部目录加分支：`PathsFor` 的 Root 永远不含外部 vault，所以和内置一样整体移到 `trash-workspaces/<id>-<时间>/`（保留 Lode 回收站里的笔记和对话，外部文件不动）。`TestRemoveLeavesExternalVaultAlone` + 新增哈希校验测试。
+- **回收站跨磁盘**：`vault.moveFile` 本来就有复制+删除回退（现在复制失败/删原文件失败会清理目标，避免留下两份）；文件夹删除原来直接 `os.Rename`，改为 `vault.MoveDirOut`（重命名失败则复制树再删）。`vault.rename` 是可替换的变量，测试用它模拟跨设备。
+- **CLI**：`cmd/lode/workspace.go` 的 `runWorkspace(cfg, args, out)`：先校验参数再 `ops.Lock`（运行中报“lode 服务正在运行”），建临时 `workspace.Manager`（默认空间用 `notes.New` 但不 Start，日志丢弃）直接调 Create/Rename/Remove/List，所以语义与接口一致；`list --json` 输出与 `GET /api/workspaces` 相同结构。remove 不加确认（内置空间只是移到 trash-workspaces，外部空间不动文件）。
+- **API 字段名**：沿用 snake_case `vault_dir`，同时兼容 `vaultDir`（两个都给且不同 → 400）。
+- **前端**：`components/overlays` 新增 `customDialog<T>(render)`（kind 'custom'，Esc/点遮罩返回 null）；`features/workspace/CreateWorkspaceDialog.tsx` 用它做新建对话框，创建请求在对话框内发出，服务器的 `vault_dir_*` 错误显示在路径输入框下面；纯函数 `names.ts`（`invalidWorkspaceName`、`looksAbsolute`）单独成文件，便于单测（导入 stores 的模块在 vitest 里没有 location）。
+- **工具坑**：Bash 工具里的 heredoc 会吃掉反斜杠（Windows 路径、正则），含反斜杠的文件用 Write/Edit 工具写。
+
+## 2026-11-08 23:25 #61 助手按工作空间隔离
+
+- **库划分**：`agent.Store` 只管全局数据（供应商、模型、设置、API key，app.db）；`agent.ChatStore` 管对话三张表。默认空间用 `Store.DefaultChats()`（app.db，所以升级前的对话自然属于默认空间），其他空间用 `Workspace.Chats`（各自 index.db，Manager 打开时创建，默认空间为 nil）。统一用 `Workspace.AgentSpace(defaultChats)` 取 `agent.Space{ID, Chats, Tools, Notes}`。默认空间不用 Manager 的 Chats，是因为 api 测试里 agent 的库和默认空间的 app.db 不是同一个；生产中是同一个库。
+- **Service**：全局一个，`Space` 由调用方每次传入；运行记录、订阅、空闲计时按“空间 id/对话 id”区分，一次生成固定用同一个 Space，切换空间不影响它。“模型存在”检查在 `Service.UpdateChat`（模型是全局的），`ChatStore.UpdateChat` 不查。
+- **删除空间**：`main.go` 注册 `workspaces.SetBeforeRemove(agentSvc.CloseWorkspace)`，在空间不可访问之后、关 index.db 之前取消并等待它的生成任务；之后该 id 永不再接受生成（id 不复用）。对话随目录一起移走。退出顺序：先 `agentSvc.Close()` 再 `workspaces.Close()`。
+- **e2e**：`ui-workspace-agent.spec.ts` 自己起 lode（临时目录、随机端口、`LODE_SECRET_KEY`、不带 key 的模拟供应商），不受 spec 执行顺序影响。Windows 本机的 `python3` 是 Windows Store 空壳，要用 `python`。
+
+## 2026-11-08 23:10 #59 设置页管理工作空间，MCP token 绑定工作空间
+
+- **Manager 管理方法**：`Info(ctx,id)`、`Exists(ctx,id)`、`Rename(ctx,id,name)`、`Reorder(ctx,id,pos)`、`Remove(ctx,id) (RemoveResult{Trash,RevokedTokens}, error)`、`SetBeforeRemove(fn func(id string))`。锁 `createMu` 改名 `adminMu`（新建、改名、排序、删除互斥）。默认工作空间删除返回 `ErrProtected`（API 403 `forbidden`）；管理对象不存在返回 `404 not_found`，不用 `workspace_not_found`（前端收到后者会切回默认空间）。
+- **删除顺序**：标记 `removing`（`Get` 返回 `ErrNotFound`）→ 等进行中的打开 → 从 `open`/`order` 摘掉 → `beforeRemove` 回调 → 取消后台任务并等待、关库、关 `Gone()` 通道（WebSocket 据此退出）→ 一个事务里删 token 和登记行 → 移目录 → 提交（失败则 `undo` 把目录移回）。**#60 扩展点**：`disposeFiles(id, vaultDir)`，外部目录在这里加分支，只清 `data/workspaces/<id>/`，外部笔记文件不动。**#61 扩展点**：`SetBeforeRemove`，main.go 里有 TODO，合并后注册 `agentSvc.CloseWorkspace`；回调在锁外、库关闭前执行。
+- **回收目录**：`data/trash-workspaces/<id>-yyyyMMdd-HHmmss/`，重名加 `-2`；源目录不存在时建空占位。Windows 上刚关的监听和 SQLite 句柄会让 rename 短暂 Access is denied，`renameWithRetry` 最多重试约 3 秒（其他系统不重试）。
+- **sort 语义**：PATCH 的 `sort` 是目标位置（0 起），整表重新编号 0..n-1；默认工作空间也能排序和改名，列表不再强制默认在最前。
+- **token 绑定**：`api_tokens.workspace_id`（0006 已有）；`CreateToken(ctx,name,scope,workspace)` 空串等于 default；创建时校验空间存在（400）。`mcpserver.Options.Workspaces` 取代单一 `Tools`：验证 token 时解析所属空间的 `tools.Registry`，空间已不存在返回 `ErrInvalidToken`（401）。审计记录 `workspace`，`GET /api/audit?workspace=` 筛选。
+- **前端**：设置新增“工作空间”分组（列表页拖动或键盘排序，`Reorder.Group` + 仅把手可拖；详情页重命名、路径、切换、删除）。`stores/workspace` 加 `rename/reorder/remove/setList`，`listSeq` 防止过期的列表请求把已删除的空间加回来；删除当前空间先 `switchTo(default)` 再请求删除。token 创建表单有工作空间下拉（默认当前空间），列表和详情显示所属空间。
+- **深色危险按钮**：深色模式 `--color-on-danger` 改为 `#1c1c1e`，否则 `.btn-danger` 的对比度不过 axe。
+
+## 2026-11-08 21:35 #58 前端切换工作空间
+
+- **当前工作空间**：`lib/workspace.ts` 是唯一来源。`currentWorkspace()` / `setCurrentWorkspace(ws)`（模块加载时从 `location.pathname` 解析），纯函数 `apiPrefix(ws)`（`/api` 或 `/api/w/<id>`）、`routePrefix` / `workspacePath(ws, path)` / `splitWorkspacePath(pathname)`（默认空间不加前缀，其他是 `/w/<id>`，首页是 `/w/<id>`）、`storageKey(base, ws)`（默认原键名，其他加 `:<id>`）、`WORKSPACE_STORAGE`（recent、expanded、agentChat）、`localDbName(ws)`。`stores/ui` 的 `parseRoute` / `routePath` 仍是不带前缀的路径，`navigate` 和 `syncFromLocation` 负责加减前缀；设置页的 `lodeFrom` 存不带前缀的路径。
+- **API 客户端**：`api` 是全局接口加 `notesApi(() => apiPrefix(currentWorkspace()))`，笔记相关接口每次调用时读当前工作空间；`workspaceApi(ws)` 固定前缀，给同步引擎用（旧引擎在切换后收尾的请求不会打到新空间）。助手的对话接口按工作空间，供应商、模型、设置是全局的。`setWorkspaceMissingHandler`：任何请求收到 `404 workspace_not_found` 时提示并切回默认空间（地址写错、空间被删）。
+- **同步引擎换实例**：`sync/engine` 的 `export let sync` 是活绑定，`switchSyncEngine(ws)` 新建引擎、`adopt` 旧引擎的订阅（listeners 对象和 `isKnown`）、`dispose` 旧的（停止 WebSocket，不再发事件、不再改 `useSync`，进行中的补发和追赶结束后关闭 IndexedDB），已启动时立即启动新的。所有代码都通过 `sync.xxx` 访问，不要把 `sync` 存到局部变量里跨 await 使用（`vault.load` 用 `engine !== sync` 丢弃过期结果）。
+- **切换流程**（`stores/workspace` 的 `switchTo`，串行执行）：编辑器 `flush` 把没交给同步引擎的修改交给旧引擎（离线时进入旧空间的写队列）→ 写笔记树缓存 → `setCurrentWorkspace` → 关编辑器、`resetVault`、`useAgent.switchWorkspace()`、关助手弹窗和快速切换器 → `switchSyncEngine` → 导航（默认 push，后退能回到原空间；浏览器前进后退用 `history: 'none'`）→ 载入笔记树、刷新列表。`MainView` 没有按工作空间加 key（手机上会把旧笔记滑出到新空间），各组件自己订阅 `useWorkspace(s => s.current)`。`FileTree` 按工作空间加 key，展开状态各存各的。
+- **列表缓存**：`lode.workspaces`（全局键）缓存工作空间列表，离线冷启动也能显示名称。退出登录用 `clearAllLocalCaches()` 清掉所有已知工作空间的离线缓存（写队列保留）。
+- **助手**：非默认空间的对话接口返回 501，`useAgent` 设 `unsupported: true`，面板显示 `agent-unsupported` 提示和切回“笔记”的按钮，不弹错误提示。#61 实现后去掉。
+- **命令面板**：至少两个字才列命令（避免一个字模糊匹配到“切换工作空间”），命令排在笔记结果之后、“新建笔记”之前。顺带修了已有的过滤问题：标题分数 -1 加 50 后变成 49，所有笔记都会出现在任何查询里。
+- **菜单提示文字**：高亮项（强调色背景）上的 `.menu-hint` 去掉了 0.8 透明度，axe 测到对比度不足。
+- **e2e**：`ui-workspaces.spec` 在公共实例里建了一个名为“工作”的空间；后面只有 visual.spec，不受影响。重新打开快速切换器前要等它关闭动画结束，否则 AnimatePresence 复用正在退出的组件，输入框里还有上次的文字。
+
+## 2026-11-08 21:03 #57 新建内置工作空间、按需打开
+
+- **迁移 0006**：`workspaces(id, name, vault_dir, sort, created_at)` 登记表并插入 `('default','笔记','',0,now)`；同时加 `api_tokens.workspace_id`、`audit_log.workspace_id`（默认 `'default'`），#59 不用再迁移。`index.db` 和 `app.db` 跑同一套迁移，所以 `index.db` 里也有一行 default 登记（没人读）。约定写在 `db` 包注释：迁移只能写结构变更和常量，不能读全局表的数据回填。新增 `db.MigrateTo(ctx, db, version)` 用来在测试里构造旧版本库；迁移前备份按库文件名命名（`app-v*.db` / `index-v*.db`）。
+- **Manager**：`workspace.Options` 加 `DB`（app.db，登记表）、`DataDir`、`Now`；`DB` 为 nil 时只有默认工作空间（`api.Server` 只传 `Notes` 的旧写法）。`Create(ctx, CreateOptions{Name}) (Info, error)`：id 为 6 位 `[a-z0-9]`（crypto/rand，跳过已登记和目录已存在的），先建 `vault/`、`trash/` 和迁移好的 `index.db` 再写登记表（`sort = max+1`），失败时删掉目录；不打开。`List(ctx) ([]Info, error)` 不打开工作空间，`note_count` 对没打开的临时 `db.Connect` 它的 index.db 数一次。`Get` 对未打开的：校验 id 格式 → 查登记表 → 打开 index.db（`db.Open` 迁移）→ `notes.New`；并发 Get 用 `opening` 通道只打开一次，打开过程用 `context.WithoutCancel`；Start 之后打开的立即 `startLocked`（先监听再对账，历史清理各跑一份）。`Close` 后 `Get` 未打开的返回 `ErrClosed`；Close 等后台任务结束后关闭 Manager 打开的 index.db（app.db 仍由 main 关）。`PathsFor(dataDir, id, vaultDir) Paths{Root, Index, Vault, Trash}` 统一路径（default 是 `data/{app.db,vault,trash}`）。`IsOpen(id)` 供测试。新增 `notes.Service.NoteCount`。
+- **API**：`GET /api/workspaces` → `{"workspaces":[Info]}`，`POST /api/workspaces {name}` → 201 Info。JSON 字段沿用现有接口的 snake_case（`vault_dir`、`note_count`、`created_at`），没有用设计文档里的 camelCase。传 `vault_dir` 时 400（外部目录留给后续票），名称为空、超过 64 字符、含控制字符时 400。重名允许。
+- **助手对话在非默认工作空间**：选了“返回明确错误”——`agentChatRoutes()` 的每个处理函数包一层 `defaultWorkspaceOnly`，非 default 返回 `501 workspace_agent_unsupported`。不走全局对话，因为全局对话的工具绑定的是默认工作空间的笔记，会串数据。#61 拆出 ChatStore 后删掉这层。
+- **测试**：`api` 包的 `newServer` 现在总是带登记表的 Manager（数据目录就是测试临时目录，不启动后台任务；需要的测试在选项里调用 `s.Workspaces.Start(t.Context())`）。`workspace` 包的 goroutine 泄漏测试比较 `runtime.NumGoroutine()`，基线在打开 app.db 之后取。本机没有 gcc，`-race` 跑不了。
+- **没做**：~~`lode backup/restore` 还不包含 `data/workspaces/`~~（#62 已做），MCP 仍只服务默认工作空间（#59）。
+
+## 2026-11-08 20:30 #56 工作空间接入点（预重构）
+
+- **Manager**：`internal/workspace`。`workspace.New(Options{Default: *notes.Service, Logger, Debounce, PruneInterval})` 立即可用；`Start(ctx)` 启动每个已打开工作空间的后台任务（先 `Watch` 建好监听再 `Reconcile`，另一个任务定期 `PruneHistory`），`Close()` 取消并等它们结束，可重复调用。`Get(ctx, id)` 现在只认 `default`，其他返回 `workspace.ErrNotFound`；#57 在 `Get` 里按需打开（打开后用 `Start` 时保存的 ctx 启动后台任务）。`Workspace{ID, Notes, Tools}`，`Tools` 由 `tools.New(Notes)` 构造，MCP 和助手都从默认工作空间取。会话清理仍在 `main.go`，是全局的。`main.go` 退出顺序：取消会话清理 → `workspaces.Close()` → `agentSvc.Close()` → 关库。
+- **context**：`workspace.WithContext` / `workspace.FromContext`；api 里用 `currentWorkspace(r)`、`wsNotes(r)`（没有工作空间时 panic，说明路由没挂对）。
+- **路由**：按工作空间区分的路由集中在 `api/workspace.go` 的 `workspaceRoutes()`（模式写原路径 `/api/...`，助手对话路由在 `agentChatRoutes()`），每条在会话 mux 上挂原路径（`inWorkspace("default")` 包一层），再挂到一个单独的 mux；`/api/w/` 前缀处理函数解析 `{ws}`、放进 context、去掉 `/w/{ws}` 后交给那个 mux。这样两种前缀的匹配、405、404 完全一致，全局接口不会出现在前缀下。新增按工作空间的接口只要加进 `workspaceRoutes()`，测试会遍历它检查未知工作空间的 404。
+- **404 格式**：`{"code":"workspace_not_found","message":"工作空间不存在","error":"workspace_not_found"}`——issue 要求 `error` 字段，同时保留统一错误格式的 `code`/`message`。未登录先 401。
+- **兼容**：`api.Server.Notes` 保留，`Workspaces` 为 nil 时 `Handler()` 用它构造只有默认工作空间的 Manager（不启动后台任务），现有测试不用改。`agent.Service` 的 `Notes`/`Tools` 字段不动，对话处理函数经 `s.chatAgent(r)` 取助手服务，#61 在那里改成按工作空间取 `ChatStore`。附件上传返回的 `url` 由 `apiPrefix(ws)` 拼，默认工作空间仍是 `/api/files/...`。
+
 ## 2026-11-08 18:20 #47 整体字号
 
 - **实现**：`stores/displayPrefs.ts`（localStorage `lode.display.fontSize`，标准档不存），`applyFontSize` 在 `main.tsx` 渲染前执行，给 `<html>` 加 `data-font-size`；`global.css` 按它把根字号设为 `--root-size-small/large/xlarge`（87.5% / 112.5% / 125%）。百分比相对浏览器默认字号，所以尊重用户的浏览器设置；界面和正文都用 rem，一起缩放。

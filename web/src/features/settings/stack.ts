@@ -7,6 +7,8 @@
  *   ['editor']            编辑器
  *   ['keyboard']          键盘
  *   ['passkeys']          通行密钥
+ *   ['workspaces']        工作空间
+ *   ['workspaces', <id>]  单个工作空间
  *   ['agent']             助手
  *   ['agent', <供应商 id>] 单个供应商
  *   ['mcp']               MCP 接入
@@ -24,6 +26,8 @@ export type SettingsPageId =
   | 'editor'
   | 'keyboard'
   | 'passkeys'
+  | 'workspaces'
+  | 'workspace'
   | 'agent'
   | 'provider'
   | 'mcp'
@@ -33,7 +37,7 @@ export type SettingsPageId =
 
 export interface SettingsPageRef {
   id: SettingsPageId
-  /** 第二级页面的参数：供应商 id 或 token id */
+  /** 第二级页面的参数：工作空间 id、供应商 id 或 token id */
   param?: string
 }
 
@@ -43,6 +47,7 @@ export const SECTION_TITLE = {
   editor: '编辑器',
   keyboard: '键盘',
   passkeys: '通行密钥',
+  workspaces: '工作空间',
   agent: '助手',
   mcp: 'MCP 接入',
   tokens: 'API token',
@@ -54,7 +59,7 @@ export const ROOT_TITLE = '设置'
 type Section = keyof typeof SECTION_TITLE
 
 /** 有第二级页面的分组，以及第二级页面的 id。 */
-const DETAIL: Partial<Record<Section, SettingsPageId>> = { agent: 'provider', tokens: 'token' }
+const DETAIL: Partial<Record<Section, SettingsPageId>> = { workspaces: 'workspace', agent: 'provider', tokens: 'token' }
 
 function isSection(s: string): s is Section {
   return Object.hasOwn(SECTION_TITLE, s)

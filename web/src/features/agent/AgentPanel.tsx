@@ -5,6 +5,7 @@ import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
 import { chatModel, enabledModels, useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { useWorkspace } from '../../stores/workspace'
 import { PanelToggleSlot } from '../shell/PanelToggle'
 import { Composer } from './Composer'
 import { ApprovalCard, DraftView, MessageView } from './Thread'
@@ -190,19 +191,23 @@ export function AgentPanel({
   const activeId = useAgent((s) => s.activeId)
   const attach = useAgent((s) => s.attach)
   const newChat = useAgent((s) => s.newChat)
+  const chats = useAgent((s) => s.chats)
+  const ws = useWorkspace((s) => s.current)
   const contextPath = useVault((s) => (contextNoteId ? (s.notes[contextNoteId]?.path ?? null) : null))
   const [listOpen, setListOpen] = useState(false)
 
   useEffect(() => attach(), [attach])
+  // 对话按工作空间区分：切换工作空间后重新载入列表和记住的对话
   useEffect(() => {
     const st = useAgent.getState()
     void st.loadConfig()
     void st.loadChats()
     if (st.activeId && !st.current) void st.open(st.activeId)
-  }, [])
+  }, [ws])
 
   const model = chatModel(config, current?.chat)
-  const ready = config !== null
+  // 对话列表也要等：非默认工作空间要从它的结果知道助手能不能用
+  const ready = config !== null && chats !== null
   const noModels = ready && enabledModels(config).length === 0
   const chat = current?.chat
   const title = listOpen ? '对话' : chat?.title || '新对话'

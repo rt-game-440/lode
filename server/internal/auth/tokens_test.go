@@ -14,7 +14,7 @@ func TestAPITokenLifecycle(t *testing.T) {
 	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
 	a.now = func() time.Time { return now }
 
-	tok, secret, err := a.CreateToken(ctx, " Claude Code ", ScopeRead)
+	tok, secret, err := a.CreateToken(ctx, " Claude Code ", ScopeRead, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,13 +64,13 @@ func TestAPITokenLifecycle(t *testing.T) {
 func TestCreateTokenValidatesInput(t *testing.T) {
 	ctx := context.Background()
 	a := newAuth(t)
-	if _, _, err := a.CreateToken(ctx, "  ", ScopeWrite); !errors.Is(err, ErrInvalidTokenInput) {
+	if _, _, err := a.CreateToken(ctx, "  ", ScopeWrite, ""); !errors.Is(err, ErrInvalidTokenInput) {
 		t.Fatalf("空名称应拒绝：%v", err)
 	}
-	if _, _, err := a.CreateToken(ctx, "x", "admin"); !errors.Is(err, ErrInvalidTokenInput) {
+	if _, _, err := a.CreateToken(ctx, "x", "admin", ""); !errors.Is(err, ErrInvalidTokenInput) {
 		t.Fatalf("未知权限应拒绝：%v", err)
 	}
-	if _, _, err := a.CreateToken(ctx, strings.Repeat("长", 100), ScopeWrite); !errors.Is(err, ErrInvalidTokenInput) {
+	if _, _, err := a.CreateToken(ctx, strings.Repeat("长", 100), ScopeWrite, ""); !errors.Is(err, ErrInvalidTokenInput) {
 		t.Fatalf("过长名称应拒绝：%v", err)
 	}
 }

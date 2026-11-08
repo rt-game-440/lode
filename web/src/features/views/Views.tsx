@@ -8,6 +8,7 @@ import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
 import { dirname } from '../../lib/paths'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { useWorkspace, workspaceName } from '../../stores/workspace'
 import { sync } from '../../sync/engine'
 import { errorMessage, newNote, openNote } from '../actions'
 import { PanelToggleSlot } from '../shell/PanelToggle'
@@ -53,12 +54,13 @@ function NoteList({ notes }: { notes: Note[] }) {
 export function HomeView() {
   const notes = useVault((s) => s.notes)
   const loaded = useVault((s) => s.loaded)
+  const title = useWorkspace((s) => workspaceName(s.list, s.current))
   const recent = useMemo(() => Object.values(notes).sort((a, b) => b.mtime - a.mtime).slice(0, 20), [notes])
   return (
     <section className="view">
       <ViewBar title="" mobile={false} />
       <div className="view-body home">
-        <h1 className="home-title">笔记</h1>
+        <h1 className="home-title">{title}</h1>
         <div className="home-actions">
           <Button variant="primary" icon={<FilePlus size={16} />} onClick={() => void newNote('')}>
             新建笔记
@@ -119,15 +121,19 @@ export function TrashView({ mobile }: { mobile: boolean }) {
   const [items, setItems] = useState<TrashItem[] | null>(null)
   const toast = useUI((s) => s.toast)
   const restoreNote = useVault((s) => s.restoreNote)
+  // 切换工作空间后重新载入（回收站按工作空间区分）
+  const ws = useWorkspace((s) => s.current)
 
   const load = useCallback(async () => {
     try {
-      setItems(await api.trash())
+      const list = await api.trash()
+      if (useWorkspace.getState().current === ws) setItems(list)
     } catch (err) {
+      if (useWorkspace.getState().current !== ws) return
       toast({ message: errorMessage(err), tone: 'error' })
       setItems([])
     }
-  }, [toast])
+  }, [toast, ws])
 
   useEffect(() => {
     void load()

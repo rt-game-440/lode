@@ -122,6 +122,8 @@ export interface ApiToken {
   created_at: number
   /** 0 表示从未使用 */
   last_used_at: number
+  /** 绑定的工作空间 id：MCP 只能访问这个工作空间 */
+  workspace: string
 }
 
 /** 一条 MCP 调用记录。 */
@@ -130,9 +132,26 @@ export interface AuditEntry {
   at: number
   token_id: string
   token_name: string
+  /** 调用发生的工作空间 id */
+  workspace: string
   tool: string
   target: string
   ok: boolean
   error?: string
   duration_ms: number
+}
+
+/** 工作空间（docs/api.md 的“工作空间”一节）。id 创建后不变，`default` 是默认工作空间。 */
+export interface WorkspaceInfo {
+  id: string
+  name: string
+  external: boolean
+  /** 只对外部目录返回 */
+  vault_dir?: string
+  /** 笔记文件所在位置：内置位置是相对数据目录的路径（如 workspaces/k3f9a2/vault），外部目录是绝对路径 */
+  path?: string
+  sort: number
+  created_at: number
+  /** 索引里的笔记数；还没打开过的工作空间读的是上次的索引 */
+  note_count: number
 }

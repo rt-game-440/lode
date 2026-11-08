@@ -1,4 +1,5 @@
 // 助手接口（docs/api.md 的“助手”一节）。字段与服务端一致，用 snake_case。
+import { apiPrefix, currentWorkspace } from '../lib/workspace'
 import { request } from './client'
 
 export type ProviderKind = 'openai' | 'anthropic' | 'gemini'
@@ -176,6 +177,8 @@ export interface Attachment {
 }
 
 const enc = encodeURIComponent
+/** 对话按工作空间区分（`/api/agent/chats` 或 `/api/w/<id>/agent/chats`）；供应商、模型和设置是全局的。 */
+const chatsBase = () => `${apiPrefix(currentWorkspace())}/agent/chats`
 
 export const agentApi = {
   config: () => request<AgentConfig>('GET', '/api/agent/config'),
@@ -188,16 +191,16 @@ export const agentApi = {
   deleteModel: (id: string) => request<void>('DELETE', `/api/agent/models/${enc(id)}`),
   updateSettings: (s: AgentSettings) => request<AgentSettings>('PUT', '/api/agent/settings', s),
 
-  chats: () => request<{ chats: Chat[] }>('GET', '/api/agent/chats').then((r) => r.chats),
-  createChat: (modelId = '') => request<Chat>('POST', '/api/agent/chats', { model_id: modelId }),
-  chat: (id: string) => request<ChatView>('GET', `/api/agent/chats/${enc(id)}`),
+  chats: () => request<{ chats: Chat[] }>('GET', chatsBase()).then((r) => r.chats),
+  createChat: (modelId = '') => request<Chat>('POST', chatsBase(), { model_id: modelId }),
+  chat: (id: string) => request<ChatView>('GET', `${chatsBase()}/${enc(id)}`),
   updateChat: (id: string, patch: { title?: string; model_id?: string; effort?: Effort | '' }) =>
-    request<Chat>('PATCH', `/api/agent/chats/${enc(id)}`, patch),
-  deleteChat: (id: string) => request<void>('DELETE', `/api/agent/chats/${enc(id)}`),
+    request<Chat>('PATCH', `${chatsBase()}/${enc(id)}`, patch),
+  deleteChat: (id: string) => request<void>('DELETE', `${chatsBase()}/${enc(id)}`),
   send: (id: string, input: { text: string; mentions: string[]; attachments: Attachment[] }) =>
-    request<{ message: Message }>('POST', `/api/agent/chats/${enc(id)}/messages`, input).then((r) => r.message),
-  stop: (id: string) => request<void>('POST', `/api/agent/chats/${enc(id)}/stop`),
+    request<{ message: Message }>('POST', `${chatsBase()}/${enc(id)}/messages`, input).then((r) => r.message),
+  stop: (id: string) => request<void>('POST', `${chatsBase()}/${enc(id)}/stop`),
   resolve: (id: string, callId: string, approve: boolean) =>
-    request<void>('POST', `/api/agent/chats/${enc(id)}/approvals/${enc(callId)}`, { approve }),
-  streamUrl: (id: string) => `/api/agent/chats/${enc(id)}/stream`,
+    request<void>('POST', `${chatsBase()}/${enc(id)}/approvals/${enc(callId)}`, { approve }),
+  streamUrl: (id: string) => `${chatsBase()}/${enc(id)}/stream`,
 }

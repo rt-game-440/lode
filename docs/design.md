@@ -50,7 +50,7 @@
 - 强调色是 Apple 蓝的 AA 变体：
   - 文字、图标、焦点环用 `--color-accent`；
   - 按钮底色用 `--color-accent-fill`，上面的文字用 `--color-on-accent`。
-- 状态色：`--color-danger`、`--color-success`、`--color-warning`。危险底色上的文字用 `--color-on-danger`。
+- 状态色：`--color-danger`、`--color-success`、`--color-warning`。危险底色上的文字用 `--color-on-danger`（深色模式下是深色字 `#1c1c1e`，保证在较亮的危险色上对比度达到 4.5:1）。
 - 高对比度（`prefers-contrast: more`）：次级文字提升为主文字色，分隔线加深，材质改为实色。
 
 ## 材质

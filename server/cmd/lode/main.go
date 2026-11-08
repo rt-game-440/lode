@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -26,9 +25,9 @@ import (
 	"github.com/rt-game-440/lode/server/internal/ops"
 	"github.com/rt-game-440/lode/server/internal/passkey"
 	"github.com/rt-game-440/lode/server/internal/secret"
-	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
 	"github.com/rt-game-440/lode/server/internal/webui"
+	"github.com/rt-game-440/lode/server/internal/workspace"
 )
 
 // 构建时通过 -ldflags "-X main.version=... -X main.commit=..." 注入。
@@ -50,7 +49,7 @@ func main() {
 	case "-h", "--help", "help":
 		fmt.Println(usage)
 		return
-	case "serve", "backup", "restore", "reset-password", "healthcheck":
+	case "serve", "backup", "restore", "reset-password", "healthcheck", "workspace":
 	default:
 		fmt.Fprintf(os.Stderr, "未知命令: %s\n\n%s\n", cmd, usage)
 		os.Exit(2)
@@ -69,6 +68,8 @@ func main() {
 		err = runRestore(cfg, args, os.Stdin)
 	case "reset-password":
 		err = runResetPassword(cfg, args)
+	case "workspace":
+		err = runWorkspace(cfg, args, os.Stdout)
 	case "healthcheck":
 		err = runHealthcheck(cfg)
 	default:
@@ -109,11 +110,19 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	svc := notes.New(notes.Options{DB: database, Vault: v, TrashDir: cfg.TrashDir(), Logger: log})
+	// 默认工作空间：索引在 app.db，vault 在 data/vault。其他工作空间登记在 app.db 的 workspaces 表里，
+	// 放在 data/workspaces/<id>/，由 Manager 在第一次访问时打开，保持到退出。
+	workspaces := workspace.New(workspace.Options{
+		Default: notes.New(notes.Options{DB: database, Vault: v, TrashDir: cfg.TrashDir(), Logger: log}),
+		DB:      database,
+		DataDir: cfg.DataDir,
+		Logger:  log,
+	})
 	authSvc := auth.New(database)
 
 	auditLog := audit.New(database)
-	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: authSvc, Audit: auditLog, Version: version, Log: log})
+	// MCP 按 token 绑定的工作空间取工具（工作空间按需打开）。
+	mcpHandler := mcpserver.Handler(mcpserver.Options{Workspaces: workspaces, Auth: authSvc, Audit: auditLog, Version: version, Log: log})
 
 	protected, err := keyprotect.Enabled(ctx, database)
 	if err != nil {
@@ -135,8 +144,10 @@ func serve(cfg config.Config, log *slog.Logger) error {
 		log.Info("API key 由通行密钥保护，当前处于锁定状态：用加入保护的通行密钥登录一次即可解锁", "removed_stale_secret_key", keySrc == secret.SourcePasskeyStale)
 	}
 	store := agent.NewStore(database, keys)
-	agentSvc := &agent.Service{Store: store, Tools: tools.New(svc), Notes: svc, Log: log}
-	defer agentSvc.Close() // 在关闭数据库之前停止生成（defer 逆序执行）
+	agentSvc := &agent.Service{Store: store, Log: log}
+	// 删除工作空间时先停掉它的助手生成任务，再关闭 index.db、移走目录
+	workspaces.SetBeforeRemove(agentSvc.CloseWorkspace)
+	defer agentSvc.Close() // 兜底；正常退出时下面先于关闭工作空间的索引库调用
 
 	passkeys := passkey.New(database, log)
 	keyProtect, err := keyprotect.New(ctx, database, keys, passkeys, store, log)
@@ -145,7 +156,7 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	}
 	passkeys.PRFSalt = keyProtect.LoginSalt
 
-	srv := &api.Server{Notes: svc, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
+	srv := &api.Server{Workspaces: workspaces, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
 		Audit: auditLog, MCP: mcpHandler, Agent: agentSvc, Passkeys: passkeys, KeyProtect: keyProtect}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
@@ -155,63 +166,27 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	}
 	httpSrv.RegisterOnShutdown(srv.Close) // 让 WebSocket 连接随关闭退出
 
-	// 后台任务：先建立文件监听，再全量对账（中间的外部修改由监听事件补上）。HTTP 服务立即可用。
-	// 退出时先停掉后台任务并等它们结束，再关闭数据库（defer 逆序执行）。
+	// 后台任务：每个已打开的工作空间（启动时只有默认工作空间，其他的在第一次访问时打开）先建立文件监听，
+	// 再全量对账（中间的外部修改由监听事件补上），并定期清理历史版本；会话清理是全局的。HTTP 服务立即可用。
+	// 退出时先停掉所有已打开工作空间的后台任务并等它们结束、关闭它们的索引库，再关闭 app.db（defer 逆序执行）。
 	bgCtx, cancelBg := context.WithCancel(ctx)
 	var bg sync.WaitGroup
 	defer func() {
 		cancelBg()
 		bg.Wait()
+		agentSvc.Close() // 生成任务会写各工作空间的对话库，必须先于 workspaces.Close 关闭它们
+		workspaces.Close()
 	}()
-	watching := make(chan struct{})
-	bg.Go(func() {
-		var once sync.Once
-		markReady := func() { once.Do(func() { close(watching) }) }
-		defer markReady() // 监听启动失败时也不要阻塞对账
-		if err := svc.Watch(bgCtx, 300*time.Millisecond, markReady); err != nil {
-			log.Error("文件监听失败", "err", err)
-		}
-	})
-	bg.Go(func() {
-		select {
-		case <-watching:
-		case <-bgCtx.Done():
-			return
-		}
-		start := time.Now()
-		st, err := svc.Reconcile(bgCtx)
-		if err != nil {
-			if bgCtx.Err() == nil {
-				log.Error("启动对账失败", "err", err)
-			}
-			return
-		}
-		log.Info("索引就绪", "added", st.Added, "updated", st.Updated, "moved", st.Moved, "removed", st.Removed, "dur", time.Since(start).Round(time.Millisecond))
-		debug.FreeOSMemory()
-	})
+	workspaces.Start(bgCtx)
 	bg.Go(func() {
 		session := time.NewTicker(6 * time.Hour)
 		defer session.Stop()
-		history := time.NewTicker(time.Hour)
-		defer history.Stop()
-		prune := func() {
-			if st, err := svc.PruneHistory(bgCtx); err != nil {
-				if bgCtx.Err() == nil {
-					log.Error("清理历史版本失败", "err", err)
-				}
-			} else if st.Versions+st.Changes > 0 {
-				log.Info("已清理历史", "versions", st.Versions, "changes", st.Changes)
-			}
-		}
-		prune()
 		for {
 			select {
 			case <-bgCtx.Done():
 				return
 			case <-session.C:
 				_ = authSvc.PurgeExpired(bgCtx)
-			case <-history.C:
-				prune()
 			}
 		}
 	})
