@@ -4,10 +4,12 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { installViewportTracking } from './lib/viewport'
 import { setupPWA } from './pwa'
+import { applyFontSize, useDisplayPrefs } from './stores/displayPrefs'
 import { applyTheme, useUI } from './stores/ui'
 import './styles/global.css'
 
 applyTheme(useUI.getState().theme)
+applyFontSize(useDisplayPrefs.getState().fontSize)
 setupPWA()
 installViewportTracking()
 

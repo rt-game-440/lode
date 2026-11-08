@@ -825,3 +825,46 @@
   font-weight: var(--weight-medium);
   overflow-wrap: anywhere;
 }
+
+/* 整体字号（#47）：两端的小 A、大 A 夹着分段控件，下方是笔记正文的预览 */
+.font-size-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.font-size-options {
+  flex: 0 1 22rem;
+  min-width: 0;
+}
+.font-size-glyph {
+  flex: none;
+  line-height: 1;
+  color: var(--color-label-secondary);
+}
+.font-size-glyph.is-small {
+  font-size: var(--text-footnote);
+}
+.font-size-glyph.is-large {
+  font-size: var(--text-title3);
+}
+.font-size-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.font-size-preview-title {
+  margin: 0;
+  font-size: var(--text-title3);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--color-label);
+}
+.font-size-preview-body {
+  margin: 0;
+  font-size: var(--text-editor);
+  line-height: var(--leading-body);
+  color: var(--color-label);
+}

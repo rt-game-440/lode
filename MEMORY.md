@@ -2,6 +2,25 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 18:20 #47 整体字号
+
+- **实现**：`stores/displayPrefs.ts`（localStorage `lode.display.fontSize`，标准档不存），`applyFontSize` 在 `main.tsx` 渲染前执行，给 `<html>` 加 `data-font-size`；`global.css` 按它把根字号设为 `--root-size-small/large/xlarge`（87.5% / 112.5% / 125%）。百分比相对浏览器默认字号，所以尊重用户的浏览器设置；界面和正文都用 rem，一起缩放。
+- **界面**：“设置 → 外观 → 字号”，分段控件两端是小 A、大 A，下方是正文预览；分段单选组件抽到 `components/RadioGroup.tsx`，外观面板和设置共用。
+- **测试**：截断检查比较文字的 Range 范围和元素盒子，不用 `scrollWidth`（分段控件、`hit-expand` 的伪元素会扩大点按区域，被算成溢出）。模拟浏览器默认字号用 CDP `Page.setFontSizes`。
+
+## 2026-11-08 17:55 #47 目录条
+
+- **开关**：全局、按设备，`stores/editorPrefs.ts` 的 `tocRail`（localStorage `lode.editor.tocRail`，默认开）。入口在“设置 → 通用 → 编辑器”和笔记“外观和布局”面板，两处同一个状态。手机不显示，没有标题时不显示。
+- **位置**：`TocRail.tsx` 放在 `.editor-scroll` 开头一个高度为 0 的 sticky 元素里，目录条和卡片绝对定位在右上角，不占布局。标题坐标用 `view.lineBlockAt(line.from).top + view.documentTop`（视口外的行是估算值）。
+- **当前项**：滚动区顶部往下 30% 的线以上最后一个标题；滚到底时取最后一个。跳转动画期间高亮固定在目标上。
+- **跳转**：不能用原生 `scrollTo({behavior:'smooth'})`——CodeMirror 测量行高时会改滚动位置，原生平滑滚动在第一帧就被打断。用 motion 的 `animate` 推进比例、每帧重算终点，最后 `EditorView.scrollIntoView(pos, {y:'start'})` 对齐。
+
+## 2026-11-08 17:36 #47 按笔记的外观写进 front matter
+
+- **键名**：front matter 顶层的 `lode` 映射，子键 `width`（`narrow` / `standard` / `wide`）和 `font`（`sans` / `serif` / `mono`）。默认值（`standard`、`sans`）不写；`lode` 下没有键时删掉 `lode` 行，front matter 因此变空时整块删除。读写都在 `web/src/lib/noteAppearance.ts`（纯函数）：新建时写块状 YAML（两格缩进），已有行内写法 `lode: {width: wide}` 时沿用；`lode` 下认不出的子键原样保留；保留 CRLF。front matter 的识别与编辑器的 Lezer 扩展一致（第 1 行 `---`，下一行像 YAML 键），服务端 `mdparse` 只读 `tags`，`lode` 不影响标签和链接（`TestFrontmatterAppearanceKeyIgnored`）。
+- **写入路径**：“外观和布局”面板调用 `applyNoteAppearance(view, patch)`，把新旧全文的 diff 作为一次普通编辑派发给 CodeMirror（带 `appearanceWrite` 标记、可撤销），之后由 Autosaver → `sync.save` 走正常的版本号、三方合并和冲突处理。外观状态从文档派生（`cm/appearance.ts` 的 StateField），载入、远端合并、撤销都会自动更新，界面读 `stores/noteAppearance`。
+- **编辑器里藏起 `lode`**：front matter 只有 `lode` 时整块藏起（block replace 装饰），有别的键时只藏 `lode` 几行。光标进不去（transactionFilter 把选区挪到正文开头或相邻行），普通编辑改不到（changeFilter 连同两端的换行一起保护，两端插入不受影响）；`appearanceWrite`、撤销重做、`remoteSync` 事务不受限制。载入笔记时光标放在 `bodyStart()`。
+
 ## 2026-11-08 14:22 #29 用通行密钥（PRF）保护 API key
 
 - **结构**：`secret.Keeper` 统一管理主密钥（`env` / `file` / `passkey` 三种模式，`passkey` 模式锁定时加解密返回 `secret.ErrLocked`），`agent.Store` 只依赖 `secret.Cipher` 接口；`internal/keyprotect` 管开关（`settings.key_protection='passkey'`）和开启、解锁、加入、锁定、关闭；HTTP 在 `api/keyprotect.go`。启动顺序：`keyprotect.Enabled` → `secret.OpenKeeper` → `agent.NewStore` → `passkey.New` → `keyprotect.New`，再把 `passkey.Service.PRFSalt` 设为 `keyProtect.LoginSalt`（只在开启时给登录/登记加 PRF 盐）。

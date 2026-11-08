@@ -1,0 +1,105 @@
+/* “外观和布局”面板：和菜单同一种材质，从“更多操作”按钮下方弹出，右上角是变换原点 */
+.appearance-panel {
+  position: fixed;
+  z-index: var(--z-popover);
+  width: 17.5rem;
+  max-width: calc(100vw - var(--space-4));
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--color-bg-popover);
+  -webkit-backdrop-filter: var(--material-blur-thick);
+  backdrop-filter: var(--material-blur-thick);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  transform-origin: top right;
+}
+.appearance-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.appearance-title {
+  margin: 0;
+  padding-top: var(--space-1);
+  font-size: var(--text-footnote);
+  font-weight: var(--weight-regular);
+  color: var(--color-label-secondary);
+}
+
+/* 字体：三张卡片，用各自的字体渲染“Ag”，选中的加底色、字样用强调色 */
+.font-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1);
+}
+.font-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-0-5);
+  padding: var(--space-2) 0 var(--space-1-5);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-label);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.font-card:hover {
+  background: var(--color-fill);
+}
+.font-card:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--duration-instant) var(--ease-out);
+}
+.font-card.is-selected {
+  background: var(--color-fill-selected);
+}
+.font-card-sample {
+  font-size: var(--text-title2);
+  line-height: var(--leading-tight);
+}
+.font-card.is-selected .font-card-sample {
+  color: var(--color-accent);
+}
+.font-card-label {
+  font-size: var(--text-caption);
+  color: var(--color-label-secondary);
+}
+.font-card.is-selected .font-card-label {
+  color: var(--color-label);
+}
+.font-sans {
+  font-family: var(--font-sans);
+}
+.font-serif {
+  font-family: var(--font-serif);
+}
+.font-mono {
+  font-family: var(--font-mono-text);
+}
+
+/* 开关行：目录条（全局偏好） */
+.appearance-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-separator);
+  padding-top: var(--space-3);
+  font-size: var(--text-subhead);
+  color: var(--color-label);
+}
+.appearance-row-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0-5);
+  min-width: 0;
+}
+.appearance-meta {
+  font-size: var(--text-caption);
+  color: var(--color-label-secondary);
+  line-height: var(--leading-snug);
+}

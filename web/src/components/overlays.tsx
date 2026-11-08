@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, X } from 'lucide-react'
+import { Check, ChevronRight, X } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useUI } from '../stores/ui'
@@ -219,6 +219,8 @@ export interface MenuItem {
   label: string
   icon?: ReactNode
   danger?: boolean
+  /** 打开下一级面板：右侧显示箭头 */
+  submenu?: boolean
   /** 单选菜单：true 表示当前项（打勾）、false 表示可选项；不传则是普通菜单项 */
   checked?: boolean
   /** 右侧的简短提示（例如模型的能力） */
@@ -372,6 +374,7 @@ export function MenuHost() {
                 role={it.checked === undefined ? 'menuitem' : 'menuitemradio'}
                 aria-checked={it.checked}
                 className={`menu-item${it.danger ? ' is-danger' : ''}`}
+                aria-haspopup={it.submenu ? 'dialog' : undefined}
                 onClick={() => {
                   closeMenu()
                   it.run()
@@ -381,6 +384,7 @@ export function MenuHost() {
                 <span className="menu-label">{it.label}</span>
                 {it.hint && <span className="menu-hint">{it.hint}</span>}
                 {it.checked !== undefined && <Check size={14} className="menu-check" aria-hidden="true" style={{ visibility: it.checked ? 'visible' : 'hidden' }} />}
+                {it.submenu && <ChevronRight size={14} className="menu-item-chevron" aria-hidden="true" />}
               </button>
             ),
           )}

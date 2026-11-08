@@ -1,0 +1,172 @@
+import { AnimatePresence, motion } from 'motion/react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { create } from 'zustand'
+import { RadioGroup } from '../../components/RadioGroup'
+import { usePop } from '../../components/usePop'
+import { NOTE_FONTS, type NoteFont, type PageWidth } from '../../lib/noteAppearance'
+import { useEditorPrefs } from '../../stores/editorPrefs'
+import { useNoteAppearance } from '../../stores/noteAppearance'
+import { fadeOutQuick, springSnappy } from '../../styles/tokens/motion'
+import { applyNoteAppearance } from './cm/appearance'
+import { editorRef } from './editorRef'
+import './appearance.css'
+
+// 笔记“更多操作”菜单里的“外观和布局”：从同一个按钮下方弹出的非模态面板，改动立即生效、面板保持打开，
+// Esc 或点面板外关闭。页宽、字体写进笔记的 front matter（cm/appearance）。
+
+const usePanel = create<{ anchor: HTMLElement | null }>(() => ({ anchor: null }))
+
+export function openAppearancePanel(anchor: HTMLElement) {
+  usePanel.setState({ anchor })
+}
+
+export function closeAppearancePanel() {
+  usePanel.setState({ anchor: null })
+}
+
+export const WIDTH_LABEL: Record<PageWidth, string> = { narrow: '窄', standard: '适中', wide: '宽' }
+export const FONT_LABEL: Record<NoteFont, string> = { sans: '默认', serif: '衬线', mono: '等宽' }
+
+export function AppearancePanelHost({ mobile }: { mobile: boolean }) {
+  const anchor = usePanel((s) => s.anchor)
+  const ref = useRef<HTMLDivElement>(null)
+  const pop = usePop({ scale: 0.96 }, { scale: 0.98 }, { transition: fadeOutQuick })
+  const [pos, setPos] = useState<{ right: number; top: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!anchor || !ref.current) {
+      setPos(null)
+      return
+    }
+    const a = anchor.getBoundingClientRect()
+    const r = ref.current.getBoundingClientRect()
+    const right = Math.max(8, Math.min(window.innerWidth - a.right, window.innerWidth - r.width - 8))
+    const top = Math.max(8, Math.min(a.bottom + 4, window.innerHeight - r.height - 8))
+    setPos({ right, top })
+  }, [anchor])
+
+  // 定位完成、面板可见后，焦点进第一组的选中项
+  const shown = !!pos
+  useLayoutEffect(() => {
+    if (shown) ref.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.focus()
+  }, [shown])
+
+  useEffect(() => {
+    if (!anchor) return
+    const onDown = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) closeAppearancePanel()
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      closeAppearancePanel()
+      if (anchor.isConnected) anchor.focus()
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('resize', closeAppearancePanel)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('resize', closeAppearancePanel)
+    }
+  }, [anchor])
+
+  // 离开笔记时关闭
+  useEffect(() => closeAppearancePanel, [])
+
+  return (
+    <AnimatePresence>
+      {anchor && (
+        <motion.div
+          ref={ref}
+          role="dialog"
+          aria-label="外观和布局"
+          className="appearance-panel"
+          data-testid="appearance-panel"
+          style={{ right: pos?.right ?? 8, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+          {...pop}
+          transition={springSnappy}
+        >
+          <AppearanceControls mobile={mobile} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+function AppearanceControls({ mobile }: { mobile: boolean }) {
+  const width = useNoteAppearance((s) => s.width)
+  const font = useNoteAppearance((s) => s.font)
+  const tocRail = useEditorPrefs((s) => s.tocRail)
+  const setTocRail = useEditorPrefs((s) => s.setTocRail)
+  const set = (patch: Parameters<typeof applyNoteAppearance>[1]) => {
+    if (editorRef.view) applyNoteAppearance(editorRef.view, patch)
+  }
+  return (
+    <>
+      <Section title="字体" id="appearance-font">
+        <RadioGroup
+          labelledBy="appearance-font"
+          className="font-cards"
+          value={font}
+          options={NOTE_FONTS.map((f) => ({
+            value: f,
+            name: FONT_LABEL[f],
+            label: (
+              <>
+                <span className={`font-card-sample font-${f}`} aria-hidden="true">
+                  Ag
+                </span>
+                <span className="font-card-label" aria-hidden="true">
+                  {FONT_LABEL[f]}
+                </span>
+              </>
+            ),
+          }))}
+          itemClass={(on) => `font-card${on ? ' is-selected' : ''}`}
+          onChange={(f) => set({ font: f })}
+        />
+      </Section>
+      {!mobile && (
+        <Section title="页宽" id="appearance-width">
+          <RadioGroup
+            labelledBy="appearance-width"
+            className="segmented appearance-width"
+            value={width}
+            options={(['narrow', 'standard', 'wide'] as const).map((w) => ({ value: w, label: WIDTH_LABEL[w] }))}
+            itemClass={(on) => `segment${on ? ' is-selected' : ''}`}
+            onChange={(w) => set({ width: w })}
+          />
+        </Section>
+      )}
+      {!mobile && (
+        <label className="appearance-row">
+          <span className="appearance-row-text">
+            <span>目录条</span>
+            <span className="appearance-meta">正文右侧显示标题目录，所有笔记通用，只影响这台设备</span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={tocRail}
+            onChange={(e) => setTocRail(e.target.checked)}
+            data-testid="appearance-toc-switch"
+          />
+        </label>
+      )}
+    </>
+  )
+}
+
+function Section({ title, id, children }: { title: string; id: string; children: ReactNode }) {
+  return (
+    <section className="appearance-section">
+      <h3 className="appearance-title" id={id}>
+        {title}
+      </h3>
+      {children}
+    </section>
+  )
+}

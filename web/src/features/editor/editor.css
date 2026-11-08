@@ -67,6 +67,7 @@
 }
 
 .editor-scroll {
+  --note-width: var(--editor-max-width);
   flex: 1;
   min-height: 0;
   display: flex;
@@ -75,8 +76,9 @@
   overscroll-behavior: contain;
 }
 .editor-title {
+  font-family: var(--note-font, inherit);
   width: 100%;
-  max-width: var(--editor-max-width);
+  max-width: var(--note-width, var(--editor-max-width));
   margin: 0 auto;
   padding: var(--space-6) var(--space-6) 0;
   border: 0;
@@ -101,6 +103,38 @@
   display: grid;
   place-items: center;
   flex: 1;
+}
+
+/* 按笔记的字体（front matter 的 lode.font），桌面和手机都生效；代码块和行内代码始终等宽（cm/theme.ts） */
+.editor-scroll[data-font='serif'] {
+  --note-font: var(--font-serif);
+}
+.editor-scroll[data-font='mono'] {
+  --note-font: var(--font-mono-text);
+}
+
+/*
+ * 按笔记的页宽（front matter 的 lode.width），只在桌面端生效；手机端仍按屏幕宽度排版。
+ * 切换时标题和正文列的最大宽度一起过渡（布局本身的变化，同侧栏让位一样是 transform 以外的例外），
+ * 载入笔记时不带 data-animate，直接到位；减弱动态效果时直接切换。
+ */
+@media (min-width: 768px) {
+  .editor-scroll[data-width='narrow'] {
+    --note-width: var(--editor-width-narrow);
+  }
+  .editor-scroll[data-width='wide'] {
+    --note-width: calc(100% - 2 * var(--editor-gutter-wide));
+  }
+  .editor-scroll[data-animate] .editor-title,
+  .editor-scroll[data-animate] .cm-content {
+    transition: max-width var(--duration-slow) var(--ease-out);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-scroll[data-animate] .editor-title,
+  .editor-scroll[data-animate] .cm-content {
+    transition: none;
+  }
 }
 
 @media (max-width: 767px) {
