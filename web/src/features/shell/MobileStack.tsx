@@ -1,5 +1,6 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
 import { type PointerEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { agentBackAction } from '../../lib/agentNav'
 import { VelocityTracker, consumeTouchMoves, lockAxis, rubberband, shouldComplete } from '../../lib/gesture'
 import { useEditor } from '../../stores/editor'
 import { type Route, useUI } from '../../stores/ui'
@@ -11,7 +12,9 @@ const PARALLAX = 0.3
 const DIM = 0.35
 
 export function goBack() {
-  useUI.getState().navigate({ view: 'home' })
+  const ui = useUI.getState()
+  if (ui.route.view === 'agent') ui.agentBack()
+  else ui.navigate({ view: 'home' })
 }
 
 /**
@@ -32,6 +35,14 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
   const [covered, setCovered] = useState(pane === 'detail')
   /** 这次返回由手势甩出触发：带动量，用有轻微回弹的 springSheet；点返回按钮则用 springPanel */
   const flung = useRef(false)
+  /** 返回到另一个详情页（例如助手页回到来源笔记）：甩出后换内容，换好了再把详情页放回原位 */
+  const resetOnRoute = useRef(false)
+  useLayoutEffect(() => {
+    if (!resetOnRoute.current) return
+    resetOnRoute.current = false
+    dx.set(0)
+    setCovered(true)
+  }, [route, dx])
 
   if (pane === 'detail' && route.view !== 'home' && shown !== route) setShown(route)
 
@@ -107,7 +118,17 @@ export function MobileStack({ list, detail }: { list: ReactNode; detail: (route:
       // pointercancel（系统接管了手势）不按速度判断，直接弹回
       if (e.type === 'pointerup' && shouldComplete(dx.get(), s.v.velocity(), widthRef.current)) {
         flung.current = true
-        goBack()
+        const st = useUI.getState()
+        if (st.route.view === 'agent' && agentBackAction(history.state) === 'history') {
+          // 历史里的上一页还是详情页：下层列表不变，详情页甩出屏幕后再跳回去
+          animate(dx, widthRef.current, {
+            ...springSheet,
+            onComplete: () => {
+              resetOnRoute.current = true
+              goBack()
+            },
+          })
+        } else goBack()
       } else animate(dx, 0, { ...springSheet, onComplete: () => setCovered(true) })
       return
     }

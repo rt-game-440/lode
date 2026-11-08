@@ -182,7 +182,6 @@ export function AgentPanel({
   const activeId = useAgent((s) => s.activeId)
   const attach = useAgent((s) => s.attach)
   const newChat = useAgent((s) => s.newChat)
-  const navigate = useUI((s) => s.navigate)
   const contextPath = useVault((s) => (contextNoteId ? (s.notes[contextNoteId]?.path ?? null) : null))
   const [listOpen, setListOpen] = useState(false)
 
@@ -204,7 +203,7 @@ export function AgentPanel({
     <section className={`agent${page ? ' is-page' : ''}${popup ? ' is-popup' : ''}`} aria-label="助手" data-testid="agent-panel">
       <header className="agent-head" data-sheet-drag={popup && mobile ? '' : undefined}>
         {page && mobile && (
-          <IconButton label="返回" onClick={() => navigate({ view: 'home' })}>
+          <IconButton label="返回" onClick={() => useUI.getState().agentBack()}>
             <ChevronLeft size={22} />
           </IconButton>
         )}
