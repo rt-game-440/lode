@@ -10,6 +10,7 @@ import { useUI } from '../../stores/ui'
 import { errorMessage } from '../actions'
 import { ViewBar } from '../views/Views'
 import { AgentSection } from './AgentSettings'
+import { EditorPrefsSection } from './EditorPrefsSection'
 import './settings.css'
 
 const dateFmt = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -58,6 +59,7 @@ export function SettingsView({ mobile }: { mobile: boolean }) {
       <ViewBar title="设置" mobile={mobile} />
       <div className="view-body settings">
         <AgentSection />
+        <EditorPrefsSection />
         <McpSection />
         <TokenSection version={version} />
         <AuditSection version={version} onRefresh={refresh} />

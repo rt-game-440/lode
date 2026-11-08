@@ -18,6 +18,8 @@ import { sync } from '../../sync/engine'
 import { diffChangeSet, rebase } from '../../sync/textdiff'
 import { type EditorEnv, editorExtensions, remoteSync } from './cm/setup'
 import { editorRef, takeTitleFocus } from './editorRef'
+import { useEditorPrefs } from '../../stores/editorPrefs'
+import { FormatToolbar } from './FormatToolbar'
 import { MobileToolbar } from './MobileToolbar'
 import './editor.css'
 
@@ -207,6 +209,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
     }
   }, [])
 
+  const showToolbar = useEditorPrefs((s) => s.formatToolbar)
   const showEditor = !!doc && doc.id === id && !notFound
 
   return (
@@ -253,6 +256,14 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
           </IconButton>
         )}
       </header>
+
+      {!mobile && showToolbar && view && showEditor && (
+        <FormatToolbar
+          view={view}
+          upload={uploadImage}
+          onUploadError={(err) => toast({ message: `图片上传失败：${errorMessage(err)}`, tone: 'error' })}
+        />
+      )}
 
       <div className="editor-scroll" ref={scrollRef}>
         {note && showEditor && (

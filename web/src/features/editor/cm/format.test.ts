@@ -1,6 +1,6 @@
 import { EditorSelection, EditorState, type TransactionSpec } from '@codemirror/state'
 import { describe, expect, it } from 'vitest'
-import { cycleHeading, insertLink, insertWikiLink, toggleList } from './format'
+import { cycleHeading, insertLink, insertWikiLink, toggleList, toggleQuote, toggleWrap } from './format'
 
 /** 用 | 标出光标，[ 和 ] 标出选区。 */
 function state(text: string) {
@@ -63,6 +63,36 @@ describe('insertLink', () => {
   })
   it('没有选区时插入空链接，光标在方括号里', () => {
     expect(apply(state('看|吧'), insertLink(state('看|吧')))).toBe('看[|]()吧')
+  })
+})
+
+describe('toggleWrap', () => {
+  it('选中文字加粗，再触发一次去掉', () => {
+    const s = state('一[段话]')
+    const once = s.update(toggleWrap(s, '**')).state
+    expect(once.doc.toString()).toBe('一**段话**')
+    expect(once.selection.main.from).toBe(3)
+    const twice = once.update(toggleWrap(once, '**')).state
+    expect(twice.doc.toString()).toBe('一段话')
+  })
+  it('空选区插入一对标记，光标在中间；在空标记中间再触发则删除', () => {
+    const s = state('a|')
+    expect(apply(s, toggleWrap(s, '`'))).toBe('a`|`')
+    const once = s.update(toggleWrap(s, '`')).state
+    expect(once.update(toggleWrap(once, '`')).state.doc.toString()).toBe('a')
+  })
+  it('斜体用单个星号', () => {
+    const s = state('[x]')
+    expect(s.update(toggleWrap(s, '*')).state.doc.toString()).toBe('*x*')
+  })
+})
+
+describe('toggleQuote', () => {
+  it('加上引用再去掉，多行统一处理', () => {
+    const s = EditorState.create({ doc: 'a\nb', selection: EditorSelection.range(0, 3) })
+    const once = s.update(toggleQuote(s)).state
+    expect(once.doc.toString()).toBe('> a\n> b')
+    expect(once.update(toggleQuote(once)).state.doc.toString()).toBe('a\nb')
   })
 })
 
