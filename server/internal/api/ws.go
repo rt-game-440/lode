@@ -45,11 +45,15 @@ func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
 	if !heartbeat("hello") {
 		return
 	}
+	gone := currentWorkspace(r).Gone()
 	ticker := time.NewTicker(s.WSPingInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-gone:
+			conn.Close(websocket.StatusGoingAway, "工作空间已删除")
 			return
 		case <-s.done:
 			conn.Close(websocket.StatusGoingAway, "服务器正在关闭")

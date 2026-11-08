@@ -16,6 +16,7 @@ type Entry struct {
 	At         int64  `json:"at"` // unix 毫秒
 	TokenID    string `json:"token_id"`
 	TokenName  string `json:"token_name"`
+	Workspace  string `json:"workspace"` // 调用发生的工作空间 id
 	Tool       string `json:"tool"`
 	Target     string `json:"target"` // 涉及的笔记路径或查询词，可为空
 	OK         bool   `json:"ok"`
@@ -38,9 +39,12 @@ func (l *Log) Record(ctx context.Context, e Entry) error {
 	if e.At == 0 {
 		e.At = l.now().UnixMilli()
 	}
+	if e.Workspace == "" {
+		e.Workspace = "default"
+	}
 	res, err := l.db.ExecContext(ctx,
-		`INSERT INTO audit_log(at, token_id, token_name, tool, target, ok, error, duration_ms) VALUES (?,?,?,?,?,?,?,?)`,
-		e.At, e.TokenID, e.TokenName, e.Tool, e.Target, e.OK, e.Error, e.DurationMs)
+		`INSERT INTO audit_log(at, token_id, token_name, workspace_id, tool, target, ok, error, duration_ms) VALUES (?,?,?,?,?,?,?,?,?)`,
+		e.At, e.TokenID, e.TokenName, e.Workspace, e.Tool, e.Target, e.OK, e.Error, e.DurationMs)
 	if err != nil {
 		return err
 	}
@@ -52,10 +56,11 @@ func (l *Log) Record(ctx context.Context, e Entry) error {
 	return err
 }
 
-// List 按时间倒序返回最近 limit 条记录。
-func (l *Log) List(ctx context.Context, limit int) ([]Entry, error) {
+// List 按时间倒序返回最近 limit 条记录。workspace 不为空时只返回该工作空间的记录。
+func (l *Log) List(ctx context.Context, limit int, workspace string) ([]Entry, error) {
 	rows, err := l.db.QueryContext(ctx,
-		`SELECT id, at, token_id, token_name, tool, target, ok, error, duration_ms FROM audit_log ORDER BY id DESC LIMIT ?`, limit)
+		`SELECT id, at, token_id, token_name, workspace_id, tool, target, ok, error, duration_ms FROM audit_log
+		 WHERE ? = '' OR workspace_id = ? ORDER BY id DESC LIMIT ?`, workspace, workspace, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +68,7 @@ func (l *Log) List(ctx context.Context, limit int) ([]Entry, error) {
 	out := []Entry{}
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.ID, &e.At, &e.TokenID, &e.TokenName, &e.Tool, &e.Target, &e.OK, &e.Error, &e.DurationMs); err != nil {
+		if err := rows.Scan(&e.ID, &e.At, &e.TokenID, &e.TokenName, &e.Workspace, &e.Tool, &e.Target, &e.OK, &e.Error, &e.DurationMs); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

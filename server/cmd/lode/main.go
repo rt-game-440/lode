@@ -120,8 +120,8 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	authSvc := auth.New(database)
 
 	auditLog := audit.New(database)
-	// MCP 目前只服务默认工作空间；#59 改为按 token 绑定的工作空间取 Tools。
-	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: def.Tools, Auth: authSvc, Audit: auditLog, Version: version, Log: log})
+	// MCP 按 token 绑定的工作空间取工具（工作空间按需打开）。
+	mcpHandler := mcpserver.Handler(mcpserver.Options{Workspaces: workspaces, Auth: authSvc, Audit: auditLog, Version: version, Log: log})
 
 	protected, err := keyprotect.Enabled(ctx, database)
 	if err != nil {

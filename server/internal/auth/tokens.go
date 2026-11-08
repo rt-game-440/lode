@@ -34,22 +34,28 @@ type APIToken struct {
 	Scope      string `json:"scope"`
 	CreatedAt  int64  `json:"created_at"`   // unix 毫秒
 	LastUsedAt int64  `json:"last_used_at"` // unix 毫秒；0 表示从未使用
+	// Workspace 是 token 绑定的工作空间 id：MCP 只能访问这个工作空间。升级前创建的 token 属于 default。
+	Workspace string `json:"workspace"`
 }
 
 // CanWrite 判断 token 是否有写权限。
 func (t APIToken) CanWrite() bool { return t.Scope == ScopeWrite }
 
 // CreateToken 创建 API token，返回元数据和明文。明文只在这里出现一次，库里只存 SHA-256 哈希：
-// token 含 32 字节随机数，熵足够高，不需要慢哈希。
-func (a *Auth) CreateToken(ctx context.Context, name, scope string) (APIToken, string, error) {
+// token 含 32 字节随机数，熵足够高，不需要慢哈希。workspace 是绑定的工作空间 id，为空表示默认工作空间；
+// 调用方负责确认它存在。
+func (a *Auth) CreateToken(ctx context.Context, name, scope, workspace string) (APIToken, string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 64 || (scope != ScopeRead && scope != ScopeWrite) {
 		return APIToken{}, "", ErrInvalidTokenInput
 	}
+	if workspace == "" {
+		workspace = "default"
+	}
 	secret := TokenPrefix + randomToken(32)
-	t := APIToken{ID: randomToken(9), Name: name, Scope: scope, CreatedAt: a.now().UnixMilli()}
-	_, err := a.db.ExecContext(ctx, `INSERT INTO api_tokens(id, name, scope, token_hash, created_at) VALUES (?,?,?,?,?)`,
-		t.ID, t.Name, t.Scope, hashToken(secret), t.CreatedAt)
+	t := APIToken{ID: randomToken(9), Name: name, Scope: scope, CreatedAt: a.now().UnixMilli(), Workspace: workspace}
+	_, err := a.db.ExecContext(ctx, `INSERT INTO api_tokens(id, name, scope, token_hash, created_at, workspace_id) VALUES (?,?,?,?,?,?)`,
+		t.ID, t.Name, t.Scope, hashToken(secret), t.CreatedAt, t.Workspace)
 	if err != nil {
 		return APIToken{}, "", err
 	}
@@ -58,7 +64,7 @@ func (a *Auth) CreateToken(ctx context.Context, name, scope string) (APIToken, s
 
 // ListTokens 按创建时间倒序列出全部 token。
 func (a *Auth) ListTokens(ctx context.Context) ([]APIToken, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT id, name, scope, created_at, last_used_at FROM api_tokens ORDER BY created_at DESC, id`)
+	rows, err := a.db.QueryContext(ctx, `SELECT id, name, scope, created_at, last_used_at, workspace_id FROM api_tokens ORDER BY created_at DESC, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +72,7 @@ func (a *Auth) ListTokens(ctx context.Context) ([]APIToken, error) {
 	out := []APIToken{}
 	for rows.Next() {
 		var t APIToken
-		if err := rows.Scan(&t.ID, &t.Name, &t.Scope, &t.CreatedAt, &t.LastUsedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Scope, &t.CreatedAt, &t.LastUsedAt, &t.Workspace); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -92,8 +98,8 @@ func (a *Auth) VerifyToken(ctx context.Context, secret string) (APIToken, error)
 		return APIToken{}, ErrInvalidToken
 	}
 	var t APIToken
-	err := a.db.QueryRowContext(ctx, `SELECT id, name, scope, created_at, last_used_at FROM api_tokens WHERE token_hash = ?`,
-		hashToken(secret)).Scan(&t.ID, &t.Name, &t.Scope, &t.CreatedAt, &t.LastUsedAt)
+	err := a.db.QueryRowContext(ctx, `SELECT id, name, scope, created_at, last_used_at, workspace_id FROM api_tokens WHERE token_hash = ?`,
+		hashToken(secret)).Scan(&t.ID, &t.Name, &t.Scope, &t.CreatedAt, &t.LastUsedAt, &t.Workspace)
 	if errors.Is(err, sql.ErrNoRows) {
 		return APIToken{}, ErrInvalidToken
 	}

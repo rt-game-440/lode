@@ -101,6 +101,8 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("GET /api/audit", s.listAudit)
 	p.HandleFunc("GET /api/workspaces", s.listWorkspaces)
 	p.HandleFunc("POST /api/workspaces", s.createWorkspace)
+	p.HandleFunc("PATCH /api/workspaces/{id}", s.patchWorkspace)
+	p.HandleFunc("DELETE /api/workspaces/{id}", s.deleteWorkspace)
 	if s.Passkeys != nil {
 		p.HandleFunc("GET /api/passkeys", s.listPasskeys)
 		p.HandleFunc("POST /api/passkeys/begin", s.passkeyRegisterBegin)

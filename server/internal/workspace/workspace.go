@@ -4,7 +4,7 @@
 // 默认工作空间（id = default）的索引在 app.db，vault 在 data/vault，和引入工作空间之前完全一样；
 // 其他工作空间登记在 app.db 的 workspaces 表里（registry.go），文件在 data/workspaces/<id>/{index.db,vault,trash}，
 // 第一次被访问时才打开，打开后保持到 Close。
-// 之后的票在这里扩展：外部目录、改名排序删除、每个工作空间的助手对话（#61）。
+// 之后的票在这里扩展：外部目录（#60）、每个工作空间的助手对话（#61）。
 package workspace
 
 import (
@@ -32,6 +32,8 @@ var (
 	ErrClosed = errors.New("workspace manager closed")
 	// ErrNoRegistry 表示 Manager 没有登记表（Options.DB 为空），不能新建工作空间。
 	ErrNoRegistry = errors.New("workspace registry not configured")
+	// ErrProtected 表示默认工作空间不能删除。
+	ErrProtected = errors.New("default workspace cannot be removed")
 )
 
 // 后台任务的默认参数。
@@ -50,7 +52,11 @@ type Workspace struct {
 	db     *sql.DB            // 本工作空间的索引库，由 Manager 打开和关闭；默认工作空间为 nil（app.db 归调用方）
 	cancel context.CancelFunc // 停止后台任务；未启动时为 nil
 	bg     sync.WaitGroup
+	gone   chan struct{} // 工作空间被删除（Remove）时关闭
 }
+
+// Gone 返回一个在工作空间被删除时关闭的通道，长连接据此退出。
+func (w *Workspace) Gone() <-chan struct{} { return w.gone }
 
 // Options 配置 Manager。
 type Options struct {
@@ -79,14 +85,15 @@ type Manager struct {
 	dataDir  string
 	now      func() time.Time
 
-	createMu sync.Mutex // 串行化 Create（分配 id 和排序）
+	adminMu sync.Mutex // 串行化 Create / Rename / Reorder / Remove（分配 id、排序、删除）
 
-	mu      sync.Mutex
-	open    map[string]*Workspace    // 已打开的工作空间
-	opening map[string]chan struct{} // 正在打开的工作空间，打开结束（成功或失败）时关闭
-	order   []string                 // 打开顺序，Opened 按它返回
-	baseCtx context.Context          // Start 之后非 nil；之后打开的工作空间用它启动后台任务
-	closed  bool
+	mu       sync.Mutex
+	open     map[string]*Workspace    // 已打开的工作空间
+	opening  map[string]chan struct{} // 正在打开的工作空间，打开结束（成功或失败）时关闭
+	removing map[string]bool          // 正在删除的工作空间，Get 视为不存在
+	order    []string                 // 打开顺序，Opened 按它返回
+	baseCtx  context.Context          // Start 之后非 nil；之后打开的工作空间用它启动后台任务
+	closed   bool
 
 	closeDBs sync.Once
 }
@@ -112,13 +119,13 @@ func New(o Options) *Manager {
 		o.Now = time.Now
 	}
 	m := &Manager{log: o.Logger, debounce: o.Debounce, prune: o.PruneInterval, global: o.DB, dataDir: o.DataDir, now: o.Now,
-		open: map[string]*Workspace{}, opening: map[string]chan struct{}{}}
+		open: map[string]*Workspace{}, opening: map[string]chan struct{}{}, removing: map[string]bool{}}
 	m.add(newWorkspace(DefaultID, o.Default))
 	return m
 }
 
 func newWorkspace(id string, svc *notes.Service) *Workspace {
-	return &Workspace{ID: id, Notes: svc, Tools: tools.New(svc)}
+	return &Workspace{ID: id, Notes: svc, Tools: tools.New(svc), gone: make(chan struct{})}
 }
 
 func (w *Workspace) closeDB() {
@@ -149,7 +156,7 @@ func (m *Manager) Get(ctx context.Context, id string) (*Workspace, error) {
 			m.mu.Unlock()
 			return w, nil
 		}
-		if m.global == nil || !ValidID(id) {
+		if m.global == nil || !ValidID(id) || m.removing[id] {
 			m.mu.Unlock()
 			return nil, ErrNotFound
 		}

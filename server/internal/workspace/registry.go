@@ -72,7 +72,10 @@ type Info struct {
 	Name     string `json:"name"`
 	External bool   `json:"external"`
 	// VaultDir 只对外部目录返回（内置位置不暴露服务器上的路径）。
-	VaultDir  string `json:"vault_dir,omitempty"`
+	VaultDir string `json:"vault_dir,omitempty"`
+	// Path 是笔记文件所在位置，给设置页展示：内置位置是相对数据目录的路径（默认工作空间是 vault，
+	// 其他是 workspaces/<id>/vault），外部目录是绝对路径。
+	Path      string `json:"path"`
 	Sort      int    `json:"sort"`
 	CreatedAt int64  `json:"created_at"` // unix 毫秒
 	// NoteCount 是索引里的笔记数。没打开的工作空间读的是上次打开时的索引，打开并对账后才准确。
@@ -91,7 +94,7 @@ func (m *Manager) List(ctx context.Context) ([]Info, error) {
 		if err != nil {
 			return nil, err
 		}
-		return []Info{{ID: DefaultID, Name: DefaultName, NoteCount: n}}, nil
+		return []Info{{ID: DefaultID, Name: DefaultName, Path: displayPath(DefaultID, ""), NoteCount: n}}, nil
 	}
 	rows, err := m.global.QueryContext(ctx, `SELECT id, name, vault_dir, sort, created_at FROM workspaces ORDER BY sort, created_at, id`)
 	if err != nil {
@@ -108,6 +111,7 @@ func (m *Manager) List(ctx context.Context) ([]Info, error) {
 		if vaultDir != "" && in.ID != DefaultID {
 			in.External, in.VaultDir = true, vaultDir
 		}
+		in.Path = displayPath(in.ID, in.VaultDir)
 		out = append(out, in)
 	}
 	rows.Close()
@@ -120,6 +124,17 @@ func (m *Manager) List(ctx context.Context) ([]Info, error) {
 		}
 	}
 	return out, nil
+}
+
+// displayPath 返回 Info.Path。
+func displayPath(id, vaultDir string) string {
+	switch {
+	case vaultDir != "":
+		return vaultDir
+	case id == DefaultID:
+		return "vault"
+	}
+	return DirName + "/" + id + "/vault"
 }
 
 // noteCount 返回工作空间索引里的笔记数。已打开的直接查；没打开的临时连上它的 index.db 查一次
@@ -157,8 +172,8 @@ func (m *Manager) Create(ctx context.Context, o CreateOptions) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	m.createMu.Lock()
-	defer m.createMu.Unlock()
+	m.adminMu.Lock()
+	defer m.adminMu.Unlock()
 	id, err := m.newID(ctx)
 	if err != nil {
 		return Info{}, err
@@ -216,7 +231,7 @@ const (
 	idLen      = 6
 )
 
-// newID 生成一个没有登记、目录也不存在的 id。调用方持有 createMu。
+// newID 生成一个没有登记、目录也不存在的 id。调用方持有 adminMu。
 func (m *Manager) newID(ctx context.Context) (string, error) {
 	for range 16 {
 		b := make([]byte, idLen)

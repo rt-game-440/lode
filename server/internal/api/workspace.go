@@ -158,3 +158,65 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, info)
 }
+
+// patchWorkspace 修改工作空间的名称和/或位置。name 去掉首尾空白后不能为空；sort 是移动到的位置
+// （从 0 开始，列表里的第几个），其余工作空间的 sort 随之重新编号。至少要传一个字段。
+func (s *Server) patchWorkspace(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name *string `json:"name"`
+		Sort *int    `json:"sort"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if in.Name == nil && in.Sort == nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "需要提供 name 或 sort", nil)
+		return
+	}
+	id := r.PathValue("id")
+	if in.Sort != nil && *in.Sort < 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "sort 不能为负数", nil)
+		return
+	}
+	var info workspace.Info
+	var err error
+	if in.Name != nil {
+		info, err = s.Workspaces.Rename(r.Context(), id, *in.Name)
+	}
+	if err == nil && in.Sort != nil {
+		info, err = s.Workspaces.Reorder(r.Context(), id, *in.Sort)
+	}
+	if s.managementFail(w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+// deleteWorkspace 删除工作空间：目录移到 data/trash-workspaces/ 下，绑定它的 MCP token 一并作废。
+// 响应里的 trash 是相对数据目录的位置。默认工作空间不能删除（403 forbidden）。
+func (s *Server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
+	res, err := s.Workspaces.Remove(r.Context(), r.PathValue("id"))
+	if s.managementFail(w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"trash": res.Trash, "revoked_tokens": res.RevokedTokens})
+}
+
+// managementFail 把改名、排序、删除的错误转成响应，返回是否已经处理（err 不为空）。
+func (s *Server) managementFail(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, workspace.ErrInvalid):
+		writeError(w, http.StatusBadRequest, "bad_request", strings.TrimPrefix(err.Error(), workspace.ErrInvalid.Error()+": "), nil)
+	case errors.Is(err, workspace.ErrNotFound):
+		// 不用 workspace_not_found：前端收到它会把当前工作空间切回默认，而这里只是管理对象不存在
+		writeError(w, http.StatusNotFound, "not_found", "工作空间不存在", nil)
+	case errors.Is(err, workspace.ErrProtected):
+		writeError(w, http.StatusForbidden, "forbidden", "默认工作空间不能删除", nil)
+	default:
+		s.fail(w, r, err)
+	}
+	return true
+}

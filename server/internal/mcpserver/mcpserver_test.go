@@ -52,7 +52,7 @@ func newEnv(t *testing.T) *env {
 
 func (e *env) token(t *testing.T, name, scope string) string {
 	t.Helper()
-	_, secret, err := e.auth.CreateToken(context.Background(), name, scope)
+	_, secret, err := e.auth.CreateToken(context.Background(), name, scope, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestCallsAreAuditedAndProduceChangesFromTokenDevice(t *testing.T) {
 		t.Fatalf("变更的设备应为 token：%+v", c)
 	}
 
-	entries, err := e.audit.List(ctx, 10)
+	entries, err := e.audit.List(ctx, 10, "")
 	if err != nil || len(entries) != 2 {
 		t.Fatalf("应有 2 条审计记录：%+v, %v", entries, err)
 	}

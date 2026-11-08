@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/rt-game-440/lode/server/internal/auth"
+	"github.com/rt-game-440/lode/server/internal/workspace"
 )
 
 // ---- API token 与 MCP 调用记录（需要会话） ----
@@ -20,8 +21,9 @@ func (s *Server) listTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 type createTokenReq struct {
-	Name  string `json:"name"`
-	Scope string `json:"scope"` // read | write
+	Name      string `json:"name"`
+	Scope     string `json:"scope"`     // read | write
+	Workspace string `json:"workspace"` // 绑定的工作空间 id，省略表示默认工作空间
 }
 
 // createToken 创建 token；明文只在这次响应里出现。
@@ -31,7 +33,19 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	t, secret, err := s.Auth.CreateToken(r.Context(), req.Name, req.Scope)
+	if req.Workspace == "" {
+		req.Workspace = workspace.DefaultID
+	}
+	ok, err := s.Workspaces.Exists(r.Context(), req.Workspace)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusBadRequest, "bad_request", "工作空间不存在", nil)
+		return
+	}
+	t, secret, err := s.Auth.CreateToken(r.Context(), req.Name, req.Scope, req.Workspace)
 	if errors.Is(err, auth.ErrInvalidTokenInput) {
 		writeError(w, http.StatusBadRequest, "bad_request", "名称不能为空且不超过 64 个字符，权限只能是 read 或 write", nil)
 		return
@@ -56,7 +70,8 @@ func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// listAudit 返回最近的 MCP 调用记录，limit 默认 100，超过 1000 按 1000 处理。
+// listAudit 返回最近的 MCP 调用记录，limit 默认 100，超过 1000 按 1000 处理；
+// workspace 参数只返回该工作空间的记录。
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	limit := 100
 	if q := r.URL.Query().Get("limit"); q != "" {
@@ -67,7 +82,7 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = min(n, 1000)
 	}
-	entries, err := s.Audit.List(r.Context(), limit)
+	entries, err := s.Audit.List(r.Context(), limit, r.URL.Query().Get("workspace"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
