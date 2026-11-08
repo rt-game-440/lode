@@ -113,9 +113,15 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	auditLog := audit.New(database)
 	mcpHandler := mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: authSvc, Audit: auditLog, Version: version, Log: log})
 
-	box := secret.New(cfg.SecretKey)
-	if !box.Enabled() {
-		log.Warn("没有设置 LODE_SECRET_KEY：助手不能保存供应商的 API key")
+	box, keySrc, err := secret.Load(cfg.SecretKey, cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("加载主密钥: %w", err)
+	}
+	switch keySrc {
+	case secret.SourceNew:
+		log.Info("已生成助手 API key 的主密钥", "file", secret.FileName)
+	case secret.SourceEnv:
+		log.Info("使用环境变量 LODE_SECRET_KEY 作为助手 API key 的主密钥")
 	}
 	agentSvc := &agent.Service{Store: agent.NewStore(database, box), Tools: tools.New(svc), Notes: svc, Log: log}
 	defer agentSvc.Close() // 在关闭数据库之前停止生成（defer 逆序执行）

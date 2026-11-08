@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, CircleAlert, Pencil, Plus, Server, Trash2 } from 'lucide-react'
+import { Check, CircleAlert, Pencil, Plus, Server, Trash2 } from 'lucide-react'
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react'
 import {
   EFFORT_LABEL,
@@ -65,17 +65,8 @@ export function AgentSection() {
         </Button>
       </div>
       <p className="settings-desc">
-        接入 OpenAI 兼容接口、Anthropic 或 Gemini。API key 加密保存在服务器上，之后不会再显示，只显示末 4 位。
+        接入 OpenAI 兼容接口、Anthropic 或 Gemini。API key 加密保存在服务器上，之后不会再显示，只显示末 4 位。加密用的主密钥在数据目录的 secret.key 里，备份文件等同于含有你的 API key，请妥善保管。
       </p>
-      {config && !config.secret_key_set && (
-        <p className="settings-warning" role="note">
-          <AlertTriangle size={16} aria-hidden="true" />
-          <span>
-            服务器没有设置 <code>LODE_SECRET_KEY</code>，现在不能保存 API key。用 <code>openssl rand -base64 32</code>{' '}
-            生成一个，设置为环境变量后重启 Lode。只连接不需要 key 的本地模型（如 Ollama）时可以不设。
-          </span>
-        </p>
-      )}
 
       {!config ? (
         <div className="settings-card">
@@ -430,7 +421,7 @@ function ProviderForm({
         <TextField
           label="API key"
           type="password"
-          placeholder={provider?.has_key ? `留空不修改（当前 ••••${provider.key_last4}）` : secretKeySet ? '' : '需要先设置 LODE_SECRET_KEY'}
+          placeholder={provider?.has_key ? `留空不修改（当前 ••••${provider.key_last4}）` : ''}
           value={key}
           disabled={!secretKeySet}
           onChange={(e) => setKey(e.target.value)}

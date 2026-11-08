@@ -301,7 +301,7 @@ func TestAgentAPIWithoutSecretKey(t *testing.T) {
 		t.Fatalf("config = %d %v", st, body)
 	}
 	st, body := c.do("POST", "/api/agent/providers", map[string]any{"name": "x", "kind": "openai", "api_key": "sk-123"})
-	if st != 400 || !strings.Contains(fmt.Sprint(body["message"]), "LODE_SECRET_KEY") {
+	if st != 400 || !strings.Contains(fmt.Sprint(body["message"]), "主密钥") {
 		t.Fatalf("没有主密钥时保存 key 应 400 并说明原因：%d %v", st, body)
 	}
 	// 不带 key 的供应商（例如本地模型）可以保存

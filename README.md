@@ -23,18 +23,17 @@
 
 ```bash
 git clone https://github.com/rt-game-440/lode.git && cd lode
-echo "LODE_SECRET_KEY=$(openssl rand -base64 32)" > .env
 docker compose up -d
 ```
 
 打开 <http://127.0.0.1:8787>，第一次访问时设置登录密码。数据在 Docker 卷 `lode-data` 里。
 
-`.env` 里的 `LODE_SECRET_KEY` 用来加密助手的 API key，要长期保存，更换后已保存的 key 需要重新填写。只用笔记、不用助手可以不设置。
+助手的 API key 用主密钥加密保存，主密钥会自动生成并存为数据目录里的 `secret.key`，无需任何配置。`lode backup` 默认把它一起打包，所以备份文件等同于含有你的 API key，请妥善保管。需要自己管理主密钥时可以设置环境变量 `LODE_SECRET_KEY`（优先于 `secret.key`）。
 
 `v0.1.0` 发布后也可以不克隆仓库，直接运行镜像（`linux/amd64`、`linux/arm64`、`linux/arm/v7`）：
 
 ```bash
-docker run -d --name lode --restart unless-stopped -p 127.0.0.1:8787:8787 -v lode-data:/data -e LODE_SECRET_KEY=<你保存的主密钥> ghcr.io/rt-game-440/lode:latest
+docker run -d --name lode --restart unless-stopped -p 127.0.0.1:8787:8787 -v lode-data:/data ghcr.io/rt-game-440/lode:latest
 ```
 
 ### 二进制
@@ -76,15 +75,15 @@ claude mcp add --transport http lode "https://notes.example.com/mcp" --header "A
 
 ### 配置助手
 
-设置好 `LODE_SECRET_KEY` 后，在“设置 → 助手”添加供应商、填 API key、选择模型。各供应商的接入方式和推理强度映射见 [docs/agent.md](docs/agent.md)。
+在“设置 → 助手”添加供应商、填 API key、选择模型。各供应商的接入方式和推理强度映射见 [docs/agent.md](docs/agent.md)。
 
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `LODE_ADDR` | `127.0.0.1:8787`（镜像里是 `0.0.0.0:8787`） | 监听地址 |
-| `LODE_DATA_DIR` | `./data`（镜像里是 `/data`） | 数据目录：`app.db`、`vault/`（笔记和附件）、`trash/`、`backups/` |
-| `LODE_SECRET_KEY` | 空 | 加密助手 API key 的主密钥，`openssl rand -base64 32` 生成。不设置就不能保存 key；更换后已存的 key 失效 |
+| `LODE_DATA_DIR` | `./data`（镜像里是 `/data`） | 数据目录：`app.db`、`vault/`（笔记和附件）、`trash/`、`backups/`、`secret.key` |
+| `LODE_SECRET_KEY` | 空 | 可选。加密助手 API key 的主密钥，`openssl rand -base64 32` 生成，优先于 `secret.key`；不设置则自动生成 `secret.key`。更换主密钥后已存的 key 失效 |
 | `LODE_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error` |
 | `LODE_TRUSTED_PROXIES` | `127.0.0.0/8,::1` | 可信反向代理的 IP 或 CIDR，逗号分隔。只有来自这些地址的 `X-Forwarded-For` / `X-Forwarded-Proto` 会被采用 |
 | `GOMEMLIMIT` | 镜像里是 `100MiB` | Go 运行时的软内存上限，小内存机器可以调低 |

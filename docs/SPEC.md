@@ -43,7 +43,7 @@
 
 ## Agent
 
-- 供应商类型：OpenAI 兼容（覆盖 OpenAI / DeepSeek / OpenRouter / Ollama 等）、Anthropic、Google Gemini。每个供应商有：名称、类型、base URL、API key。API key 用 AES-GCM 加密存库，主密钥取自 `LODE_SECRET_KEY`（32 字节随机值的 base64，可用 `openssl rand -base64 32` 生成）。
+- 供应商类型：OpenAI 兼容（覆盖 OpenAI / DeepSeek / OpenRouter / Ollama 等）、Anthropic、Google Gemini。每个供应商有：名称、类型、base URL、API key。API key 用 AES-GCM 加密存库，主密钥优先取自 `LODE_SECRET_KEY`（32 字节随机值的 base64，可用 `openssl rand -base64 32` 生成），未设置时自动生成并保存为数据目录里的 `secret.key`，随备份一起打包。
 - 每个供应商下可以有多个模型，每个模型单独设置：
   - 模型 ID、显示名；
   - 上下文窗口、最大输出；

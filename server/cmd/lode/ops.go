@@ -21,19 +21,32 @@ import (
 
 const usage = `用法：
   lode serve                     启动服务（不带参数时同样启动）
-  lode backup <输出文件.tar.gz>   备份数据库和全部笔记文件，服务运行中也可以执行
+  lode backup <输出文件.tar.gz> [--no-secret]
+                                 备份数据库、全部笔记文件和助手 API key 的主密钥 secret.key，
+                                 服务运行中也可以执行；备份文件等同于含有你的 API key，请妥善保管。
+                                 --no-secret 不包含 secret.key
   lode restore <备份文件> [-y]    从备份恢复，必须先停止服务；-y 跳过确认
   lode reset-password            重置登录密码（从终端输入，或从标准输入读一行）
   lode healthcheck               检查本机服务是否正常（容器健康检查用）
   lode --version                 显示版本
 
-环境变量：LODE_ADDR、LODE_DATA_DIR、LODE_SECRET_KEY、LODE_LOG_LEVEL、LODE_TRUSTED_PROXIES
+环境变量：LODE_ADDR、LODE_DATA_DIR、LODE_SECRET_KEY（可选，不设置则自动生成 secret.key）、LODE_LOG_LEVEL、LODE_TRUSTED_PROXIES
 详见 README 和 docs/deploy.md。`
 
 // runBackup 实现 lode backup。
 func runBackup(cfg config.Config, args []string) error {
+	var opts ops.BackupOptions
+	var rest []string
+	for _, a := range args {
+		if a == "--no-secret" {
+			opts.ExcludeSecret = true
+		} else {
+			rest = append(rest, a)
+		}
+	}
+	args = rest
 	if len(args) != 1 {
-		return errors.New("用法：lode backup <输出文件.tar.gz>")
+		return errors.New("用法：lode backup <输出文件.tar.gz> [--no-secret]")
 	}
 	if _, err := os.Stat(cfg.DBPath()); err != nil {
 		return fmt.Errorf("数据目录 %s 里没有数据库：%w", cfg.DataDir, err)
@@ -48,11 +61,14 @@ func runBackup(cfg config.Config, args []string) error {
 		return err
 	}
 	defer d.Close()
-	if err := ops.Backup(ctx, d, cfg.DataDir, args[0]); err != nil {
+	if err := ops.Backup(ctx, d, cfg.DataDir, args[0], opts); err != nil {
 		return err
 	}
 	st, _ := os.Stat(args[0])
 	fmt.Printf("已备份到 %s（%.1f MB）\n", args[0], float64(st.Size())/(1<<20))
+	if !opts.ExcludeSecret {
+		fmt.Println("备份文件包含助手 API key 的主密钥，等同于含有你的 API key，请妥善保管。")
+	}
 	return nil
 }
 
@@ -75,7 +91,8 @@ func runRestore(cfg config.Config, args []string, in io.Reader) error {
   - 必须先停止 lode 服务；服务运行中会拒绝恢复。
   - 数据库和全部笔记文件会被备份里的内容替换，备份之后的修改都会丢失。
     现有数据会移到数据目录下的 pre-restore-<时间>/，确认无误后可以手动删除。
-  - LODE_SECRET_KEY 要和备份时相同，否则已保存的助手 API key 无法解密，需要重新填写。
+  - 备份里的 secret.key 会一并恢复，已保存的助手 API key 恢复后直接可用；
+    如果备份时没包含它，或你用环境变量 LODE_SECRET_KEY 提供主密钥，则需要使用同一个密钥，否则 API key 需要重新填写。
   - 登录密码、登录会话和 API token 都回到备份时的状态，备份之后创建的 token 会失效；
     各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
 `, files[0], cfg.DataDir)

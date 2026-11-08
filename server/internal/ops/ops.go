@@ -1,6 +1,6 @@
 // Package ops 提供运维操作：备份、恢复和数据目录锁。
 //
-// 备份是一个 tar.gz：lode-backup.json（清单）、app.db（SQLite 在线快照）、vault/ 和 trash/。
+// 备份是一个 tar.gz：lode-backup.json（清单）、app.db（SQLite 在线快照）、secret.key（主密钥，可选）、vault/ 和 trash/。
 // 服务运行中也可以备份；恢复必须在服务停止时进行，原有数据移到 pre-restore-<时间>/ 保留。
 package ops
 
@@ -28,7 +28,13 @@ const (
 	manifestName = "lode-backup.json"
 	dbName       = "app.db"
 	lockName     = ".lock"
+	secretName   = "secret.key" // 助手 API key 的主密钥，默认随备份一起打包
 )
+
+// BackupOptions 是备份选项。
+type BackupOptions struct {
+	ExcludeSecret bool // 不打包 secret.key；恢复后已保存的 API key 需要重新填写（除非用同一个 LODE_SECRET_KEY）
+}
 
 // 备份里除数据库外的两个目录。
 var dataDirs = []string{"vault", "trash"}
@@ -76,7 +82,11 @@ var ErrLockUnsupported = errors.New("数据目录所在的文件系统不支持�
 var errLockBusy = errors.New("lock busy")
 
 // Backup 把数据库快照和笔记文件打包到 out（tar.gz）。d 是已打开的数据库，服务运行中也可以执行。
-func Backup(ctx context.Context, d *sql.DB, dataDir, out string) error {
+func Backup(ctx context.Context, d *sql.DB, dataDir, out string, opts ...BackupOptions) error {
+	var opt BackupOptions
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
 	out, err := filepath.Abs(out)
 	if err != nil {
 		return err
@@ -111,6 +121,11 @@ func Backup(ctx context.Context, d *sql.DB, dataDir, out string) error {
 	}
 	if err := addFile(tw, snap, dbName); err != nil {
 		return err
+	}
+	if !opt.ExcludeSecret {
+		if err := addFileMode(tw, filepath.Join(dataDir, secretName), secretName, 0o600); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("打包 %s: %w", secretName, err)
+		}
 	}
 	for _, sub := range dataDirs {
 		// 目录不存在时也写一个空目录条目，恢复时据此确认备份完整
@@ -168,7 +183,9 @@ func addDir(ctx context.Context, tw *tar.Writer, dataDir, sub string) error {
 	})
 }
 
-func addFile(tw *tar.Writer, src, name string) error {
+func addFile(tw *tar.Writer, src, name string) error { return addFileMode(tw, src, name, 0o644) }
+
+func addFileMode(tw *tar.Writer, src, name string, mode int64) error {
 	f, err := os.Open(src)
 	if err != nil {
 		return err
@@ -178,7 +195,7 @@ func addFile(tw *tar.Writer, src, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: st.Size(), ModTime: st.ModTime(), Typeflag: tar.TypeReg}); err != nil {
+	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: mode, Size: st.Size(), ModTime: st.ModTime(), Typeflag: tar.TypeReg}); err != nil {
 		return err
 	}
 	// 文件在打包过程中被改写时只取 Size 字节，保证 tar 条目完整
@@ -231,7 +248,12 @@ func Restore(ctx context.Context, dataDir, archive string) (string, error) {
 		os.Remove(kept)
 		return "", fmt.Errorf("%w；已回滚，数据目录没有改动", cause)
 	}
-	for _, name := range append([]string{dbName, dbName + "-wal", dbName + "-shm"}, dataDirs...) {
+	restoreNames := append([]string{dbName}, dataDirs...)
+	if _, err := os.Stat(filepath.Join(staging, secretName)); err == nil {
+		restoreNames = append(restoreNames, secretName) // 备份带了主密钥才替换现有的
+	}
+	moveNames := append([]string{dbName + "-wal", dbName + "-shm"}, restoreNames...)
+	for _, name := range moveNames {
 		src := filepath.Join(dataDir, name)
 		if _, err := os.Lstat(src); err != nil {
 			continue
@@ -246,7 +268,7 @@ func Restore(ctx context.Context, dataDir, archive string) (string, error) {
 		}
 		moved = append(moved, name)
 	}
-	for _, name := range append([]string{dbName}, dataDirs...) {
+	for _, name := range restoreNames {
 		src := filepath.Join(staging, name)
 		if _, err := os.Stat(src); err != nil {
 			continue
@@ -262,7 +284,7 @@ func Restore(ctx context.Context, dataDir, archive string) (string, error) {
 	return kept, nil
 }
 
-// extract 解出备份到 dst 并返回清单。第一个条目必须是清单；只接受 app.db、vault/、trash/ 下的普通文件和目录。
+// extract 解出备份到 dst 并返回清单。第一个条目必须是清单；只接受 app.db、secret.key、vault/、trash/ 下的普通文件和目录。
 func extract(ctx context.Context, archive, dst string) (Manifest, error) {
 	var m Manifest
 	f, err := os.Open(archive)
@@ -311,6 +333,9 @@ func extract(ctx context.Context, archive, dst string) (Manifest, error) {
 			if err := writeEntry(tr, target, h.ModTime); err != nil {
 				return m, err
 			}
+			if name == secretName {
+				os.Chmod(target, 0o600)
+			}
 		default:
 			return m, fmt.Errorf("备份里有不支持的条目类型: %q", h.Name)
 		}
@@ -321,11 +346,11 @@ func extract(ctx context.Context, archive, dst string) (Manifest, error) {
 	return m, nil
 }
 
-// safeEntry 判断 tar 条目名能否安全解到临时目录里：必须是 app.db 或 vault/、trash/ 下的相对路径，
+// safeEntry 判断 tar 条目名能否安全解到临时目录里：必须是 app.db、secret.key 或 vault/、trash/ 下的相对路径，
 // 不能有 ..、绝对路径；Windows 上还不能含 \（会被当成分隔符）、:（盘符和备用数据流）和保留设备名。
 func safeEntry(name string) bool {
 	top, _, _ := strings.Cut(name, "/")
-	if !fs.ValidPath(name) || path.Clean(name) != name || (name != dbName && top != "vault" && top != "trash") {
+	if !fs.ValidPath(name) || path.Clean(name) != name || (name != dbName && name != secretName && top != "vault" && top != "trash") {
 		return false
 	}
 	if runtime.GOOS == "windows" && strings.ContainsAny(name, `\:`) {

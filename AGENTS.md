@@ -46,7 +46,7 @@ Lode：自托管、单用户的 Markdown 笔记 PWA，多端即时同步，自�
 每个脚本都有 `.sh` 和 `.ps1` 两个版本，参数相同（PowerShell 用 `-E2E` 这类写法）。
 
 - 开发：`scripts/dev.sh`，Go 服务在 127.0.0.1:8787（数据在 `data-dev/`，日志在 `logs/`），Vite 在 5173 并代理 `/api`。
-- 构建：`scripts/build.sh`，先构建前端再嵌入，输出 `bin/lode`（Windows 为 `bin/lode.exe`）。运行：`bin/lode serve`，配置见环境变量 `LODE_ADDR`、`LODE_DATA_DIR`、`LODE_LOG_LEVEL`、`LODE_TRUSTED_PROXIES`、`LODE_SECRET_KEY`（加密助手 API key 的主密钥，`openssl rand -base64 32` 生成；不设置就不能保存 key，更换后已存的 key 失效）。
+- 构建：`scripts/build.sh`，先构建前端再嵌入，输出 `bin/lode`（Windows 为 `bin/lode.exe`）。运行：`bin/lode serve`，配置见环境变量 `LODE_ADDR`、`LODE_DATA_DIR`、`LODE_LOG_LEVEL`、`LODE_TRUSTED_PROXIES`、`LODE_SECRET_KEY`（可选，加密助手 API key 的主密钥，`openssl rand -base64 32` 生成；不设置则自动生成数据目录里的 `secret.key`，设置了则优先使用；更换主密钥后已存的 key 失效）。`lode backup` 默认包含 `secret.key`（`--no-secret` 可排除），`restore` 会恢复它；备份文件等同于含有 API key，请妥善保管。
 - 测试：`scripts/test.sh` 跑 Go 单测和前端单测；`scripts/test.sh --e2e` 再构建并跑 Playwright。
   - 单独跑：`cd server && go test ./...`、`pnpm -C web test`、`pnpm -C web typecheck`、`pnpm -C web e2e`（需要先构建 `bin/lode`）。
   - Playwright 启动的测试实例在 18787 端口，数据在 `web/.e2e-data/`，每次运行前清空。
