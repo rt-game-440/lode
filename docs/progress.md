@@ -153,6 +153,16 @@
 - 本机没有 Docker，容器验收只在 CI 上跑；本机运行 govulncheck 被拒绝，同样由 CI 执行。
 - `pnpm audit` 有 1 个 low、2 个 moderate，都在 vite-plugin-pwa → workbox-build 的构建期依赖里，不进入产物（`docs/evidence/stage-6/pnpm-audit.txt`）。
 
+## 阶段 7：多工作空间（父 issue #54，分支 `stage-7-workspaces`）
+
+设计见 `docs/workspaces.md`，任务说明见 `docs/stages/stage-7.md`。
+
+已完成：
+
+- #56 预重构：新增 `internal/workspace` Manager（目前只管默认工作空间，负责后台的监听、对账、历史清理）；按工作空间区分的接口改为从 request context 取工作空间，并额外挂到 `/api/w/{ws}/...`（只认 `default`，未知返回 `404 workspace_not_found`）。测试：`internal/workspace` 的启动顺序和关停测试，`internal/api/workspace_test.go` 的两种前缀结果对比（含 WebSocket）和未知工作空间 404。
+
+下一步：#57 按需打开新工作空间。
+
 ## 发布前
 
 - 修复：手机经局域网 HTTP 访问时一直显示“无法连接”（`crypto.randomUUID` 只在安全上下文可用，改用 `getRandomValues`，#14）。

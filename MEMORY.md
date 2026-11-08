@@ -2,6 +2,14 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 20:30 #56 工作空间接入点（预重构）
+
+- **Manager**：`internal/workspace`。`workspace.New(Options{Default: *notes.Service, Logger, Debounce, PruneInterval})` 立即可用；`Start(ctx)` 启动每个已打开工作空间的后台任务（先 `Watch` 建好监听再 `Reconcile`，另一个任务定期 `PruneHistory`），`Close()` 取消并等它们结束，可重复调用。`Get(ctx, id)` 现在只认 `default`，其他返回 `workspace.ErrNotFound`；#57 在 `Get` 里按需打开（打开后用 `Start` 时保存的 ctx 启动后台任务）。`Workspace{ID, Notes, Tools}`，`Tools` 由 `tools.New(Notes)` 构造，MCP 和助手都从默认工作空间取。会话清理仍在 `main.go`，是全局的。`main.go` 退出顺序：取消会话清理 → `workspaces.Close()` → `agentSvc.Close()` → 关库。
+- **context**：`workspace.WithContext` / `workspace.FromContext`；api 里用 `currentWorkspace(r)`、`wsNotes(r)`（没有工作空间时 panic，说明路由没挂对）。
+- **路由**：按工作空间区分的路由集中在 `api/workspace.go` 的 `workspaceRoutes()`（模式写原路径 `/api/...`，助手对话路由在 `agentChatRoutes()`），每条在会话 mux 上挂原路径（`inWorkspace("default")` 包一层），再挂到一个单独的 mux；`/api/w/` 前缀处理函数解析 `{ws}`、放进 context、去掉 `/w/{ws}` 后交给那个 mux。这样两种前缀的匹配、405、404 完全一致，全局接口不会出现在前缀下。新增按工作空间的接口只要加进 `workspaceRoutes()`，测试会遍历它检查未知工作空间的 404。
+- **404 格式**：`{"code":"workspace_not_found","message":"工作空间不存在","error":"workspace_not_found"}`——issue 要求 `error` 字段，同时保留统一错误格式的 `code`/`message`。未登录先 401。
+- **兼容**：`api.Server.Notes` 保留，`Workspaces` 为 nil 时 `Handler()` 用它构造只有默认工作空间的 Manager（不启动后台任务），现有测试不用改。`agent.Service` 的 `Notes`/`Tools` 字段不动，对话处理函数经 `s.chatAgent(r)` 取助手服务，#61 在那里改成按工作空间取 `ChatStore`。附件上传返回的 `url` 由 `apiPrefix(ws)` 拼，默认工作空间仍是 `/api/files/...`。
+
 ## 2026-11-08 18:20 #47 整体字号
 
 - **实现**：`stores/displayPrefs.ts`（localStorage `lode.display.fontSize`，标准档不存），`applyFontSize` 在 `main.tsx` 渲染前执行，给 `<html>` 加 `data-font-size`；`global.css` 按它把根字号设为 `--root-size-small/large/xlarge`（87.5% / 112.5% / 125%）。百分比相对浏览器默认字号，所以尊重用户的浏览器设置；界面和正文都用 rem，一起缩放。

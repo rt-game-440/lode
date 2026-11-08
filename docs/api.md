@@ -15,6 +15,7 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
   - 两边改动重叠，或 `base_rev` 那一版已被清理：服务器版本不变，请求内容另存为冲突副本 `名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md`（与原笔记同目录，设备名取 `X-Device-Name`，缺省为“未知设备”），返回 `409 conflict`，带 `current_rev`、`conflict_id`、`conflict_path`。
   - 阶段 1 中 `base_rev` 过期一律返回 409；阶段 2 起只有无法自动合并时才返回 409，且 409 意味着请求内容已经保存在冲突副本里，客户端不需要重试。
 - **请求体上限**：JSON 32 MB；附件 20 MB。
+- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。目前只有 `default`，设计见 [workspaces.md](workspaces.md)。
 
 ### 错误格式
 
@@ -30,6 +31,7 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
 | 401 | `unauthorized` | 未登录或会话过期 | |
 | 401 | `wrong_password` | 密码错误 | |
 | 404 | `not_found` | 笔记、文件夹、回收站条目或文件不存在 | |
+| 404 | `workspace_not_found` | `/api/w/{ws}/...` 里的工作空间不存在 | `error`（同 `code`） |
 | 409 | `conflict` | `base_rev` 过期且无法自动合并，请求内容已另存为冲突副本（PATCH 在 base 版本缺失时不生成副本） | `current_rev`、`conflict_id`、`conflict_path` |
 | 409 | `exists` | 目标路径已被占用 | |
 | 409 | `already_initialized` | 密码已经设置过 | |
