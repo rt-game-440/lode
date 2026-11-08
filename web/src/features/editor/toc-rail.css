@@ -1,0 +1,112 @@
+/*
+ * 目录条（#47）：滚动容器开头一个高度为 0 的 sticky 元素，目录条和卡片相对它绝对定位，
+ * 始终停在编辑区右上角（正文列外侧的留白里），不占布局、不遮挡正文。
+ */
+.toc-anchor {
+  position: sticky;
+  top: 0;
+  height: 0;
+  flex: none;
+  z-index: 2;
+}
+.toc {
+  position: absolute;
+  top: var(--space-6);
+  right: var(--space-2);
+}
+
+/* 收起：一列细横线，右对齐；层级越深越短。标题很多时行距压缩，放不下的截掉 */
+.toc-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-height: calc(var(--toc-max-height, 60vh) - var(--space-12));
+  overflow: hidden;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+.toc-bar {
+  display: flex;
+  align-items: center;
+  flex: 0 1 var(--toc-row);
+  min-height: 3px;
+  width: 1rem;
+}
+.toc-bar::before {
+  content: '';
+  width: 100%;
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-separator-strong);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.toc-bar.depth-1 {
+  width: 0.75rem;
+}
+.toc-bar.depth-2 {
+  width: 0.5rem;
+}
+.toc-bar.depth-3 {
+  width: 0.375rem;
+}
+.toc-bar.is-active::before {
+  background: var(--color-label);
+}
+
+/* 展开：在原位浮出的目录卡片，右上角对齐目录条，可滚动 */
+.toc-card {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 17rem;
+  max-height: calc(var(--toc-max-height, 60vh) - var(--space-12));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-1);
+  background: var(--color-bg-popover);
+  -webkit-backdrop-filter: var(--material-blur-thick);
+  backdrop-filter: var(--material-blur-thick);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  transform-origin: top right;
+}
+.toc-card ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.toc-item {
+  display: block;
+  width: 100%;
+  padding-top: var(--space-1);
+  padding-right: var(--space-3);
+  padding-bottom: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  font-size: var(--text-subhead);
+  line-height: var(--leading-snug);
+  color: var(--color-label-secondary);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.toc-item-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.toc-item:hover {
+  background: var(--color-fill);
+  color: var(--color-label);
+}
+.toc-item[aria-current='location'] {
+  color: var(--color-accent);
+}

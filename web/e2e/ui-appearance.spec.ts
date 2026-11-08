@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, renameSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type APIRequestContext, type Browser, type BrowserContext, type Page, expect, test } from '@playwright/test'
 
@@ -300,6 +300,167 @@ test.describe('单篇笔记字体', () => {
   })
 })
 
+/** 一篇有 n 个小节的长笔记：一级标题下面是二级、三级标题 */
+function longNote(n: number): string {
+  const para = '这一段用来撑开篇幅，让正文足够长，可以滚动。The quick brown fox jumps over the lazy dog. '.repeat(4)
+  const out = ['# 总览', '', para, '']
+  for (let i = 1; i <= n; i++) out.push(i % 4 === 1 ? `## 第 ${i} 节` : `### 第 ${i} 节`, '', para, '', para, '')
+  return out.join('\n')
+}
+
+const rail = (p: Page) => p.getByTestId('toc-rail')
+const tocCard = (p: Page) => p.getByTestId('toc-card')
+const activeBar = (p: Page) => p.locator('.toc-bar').evaluateAll((bars) => bars.findIndex((b) => b.classList.contains('is-active')))
+const scrollTop = (p: Page) => p.locator('.editor-scroll').evaluate((el) => el.scrollTop)
+/** 标题行顶部离滚动区顶部的距离 */
+const headingOffset = (p: Page, text: string) =>
+  p.evaluate((t) => {
+    const line = Array.from(document.querySelectorAll('.cm-line')).find((l) => l.textContent === t)
+    if (!line) return null
+    return line.getBoundingClientRect().top - document.querySelector('.editor-scroll')!.getBoundingClientRect().top
+  }, text)
+
+test.describe('目录条', () => {
+  let id = ''
+  let plain = ''
+  test.beforeAll(async ({ browser }) => {
+    id = await createNote(browser, '外观/目录条.md', longNote(24))
+    plain = await createNote(browser, '外观/没有标题.md', '只有正文，没有标题。\n\n第二段。')
+  })
+
+  test('细线对应标题，放在正文列外侧；悬停延迟展开、移开收起', async ({ browser }) => {
+    const { c, p } = await openNote(browser, id)
+    await expect(rail(p)).toBeVisible()
+    await expect(p.locator('.toc-bar')).toHaveCount(25)
+    // 层级越深越短：一级 > 二级 > 三级
+    const widths = await p.locator('.toc-bar').evaluateAll((bars) => bars.slice(0, 3).map((b) => b.getBoundingClientRect().width))
+    expect(widths[0]).toBeGreaterThan(widths[1])
+    expect(widths[1]).toBeGreaterThan(widths[2])
+    expect(await activeBar(p)).toBe(0)
+    // 不遮挡正文：目录条在正文文字区域的右侧
+    const overlap = await p.evaluate(() => {
+      const content = document.querySelector('.cm-content')!
+      const pad = parseFloat(getComputedStyle(content).paddingRight)
+      const textRight = content.getBoundingClientRect().right - pad
+      return document.querySelector('.toc-bar')!.getBoundingClientRect().left - textRight
+    })
+    expect(overlap).toBeGreaterThan(0)
+
+    // 悬停：短暂延迟后才展开
+    await rail(p).locator('.toc-rail').hover()
+    await expect(tocCard(p)).toHaveCount(0)
+    await expect(tocCard(p)).toBeVisible()
+    await expect(tocCard(p).getByRole('button')).toHaveCount(25)
+    await expect(tocCard(p).getByRole('button', { name: '总览' })).toHaveAttribute('aria-current', 'location')
+    // 移开后收起
+    await p.mouse.move(400, 500)
+    await expect(tocCard(p)).toHaveCount(0)
+    await c.close()
+  })
+
+  test('点击平滑滚动到标题，滚动正文时当前项跟随', async ({ browser }) => {
+    const { c, p } = await openNote(browser, id)
+    await rail(p).locator('.toc-rail').hover()
+    await expect(tocCard(p)).toBeVisible()
+    // 逐帧记录滚动位置：平滑滚动有多帧中间值
+    await p.evaluate(() => {
+      const w = window as unknown as { __tops: number[] }
+      w.__tops = []
+      const el = document.querySelector('.editor-scroll')!
+      const end = performance.now() + 700
+      const tick = () => {
+        w.__tops.push(el.scrollTop)
+        if (performance.now() < end) requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+    await tocCard(p).getByRole('button', { name: '第 13 节' }).click()
+    await expect.poll(async () => Math.abs((await headingOffset(p, '第 13 节')) ?? 999)).toBeLessThan(40)
+    const tops = await p.evaluate(() => (window as unknown as { __tops: number[] }).__tops)
+    const final = tops[tops.length - 1]
+    expect(tops.filter((t) => t > 1 && t < final - 1).length).toBeGreaterThan(3)
+    await expect.poll(() => activeBar(p)).toBe(13)
+    await expect(tocCard(p).getByRole('button', { name: '第 13 节' })).toHaveAttribute('aria-current', 'location')
+
+    // 移开收起后，手动滚动正文：当前项跟着变
+    await p.mouse.move(400, 500)
+    await expect(tocCard(p)).toHaveCount(0)
+    await p.mouse.wheel(0, -1500)
+    await expect.poll(() => activeBar(p)).toBeLessThan(13)
+    // 滚到底：编辑器边滚边实测行高，总高度会变，所以每次轮询都再滚到底
+    await expect
+      .poll(async () => {
+        await p.locator('.editor-scroll').evaluate((el) => el.scrollTo({ top: el.scrollHeight }))
+        return activeBar(p)
+      })
+      .toBe(24)
+    await c.close()
+  })
+
+  test('键盘可用：聚焦展开，Enter 跳转，Esc 收起并回到目录条', async ({ browser }) => {
+    const { c, p } = await openNote(browser, id)
+    await rail(p).locator('.toc-rail').focus()
+    await expect(tocCard(p)).toBeVisible()
+    await p.keyboard.press('Tab')
+    await p.keyboard.press('Tab')
+    await expect(tocCard(p).getByRole('button', { name: '第 1 节' })).toBeFocused()
+    await p.keyboard.press('Enter')
+    await expect.poll(async () => Math.abs((await headingOffset(p, '第 1 节')) ?? 999)).toBeLessThan(40)
+    await p.keyboard.press('Escape')
+    await expect(tocCard(p)).toHaveCount(0)
+    await expect(rail(p).locator('.toc-rail')).toBeFocused()
+    await c.close()
+  })
+
+  test('减弱动态效果：卡片只淡入不缩放，点击直接跳到标题', async ({ browser }) => {
+    const { c, p } = await openNote(browser, id, { reducedMotion: 'reduce' })
+    await rail(p).locator('.toc-rail').hover()
+    await expect(tocCard(p)).toBeVisible()
+    expect(await tocCard(p).evaluate((el) => getComputedStyle(el).transform)).toMatch(/^(none|matrix\(1, 0, 0, 1, 0, 0\))$/)
+    const before = await scrollTop(p)
+    await tocCard(p).getByRole('button', { name: '第 20 节' }).click()
+    // 下一帧就已经到位，没有中间帧
+    const after = await p.evaluate(() => new Promise<number>((r) => requestAnimationFrame(() => r(document.querySelector('.editor-scroll')!.scrollTop))))
+    expect(after).toBeGreaterThan(before + 500)
+    expect(Math.abs((await headingOffset(p, '第 20 节')) ?? 999)).toBeLessThan(40)
+    await c.close()
+  })
+
+  test('没有标题、手机上不显示；开关在设置和外观面板里，刷新后保持', async ({ browser }) => {
+    const none = await openNote(browser, plain)
+    await expect(none.p.locator('.cm-content')).toContainText('只有正文')
+    await expect(rail(none.p)).toHaveCount(0)
+    await none.c.close()
+
+    const mobile = await openNote(browser, id, { viewport: MOBILE, isMobile: true, hasTouch: true })
+    await expect(mobile.p.locator('.cm-content')).toContainText('总览')
+    await expect(rail(mobile.p)).toHaveCount(0)
+    await mobile.c.close()
+
+    const { c, p } = await openNote(browser, id)
+    await expect(rail(p)).toBeVisible()
+    await p.goto('/settings/editor')
+    const sw = p.getByTestId('toc-rail-switch')
+    await expect(sw).toBeChecked()
+    await sw.uncheck()
+    await p.goto(`/note/${id}`)
+    await expect(p.locator('.cm-content')).toContainText('总览')
+    await expect(rail(p)).toHaveCount(0)
+    await p.reload()
+    await expect(p.locator('.cm-content')).toContainText('总览')
+    await expect(rail(p)).toHaveCount(0)
+    // 外观面板里打开
+    const panel = await openPanel(p)
+    const toggle = panel.getByTestId('appearance-toc-switch')
+    await expect(toggle).not.toBeChecked()
+    await toggle.check()
+    await expect(rail(p)).toBeVisible()
+    await p.goto('/settings/editor')
+    await expect(p.getByTestId('toc-rail-switch')).toBeChecked()
+    await c.close()
+  })
+})
+
 // 设置 LODE_SCREENSHOTS=issue-47 时生成人工检查用的截图，输出到 docs/screenshots/issue-47/
 const shotStage = process.env.LODE_SCREENSHOTS
 const shotDir = shotStage ? resolve(import.meta.dirname, '..', '..', 'docs', 'screenshots', shotStage) : ''
@@ -352,5 +513,31 @@ test.describe('截图', () => {
     await panel.getByRole('radio', { name: '默认' }).click()
     await saved(p)
     await c.close()
+  })
+
+  test('目录条：收起、悬停展开，录下跳转和页宽切换', async ({ browser }) => {
+    const id = await createNote(browser, '外观/目录条截图.md', longNote(16))
+    const { c, p } = await openNote(browser, id, { recordVideo: { dir: resolve(shotDir, 'video'), size: DESKTOP } })
+    await expect(rail(p)).toBeVisible()
+    await shot(p, '04-toc-collapsed')
+    await rail(p).locator('.toc-rail').hover()
+    await expect(tocCard(p)).toBeVisible()
+    await shot(p, '05-toc-expanded')
+    await tocCard(p).getByRole('button', { name: '第 9 节' }).click()
+    await p.waitForTimeout(900)
+    await shot(p, '06-toc-jumped')
+    await p.mouse.move(400, 500)
+    await p.waitForTimeout(600)
+    // 页宽切换的过渡也录进去
+    const panel = await openPanel(p)
+    for (const w of ['宽', '窄', '适中']) {
+      await panel.getByRole('radio', { name: w, exact: true }).click()
+      await p.waitForTimeout(700)
+    }
+    await p.keyboard.press('Escape')
+    await saved(p)
+    const video = p.video()
+    await c.close()
+    if (video) renameSync(await video.path(), resolve(shotDir, 'video', 'toc-and-width.webm'))
   })
 })

@@ -3,6 +3,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useRef,
 import { create } from 'zustand'
 import { usePop } from '../../components/usePop'
 import { NOTE_FONTS, type NoteFont, type PageWidth } from '../../lib/noteAppearance'
+import { useEditorPrefs } from '../../stores/editorPrefs'
 import { useNoteAppearance } from '../../stores/noteAppearance'
 import { fadeOutQuick, springSnappy } from '../../styles/tokens/motion'
 import { applyNoteAppearance } from './cm/appearance'
@@ -96,6 +97,8 @@ export function AppearancePanelHost({ mobile }: { mobile: boolean }) {
 function AppearanceControls({ mobile }: { mobile: boolean }) {
   const width = useNoteAppearance((s) => s.width)
   const font = useNoteAppearance((s) => s.font)
+  const tocRail = useEditorPrefs((s) => s.tocRail)
+  const setTocRail = useEditorPrefs((s) => s.setTocRail)
   const set = (patch: Parameters<typeof applyNoteAppearance>[1]) => {
     if (editorRef.view) applyNoteAppearance(editorRef.view, patch)
   }
@@ -135,6 +138,22 @@ function AppearanceControls({ mobile }: { mobile: boolean }) {
             onChange={(w) => set({ width: w })}
           />
         </Section>
+      )}
+      {!mobile && (
+        <label className="appearance-row">
+          <span className="appearance-row-text">
+            <span>目录条</span>
+            <span className="appearance-meta">正文右侧显示标题目录，所有笔记通用，只影响这台设备</span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={tocRail}
+            onChange={(e) => setTocRail(e.target.checked)}
+            data-testid="appearance-toc-switch"
+          />
+        </label>
       )}
     </>
   )

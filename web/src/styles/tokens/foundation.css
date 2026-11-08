@@ -105,6 +105,7 @@
   --editor-max-width: 46rem; /* 正文列的默认页宽（“适中”） */
   --editor-width-narrow: 36rem; /* 页宽“窄” */
   --editor-gutter-wide: var(--space-12); /* 页宽“宽”：占满编辑区，两侧各留这么宽 */
+  --toc-row: 0.875rem; /* 目录条每条横线占的高度（标题多时压缩） */
   --z-bar: 10;
   --z-popover: 40;
   --z-modal: 50;

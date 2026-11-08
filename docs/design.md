@@ -98,6 +98,7 @@ CSS 过渡只用于 hover、颜色变化和按压反馈，时长取 `--duration-
   - 桌面侧栏、右栏展开收起：各栏绝对定位，面板本身只改 transform；弹簧驱动的是展开进度，面板露出的宽度 = 进度 × 宽度，主区域的 `left` / `right` 逐帧贴住两侧面板的边缘（`panelMotion.ts`）。这样标题栏右侧的按钮每一帧都贴着右栏边缘、始终可见；正文列居中且有最大宽度，主区域比它宽时只平移、不换行，窄窗口里列宽跟着连续变化，没有开始或结束时的一次性跳变。主区域本身不加 transform，CodeMirror 的 fixed 定位提示框不会错位。需要沿侧栏边缘移动的元素读 `usePanelEdges()`。
   - 拖拽调整侧栏宽度：调宽本身就是改变布局，拖动时宽度逐帧跟手，越界松手的回弹和键盘步进用 `springSnappy` 直接改 width（`SidebarResizer.tsx`）。
   - 切换单篇笔记的页宽（#47）：标题和正文列的 `max-width` 用 CSS 过渡（`--duration-slow`、`--ease-out`），过渡可以中途反向；载入笔记时不带 `data-animate`，直接到位；减弱动态效果时直接切换。三档是 `--editor-width-narrow`、`--editor-max-width`（默认）和占满编辑区、两侧各留 `--editor-gutter-wide`，只在宽度 ≥ 768px 时生效。`e2e/ui-appearance.spec.ts` 逐帧检查单调、没有单帧跳变。
+  - 目录条跳转（#47）：点击目录项后滚动正文到标题。不用浏览器原生的平滑滚动——CodeMirror 边滚边实测行高、校正滚动位置，会打断原生动画；改为 `animate(0, 1, springScroll)` 推进比例，每帧按最新估算重算终点，结束后用 `EditorView.scrollIntoView` 对齐。用户滚轮、按下或按键时立即停下。减弱动态效果时直接跳到位。目录卡片的展开收起是普通弹出层（`usePop` + `springSnappy`，`fadeOutQuick` 收起）。
   - `e2e/split-view.spec.ts` 逐帧检查：主区域贴着面板边缘、标题栏按钮每一帧可见、正文列单调移动且没有单帧跳变、中途反向、拖拽调宽、减弱动态效果。
 - **可中断。** 动画都从当前值出发，手势或动画进行中反向操作会平滑转向。拖拽松手时把手势速度交给弹簧（motion value 自带速度）。
 - **跟手。** 拖拽时元素 1:1 跟随手指，并保留按下时的偏移。越界时用 `rubberband` 阻力，不硬停。

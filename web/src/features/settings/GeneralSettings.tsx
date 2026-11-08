@@ -41,6 +41,8 @@ export function AppearancePage({ sub }: { sub: string[] }) {
 export function EditorPage({ sub }: { sub: string[] }) {
   const show = useEditorPrefs((s) => s.formatToolbar)
   const setShow = useEditorPrefs((s) => s.setFormatToolbar)
+  const toc = useEditorPrefs((s) => s.tocRail)
+  const setToc = useEditorPrefs((s) => s.setTocRail)
   return (
     <SettingsPage sub={sub} title={SECTION_TITLE.editor}>
       <Group title="编辑">
@@ -56,6 +58,20 @@ export function EditorPage({ sub }: { sub: string[] }) {
             checked={show}
             onChange={(e) => setShow(e.target.checked)}
             data-testid="format-toolbar-switch"
+          />
+        </label>
+        <label className="settings-row">
+          <span className="settings-row-text row-stack">
+            <span className="settings-row-label">显示目录条</span>
+            <span className="settings-meta">电脑上在正文右侧显示一列细线表示标题，鼠标移上去展开目录。也可在笔记的“外观和布局”里切换。只影响这台设备。</span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={toc}
+            onChange={(e) => setToc(e.target.checked)}
+            data-testid="toc-rail-switch"
           />
         </label>
       </Group>
