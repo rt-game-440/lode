@@ -2,6 +2,13 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-09 00:40 全量 e2e 既有失败修复
+
+- **默认模型**：删除供应商或模型后，若 `settings.default_model` 指向的模型已不存在就清空（`agent/store.go` 的 `clearStaleDefault`），保证下一个新增模型自动成为默认。
+- **目录条避让（#47）**：≥768px 时 `--note-width` 取 `min(页宽, 100% - 2*space-12)`，标题和正文两侧各让出 3rem，不隐藏目录条。
+- **split-view 测量**：判断“跳变”要先按采样时间间隔把位移折算成速度再取变化，不要用按帧的位置二阶差分（rAF 抖动会被算成加速度）。
+- **执行顺序**：`talk-to-agent.spec` 开头自己清空供应商；@ 补全列表 `ul.mention-list` 可滚动，必须 `tabIndex=0`（axe `scrollable-region-focusable`）。
+
 ## 2026-11-09 00:20 #62 多工作空间备份恢复
 
 - **备份格式 2**：清单 `Manifest{Format:2, Scope: all|workspace, Workspaces[]{id,name,sort,created_at,external,vault_dir}}`，工作空间清单从 `app.db` 快照里读（和打包的库一致）。默认空间保持顶层 `app.db`/`vault/`/`trash/`（所以格式 1 备份无需转换，`Manifest.Entries()` 对没有 workspaces 的清单返回只有默认空间）；其他空间 `workspaces/<id>/{index.db,vault/,trash/}`，外部 vault 也放 `workspaces/<id>/vault/`（原路径只在清单里）。恢复接受 format 1 和 2。外部目录不存在时完整备份直接失败（不打出缺笔记的备份）；`trash-workspaces/`、`backups/`、`pre-restore-*` 不进备份，已写进 deploy.md。
