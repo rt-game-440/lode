@@ -1,4 +1,4 @@
-import { Hash, Link, ListTree, Sparkles, X } from 'lucide-react'
+import { Hash, Link, ListTree, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import type { Backlink } from '../../api/types'
@@ -9,7 +9,6 @@ import { type RightTab, useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import { openNote } from '../actions'
 import { revealLine } from '../editor/editorRef'
-import { AgentPanel } from '../agent/AgentPanel'
 import { PanelToggleAnchor } from '../shell/PanelToggle'
 import './right.css'
 
@@ -17,7 +16,6 @@ const TABS: { id: RightTab; label: string; icon: typeof Link }[] = [
   { id: 'backlinks', label: '反链', icon: Link },
   { id: 'outline', label: '大纲', icon: ListTree },
   { id: 'tags', label: '标签', icon: Hash },
-  { id: 'agent', label: '助手', icon: Sparkles },
 ]
 
 function Backlinks({ id }: { id: string }) {
@@ -107,18 +105,17 @@ function NoteTags({ id }: { id: string }) {
   )
 }
 
-/** allowAgent 为假时（手机抽屉）不显示“助手”标签：手机上的助手是全屏页面。 */
-export function RightPanel({ id, onClose, allowAgent = true }: { id: string | null; onClose?: () => void; allowAgent?: boolean }) {
-  const stored = useUI((s) => s.rightTab)
+/** 右栏：反链、大纲、标签。助手在笔记页的弹窗里打开（见 agent/AgentPopup），不在右栏。 */
+export function RightPanel({ id, onClose }: { id: string | null; onClose?: () => void }) {
+  const tab = useUI((s) => s.rightTab)
   const setTab = useUI((s) => s.setRightTab)
-  const tab = stored === 'agent' && !allowAgent ? 'backlinks' : stored
   return (
     <aside className="right-panel" aria-label="笔记信息">
       <header className="right-head">
         {/* 桌面端的收起按钮浮在这里，紧贴右栏左缘（见 shell/PanelToggle） */}
         <PanelToggleAnchor side="right" />
         <div className="right-tabs" role="tablist" aria-label="笔记信息">
-          {TABS.filter((t) => allowAgent || t.id !== 'agent').map((t) => (
+          {TABS.map((t) => (
             <button
               key={t.id}
               role="tab"
@@ -139,10 +136,8 @@ export function RightPanel({ id, onClose, allowAgent = true }: { id: string | nu
           </IconButton>
         )}
       </header>
-      <div className={`right-body${tab === 'agent' ? ' is-agent' : ''}`} id="right-body" role="tabpanel" aria-labelledby={`right-tab-${tab}`}>
-        {tab === 'agent' ? (
-          <AgentPanel contextNoteId={id} mobile={false} />
-        ) : !id ? (
+      <div className="right-body" id="right-body" role="tabpanel" aria-labelledby={`right-tab-${tab}`}>
+        {!id ? (
           <EmptyState title="未打开笔记" />
         ) : tab === 'backlinks' ? (
           <Backlinks id={id} />

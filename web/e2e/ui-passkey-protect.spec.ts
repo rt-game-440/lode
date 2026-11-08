@@ -254,6 +254,19 @@ test('重启后锁定：助手调用给出明确错误，设置页提示已锁�
   expect(send.status()).toBe(409)
   expect((await send.json()).message).toContain('锁定')
 
+  // 笔记页的助手弹窗里发消息：错误提示（toast 在弹窗之上）给出同样的说明
+  const note = await api.post(`${base}/api/notes`, { data: { path: '锁定测试.md', content: '# 锁定测试\n' } })
+  expect(note.ok()).toBe(true)
+  await page.goto(`/note/${(await note.json()).id}`)
+  await page.locator('.editor-bar').getByRole('button', { name: '助手', exact: true }).click()
+  const popup = page.getByTestId('agent-popup')
+  await expect(popup).toBeVisible()
+  await popup.getByTestId('agent-input').fill('你好')
+  await popup.getByTestId('agent-send').click()
+  await expect(page.locator('.toasts')).toContainText('锁定')
+  await expect(popup).toBeVisible()
+  await shot(page, 'agent-popup-locked')
+
   await page.goto('/settings/agent')
   await expect(page.getByTestId('keys-locked-notice')).toBeVisible()
   await shot(page, 'agent-locked-notice')
