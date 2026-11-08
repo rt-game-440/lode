@@ -115,10 +115,6 @@ interface UIState {
   agentPopup: boolean
   setAgentPopup: (open: boolean) => void
 
-  /** 笔记页上的助手弹窗（桌面是浮在编辑区上的面板，手机是底部半屏面板） */
-  agentPopup: boolean
-  setAgentPopup: (open: boolean) => void
-
   /** 手机单栏导航栈当前显示的层 */
   mobilePane: 'list' | 'detail'
   setMobilePane: (p: 'list' | 'detail') => void
