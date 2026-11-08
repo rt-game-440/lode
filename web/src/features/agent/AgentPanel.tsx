@@ -72,7 +72,15 @@ function useStickToBottom(dep: unknown) {
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
     }
     el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
+    // 列表可见高度变化（底部面板拖动、软键盘）时，原本贴在底部的继续贴住
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      ro.disconnect()
+    }
   }, [])
   useLayoutEffect(() => {
     const el = ref.current
