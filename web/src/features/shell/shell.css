@@ -148,12 +148,44 @@
   display: flex;
   flex-direction: column;
   width: min(36rem, 100%);
-  max-height: min(40rem, calc(100% - var(--space-8)));
+  max-height: min(40rem, calc(100dvh - 2 * var(--space-4)));
   background: var(--color-bg-elevated);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg);
   outline: none;
   overflow: hidden;
+}
+/* 表单类模态（添加供应商、添加模型）：面板不超过视口；标题和底部按钮固定，中间的字段区滚动 */
+.modal-form {
+  max-height: calc(100dvh - 2 * var(--space-4));
+  padding: 0;
+  gap: 0;
+}
+.modal-form-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.modal-form-head {
+  flex: none;
+  padding: var(--space-5) var(--space-5) var(--space-3);
+}
+.modal-form-fields {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.modal-form-foot {
+  flex: none;
+  padding: var(--space-3) var(--space-5) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 .shortcuts-head {
   display: flex;
