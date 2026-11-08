@@ -18,13 +18,12 @@ data/
 
 ```bash
 git clone https://github.com/rt-game-440/lode.git && cd lode
-echo "LODE_SECRET_KEY=$(openssl rand -base64 32)" > .env
-echo "LODE_DOMAIN=notes.example.com" >> .env
+echo "LODE_DOMAIN=notes.example.com" > .env
 docker compose -f docker-compose.yml -f deploy/compose.caddy.yml up -d
 ```
 
 - 打开 `https://notes.example.com`，设置登录密码。Caddy 首次申请证书可能需要几十秒。
-- `.env` 要妥善保存（尤其是 `LODE_SECRET_KEY`），不要提交到仓库；仓库的 `.gitignore` 已忽略它。
+- `.env` 不要提交到仓库；仓库的 `.gitignore` 已忽略它。助手 API key 的主密钥自动生成在数据卷的 `secret.key`，不需要配置。
 - 叠加 Caddy 后 Lode 不再映射到宿主机端口，只能经 Caddy 访问。
 - 内存：`docker-compose.yml` 给 Lode 设了 `mem_limit: 256m` 和 `GOMEMLIMIT=100MiB`，可以在 `.env` 里覆盖 `GOMEMLIMIT`。
 - 查看日志：`docker compose logs -f lode`。
@@ -39,8 +38,6 @@ sha256sum -c SHA256SUMS --ignore-missing
 sudo useradd --system --home /var/lib/lode --shell /usr/sbin/nologin lode
 sudo install -m 755 lode-v0.1.0-linux-amd64 /usr/local/bin/lode
 sudo install -d -o lode -g lode -m 700 /var/lib/lode
-sudo install -m 600 /dev/null /etc/lode.env
-echo "LODE_SECRET_KEY=$(openssl rand -base64 32)" | sudo tee /etc/lode.env > /dev/null
 sudo cp deploy/lode.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now lode
 ```
@@ -60,7 +57,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now lode
 
 - 端口：容器内 8787。只在局域网用时映射成 `8787:8787`（compose 里改 `ports`）。
 - 数据：把 `/data` 挂到 NAS 的共享文件夹，例如 `/volume1/docker/lode:/data`。镜像以 uid 65532 运行，先在 NAS 的终端执行 `sudo chown -R 65532:65532 /volume1/docker/lode`，否则启动时会报权限错误。
-- 环境变量：`LODE_SECRET_KEY`（用于助手）、`GOMEMLIMIT`。
+- 环境变量：`GOMEMLIMIT`。助手 API key 的主密钥自动生成在 `/data/secret.key`；想自己管理时再设置 `LODE_SECRET_KEY`。
 - 笔记就在挂载目录的 `vault/` 下，可以用 NAS 自带的同步或快照功能额外保护；用其他工具直接改这些 `.md` 文件，Lode 会自动同步。
 - 手机安装 PWA 需要 HTTPS：用 NAS 自带的反向代理（群晖“登录门户 → 高级 → 反向代理服务器”，记得在“自定义标题”里加 WebSocket）配合证书，或者在局域网内参考 [dev-https.md](dev-https.md)。NAS 的反向代理不在容器的本机回环上，要把它的地址（通常是 Docker 网桥网关，如 `172.17.0.1`）加进 `LODE_TRUSTED_PROXIES`。
 
@@ -110,9 +107,11 @@ docker compose cp lode:/data/lode-$(date +%F).tar.gz .
 
 运行镜像是 distroless，没有 shell 和 `rm`。备份文件留在卷里不影响服务（它不会被再次打包），也可以在宿主机上清理：`docker run --rm -v <项目名>_lode-data:/data alpine rm /data/lode-<日期>.tar.gz`（项目名默认是仓库目录名，完整卷名用 `docker volume ls` 查看）。
 
-备份包含：全部笔记和附件、回收站、数据库里的设置、登录密码哈希、API token（哈希）、助手的供应商配置（API key 以 `LODE_SECRET_KEY` 加密保存）和对话记录。
+备份包含：全部笔记和附件、回收站、数据库里的设置、登录密码哈希、API token（哈希）、助手的供应商配置（API key 加密保存）和对话记录，以及加密用的主密钥 `secret.key`。
 
-**`LODE_SECRET_KEY` 不在备份里**，要单独保存。恢复到新机器时用同一个主密钥，否则助手的 API key 需要重新填写。
+**备份文件等同于含有你的 API key，请妥善保管**：任何拿到备份的人都能解出助手的 API key。恢复时 `secret.key` 一并恢复，已保存的 key 直接可用。不想把主密钥放进备份，可以用 `lode backup <文件> --no-secret`，此时恢复后需要重新填写 API key。
+
+如果你用环境变量 `LODE_SECRET_KEY` 提供主密钥（它优先于 `secret.key`），那它不在备份里，要单独保存；恢复到新机器时用同一个值，否则 API key 需要重新填写。
 
 定时备份可以用 root 的 cron，例如每天凌晨备份到 `/srv/backup`（要对 `lode` 用户可写）并保留 14 天：
 

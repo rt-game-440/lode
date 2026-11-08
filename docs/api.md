@@ -216,7 +216,7 @@ type AuditEntry = {
 
 ## 助手（阶段 5）
 
-需要会话 cookie。API key 用 `LODE_SECRET_KEY` 派生的密钥（HKDF-SHA256 → AES-256-GCM）加密后存进 SQLite，任何响应里都不会出现明文 key，只返回 `has_key` 和末 4 位 `key_last4`。没有设置 `LODE_SECRET_KEY` 时，带 key 的保存请求返回 `400`。
+需要会话 cookie。API key 用主密钥派生的密钥（HKDF-SHA256 → AES-256-GCM）加密后存进 SQLite，任何响应里都不会出现明文 key，只返回 `has_key` 和末 4 位 `key_last4`。主密钥优先取环境变量 `LODE_SECRET_KEY`，否则取数据目录里自动生成的 `secret.key`；两者都不可用（例如数据目录不可写）时，带 key 的保存请求返回 `400`。
 
 错误码：对象不存在 `404 not_found`；参数不合法 `400 bad_request`（`message` 是中文说明）；对话正在运行时删除对话、或重复发送 `409 conflict`。
 

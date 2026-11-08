@@ -152,7 +152,7 @@ type Store struct {
 // NewStore 创建 Store。box 用于加解密 API key。
 func NewStore(db *sql.DB, box *secret.Box) *Store { return &Store{db: db, box: box} }
 
-// CanStoreKeys 报告是否设置了主密钥（LODE_SECRET_KEY），没有时不能保存 API key。
+// CanStoreKeys 报告是否有可用的主密钥，没有时不能保存 API key。
 func (s *Store) CanStoreKeys() bool { return s.box.Enabled() }
 
 func newID() string {
@@ -191,7 +191,7 @@ func (in *ProviderInput) validate() error {
 	return nil
 }
 
-// sealKey 加密 key；未设置 LODE_SECRET_KEY 时拒绝保存。
+// sealKey 加密 key；没有主密钥时拒绝保存。
 func (s *Store) sealKey(id string, key *string) (enc, last4 string, err error) {
 	if key == nil || strings.TrimSpace(*key) == "" {
 		return "", "", nil
@@ -199,7 +199,7 @@ func (s *Store) sealKey(id string, key *string) (enc, last4 string, err error) {
 	k := strings.TrimSpace(*key)
 	enc, err = s.box.Seal(k, id)
 	if errors.Is(err, secret.ErrNoKey) {
-		return "", "", invalid("服务器没有设置环境变量 LODE_SECRET_KEY，不能保存 API key。请设置后重启 Lode")
+		return "", "", invalid("服务器没有可用的主密钥，不能保存 API key。请检查数据目录是否可写后重启 Lode")
 	}
 	return enc, secret.Last4(k), err
 }

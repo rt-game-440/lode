@@ -1,5 +1,6 @@
 // Package secret 用 AES-256-GCM 加密保存在数据库里的 API key。
-// 加密密钥由环境变量 LODE_SECRET_KEY 经 HKDF-SHA256 派生；未设置时不能加密，也就不能保存 key。
+// 加密密钥由主密钥经 HKDF-SHA256 派生。主密钥优先取环境变量 LODE_SECRET_KEY；
+// 没设置时使用数据目录里的 secret.key，文件不存在则自动生成（见 Load）。
 package secret
 
 import (
@@ -10,14 +11,68 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
+// FileName 是数据目录里自动生成的主密钥文件名。
+const FileName = "secret.key"
+
+// Source 说明主密钥的来源。
+type Source string
+
+const (
+	SourceEnv  Source = "env"  // 环境变量 LODE_SECRET_KEY
+	SourceFile Source = "file" // 数据目录里已有的 secret.key
+	SourceNew  Source = "new"  // 刚刚自动生成的 secret.key
+)
+
+// Load 返回可用的 Box。envKey 非空（只含空白不算）时优先使用，不碰文件；否则读 dataDir/secret.key，
+// 不存在就生成 32 字节随机值写进去（仅所有者可读写，Windows 上权限位基本无效，尽力而为）。
+func Load(envKey, dataDir string) (*Box, Source, error) {
+	if strings.TrimSpace(envKey) != "" {
+		return New(envKey), SourceEnv, nil
+	}
+	p := filepath.Join(dataDir, FileName)
+	if b, err := os.ReadFile(p); err == nil {
+		if strings.TrimSpace(string(b)) == "" {
+			return nil, "", fmt.Errorf("%s 是空的：请删除它让 Lode 重新生成（已保存的 API key 需要重新填写）", p)
+		}
+		return New(string(b)), SourceFile, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, "", err
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, "", err
+	}
+	master := base64.StdEncoding.EncodeToString(raw)
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, "", err
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := f.WriteString(master + "\n"); err != nil {
+		f.Close()
+		os.Remove(p)
+		return nil, "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(p)
+		return nil, "", err
+	}
+	return New(master), SourceNew, nil
+}
+
 // ErrNoKey 表示没有设置 LODE_SECRET_KEY。
-var ErrNoKey = errors.New("未设置 LODE_SECRET_KEY")
+var ErrNoKey = errors.New("没有可用的主密钥")
 
 // ErrDecrypt 表示密文无法解密（主密钥变了或数据被篡改）。
-var ErrDecrypt = errors.New("API key 无法解密：LODE_SECRET_KEY 可能已更换，请重新填写 key")
+var ErrDecrypt = errors.New("API key 无法解密：主密钥（LODE_SECRET_KEY 或 secret.key）可能已更换，请重新填写 key")
 
 const prefix = "v1:"
 

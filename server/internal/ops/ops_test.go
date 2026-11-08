@@ -113,6 +113,60 @@ func TestBackupRestoreRoundTrip(t *testing.T) {
 	}
 }
 
+// 未设置 LODE_SECRET_KEY 时由 secret.key 提供主密钥：备份 → 删除数据目录 → 恢复后，已保存的 key 仍可解密。
+func TestBackupRestoreIncludesSecretKeyFile(t *testing.T) {
+	ctx := context.Background()
+	dir := filepath.Join(t.TempDir(), "data")
+	e := open(t, dir)
+	box, _, err := secret.Load("", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.agent = agent.NewStore(e.db, box)
+	key := "sk-backup-test-0000-1111"
+	if _, err := e.agent.CreateProvider(ctx, agent.ProviderInput{Name: "测试", Kind: llm.KindOpenAI, APIKey: &key}); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), "b.tar.gz")
+	if err := Backup(ctx, e.db, dir, archive); err != nil {
+		t.Fatal(err)
+	}
+	noSecret := filepath.Join(t.TempDir(), "n.tar.gz")
+	if err := Backup(ctx, e.db, dir, noSecret, BackupOptions{ExcludeSecret: true}); err != nil {
+		t.Fatal(err)
+	}
+	e.db.Close()
+	os.RemoveAll(dir)
+
+	if _, err := Restore(ctx, dir, archive); err != nil {
+		t.Fatal(err)
+	}
+	box2, src, err := secret.Load("", dir)
+	if err != nil || src != secret.SourceFile {
+		t.Fatalf("恢复后应读到 secret.key：%v %v", src, err)
+	}
+	r := open(t, dir)
+	defer r.db.Close()
+	r.agent = agent.NewStore(r.db, box2)
+	ps, _ := r.agent.Providers(ctx)
+	if len(ps) != 1 {
+		t.Fatal(ps)
+	}
+	if cfg, err := r.agent.Config(ctx, ps[0].ID); err != nil || cfg.APIKey != key {
+		t.Errorf("恢复后 key 应可用：%v", err)
+	}
+
+	// 不含密钥的备份里没有 secret.key；恢复时不动现有的 secret.key
+	old, _ := os.ReadFile(filepath.Join(dir, "secret.key"))
+	r.db.Close()
+	if _, err := Restore(ctx, dir, noSecret); err != nil {
+		t.Fatal(err)
+	}
+	if now, _ := os.ReadFile(filepath.Join(dir, "secret.key")); string(now) != string(old) || len(old) == 0 {
+		t.Error("不含密钥的备份不应改动现有 secret.key")
+	}
+}
+
 // 恢复时原有数据移到 pre-restore-* 目录保留；服务正在运行（持有锁）时拒绝恢复。
 func TestRestoreKeepsOldDataAndRefusesWhileRunning(t *testing.T) {
 	ctx := context.Background()
