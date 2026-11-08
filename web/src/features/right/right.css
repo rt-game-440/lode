@@ -47,12 +47,6 @@
   overscroll-behavior: contain;
   padding: var(--space-1) var(--space-2) var(--space-6);
 }
-.right-body.is-agent {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  overflow: hidden;
-}
 .right-loading {
   display: grid;
   place-items: center;

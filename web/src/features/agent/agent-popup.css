@@ -1,0 +1,27 @@
+/* 笔记页上的助手弹窗。桌面：浮在编辑区右上方的非模态面板（放在 .shell-main 里，绝对定位）；手机用 components/BottomSheet。 */
+.agent-popup {
+  position: absolute;
+  z-index: var(--z-popover);
+  top: calc(var(--bar-height) + var(--space-2));
+  right: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  width: min(26rem, calc(100% - 2 * var(--space-3)));
+  height: min(40rem, calc(100% - var(--bar-height) - 2 * var(--space-3)));
+  overflow: hidden;
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-popover);
+  -webkit-backdrop-filter: var(--material-blur-thick);
+  backdrop-filter: var(--material-blur-thick);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+}
+.agent-popup:focus-visible {
+  outline: none;
+}
+
+/* 弹窗里的助手：背景交给容器（材质 / 底部面板底色） */
+.agent.is-popup {
+  background: transparent;
+}

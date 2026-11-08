@@ -103,7 +103,7 @@ function NotePicker({ open, onClose, onPick }: { open: boolean; onClose: () => v
   )
 }
 
-export function Composer({ contextPath, mobile }: { contextPath: string | null; mobile: boolean }) {
+export function Composer({ contextPath, mobile, autoFocus }: { contextPath: string | null; mobile: boolean; autoFocus?: boolean }) {
   const config = useAgent((s) => s.config)
   const current = useAgent((s) => s.current)
   const send = useAgent((s) => s.send)
@@ -274,6 +274,7 @@ export function Composer({ contextPath, mobile }: { contextPath: string | null; 
             void addFiles(e.clipboardData.files)
           }
         }}
+        autoFocus={autoFocus}
         data-testid="agent-input"
       />
       <div className="composer-bar">

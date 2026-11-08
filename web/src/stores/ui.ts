@@ -10,7 +10,8 @@ export type Route =
   | { view: 'agent' }
 
 export type Theme = 'system' | 'light' | 'dark'
-export type RightTab = 'backlinks' | 'outline' | 'tags' | 'agent'
+export type RightTab = 'backlinks' | 'outline' | 'tags'
+const RIGHT_TABS: readonly RightTab[] = ['backlinks', 'outline', 'tags']
 export type SidebarTab = 'files' | 'search' | 'tags'
 
 export interface Toast {
@@ -74,7 +75,8 @@ function loadLayout(): Layout {
       sidebarOpen: v.sidebarOpen ?? true,
       sidebarWidth: clampSidebarWidth(v.sidebarWidth ?? SIDEBAR_WIDTH.default),
       rightOpen: v.rightOpen ?? true,
-      rightTab: v.rightTab ?? 'backlinks',
+      // 旧版本的布局偏好里可能存着已经去掉的“助手”标签
+      rightTab: RIGHT_TABS.includes(v.rightTab) ? v.rightTab : 'backlinks',
     }
   } catch {
     return { sidebarOpen: true, sidebarWidth: SIDEBAR_WIDTH.default, rightOpen: true, rightTab: 'backlinks' }
@@ -102,8 +104,12 @@ interface UIState {
   toggleRight: (open?: boolean) => void
   setRightTab: (t: RightTab) => void
   setSidebarTab: (t: SidebarTab) => void
-  /** 打开助手：手机上是全屏页面，其他尺寸是右栏的“助手”标签页 */
+  /** 打开助手页面（侧栏底部的全局入口；弹窗里的“展开”也走这里）：先关掉笔记页上的助手弹窗 */
   openAgent: () => void
+
+  /** 笔记页上的助手弹窗（桌面是浮在编辑区上的面板，手机是底部半屏面板） */
+  agentPopup: boolean
+  setAgentPopup: (open: boolean) => void
 
   /** 手机单栏导航栈当前显示的层 */
   mobilePane: 'list' | 'detail'
@@ -140,11 +146,11 @@ export const useUI = create<UIState>((set, get) => {
         if (replace) history.replaceState(null, '', path)
         else history.pushState(null, '', path)
       }
-      set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail' })
+      set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail', ...(r.view === 'note' ? {} : { agentPopup: false }) })
     },
     syncFromLocation: () => {
       const r = parseRoute(location.pathname)
-      set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail' })
+      set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail', ...(r.view === 'note' ? {} : { agentPopup: false }) })
     },
 
     ...layout,
@@ -166,11 +172,10 @@ export const useUI = create<UIState>((set, get) => {
       persistLayout()
     },
     setSidebarTab: (t) => set({ sidebarTab: t, sidebarOpen: true }),
-    openAgent: () => {
-      if (window.matchMedia('(max-width: 767px)').matches) get().navigate({ view: 'agent' })
-      else if (get().rightOpen && get().rightTab === 'agent') get().toggleRight(false)
-      else get().setRightTab('agent')
-    },
+    openAgent: () => get().navigate({ view: 'agent' }),
+
+    agentPopup: false,
+    setAgentPopup: (open) => set({ agentPopup: open }),
 
     mobilePane: initialRoute.view === 'home' ? 'list' : 'detail',
     setMobilePane: (p) => set({ mobilePane: p }),

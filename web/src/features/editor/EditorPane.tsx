@@ -46,6 +46,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   const notes = useVault((s) => s.notes)
   const rightOpen = useUI((s) => s.rightOpen)
   const toggleRight = useUI((s) => s.toggleRight)
+  const agentPopup = useUI((s) => s.agentPopup)
+  const setAgentPopup = useUI((s) => s.setAgentPopup)
   const navigate = useUI((s) => s.navigate)
   const toast = useUI((s) => s.toast)
 
@@ -225,7 +227,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         <div className="editor-crumb">{note && dirname(note.path) ? dirname(note.path).split('/').join(' / ') : ''}</div>
         <span className="spacer" />
         <SaveIndicator status={status} error={error} onRetry={() => void saverRef.current?.flush()} />
-        <IconButton label="助手" onClick={() => useUI.getState().openAgent()}>
+        <IconButton label="助手" active={agentPopup} onClick={() => setAgentPopup(!agentPopup)} data-testid="open-agent-popup">
           <Sparkles size={18} />
         </IconButton>
         {mobile && (

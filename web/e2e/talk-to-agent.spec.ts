@@ -179,11 +179,13 @@ test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 
   await expect(page.getByTestId('default-model')).toContainText('mock-smart')
   await shot(page, 'agent-settings')
 
-  // 2. 打开笔记，在右栏打开助手；当前笔记默认附上
+  // 2. 打开笔记，点标题栏的助手图标在弹窗里打开助手；当前笔记默认附上
   await page.goto(`/note/${encodeURIComponent(note.id)}`)
   await expect(page.locator('.cm-content')).toContainText('买牛奶')
-  await page.getByTestId('open-agent').click()
-  const panel = page.getByTestId('agent-panel')
+  await page.locator('.editor-bar').getByRole('button', { name: '助手', exact: true }).click()
+  const popup = page.getByTestId('agent-popup')
+  await expect(popup).toBeVisible()
+  const panel = popup.getByTestId('agent-panel')
   await expect(panel).toBeVisible()
   await expect(panel.locator('.mention-chip.is-context')).toContainText('待办')
   await expect(panel.getByTestId('model-select')).toHaveValue(/.+/)
@@ -232,10 +234,21 @@ test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 
   await shot(page, 'agent-switch-model')
   expect(received.slice(0, 3).every((r) => r.model === 'mock-smart')).toBe(true)
 
-  // 7. 刷新后对话仍在
-  // 右栏和助手标签页保存在布局偏好里，刷新后直接显示
-  await page.reload()
+  // 7. 弹窗里的“展开”：跳到整页助手，接着同一个对话（会话在全局 store 里，不新开）
+  await popup.getByRole('button', { name: '展开到助手页' }).click()
+  await expect(page).toHaveURL(/\/agent$/)
+  await expect(popup).toHaveCount(0)
   await expect(page.getByTestId('agent-panel').getByTestId('msg-user')).toHaveCount(2)
+  await expect(page.getByTestId('agent-panel').getByTestId('msg-assistant').last()).toContainText('这是 mock-fast 的回复')
+  await page.goto(`/note/${encodeURIComponent(note.id)}`)
+  await expect(page.locator('.cm-content')).toContainText('买牛奶')
+
+  // 8. 刷新后对话仍在：弹窗不随刷新保留，重新打开后看到同一个对话
+  await page.reload()
+  await expect(page.locator('.cm-content')).toContainText('买牛奶')
+  await expect(page.getByTestId('agent-popup')).toHaveCount(0)
+  await page.locator('.editor-bar').getByRole('button', { name: '助手', exact: true }).click()
+  await expect(page.getByTestId('agent-popup').getByTestId('agent-panel').getByTestId('msg-user')).toHaveCount(2)
 
   if (shotDir) {
     await page.waitForTimeout(800)
