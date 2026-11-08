@@ -108,8 +108,11 @@ for (const scheme of ['light', 'dark'] as const) {
         await page.keyboard.press('Escape')
       }
       await page.goto('/settings')
-      await expect(page.getByRole('heading', { name: 'API token' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
       await snap('settings')
+      await page.getByRole('link', { name: /^API token/ }).click()
+      await expect(page.getByRole('heading', { name: 'API token', level: 1 })).toBeVisible()
+      await snap('settings-tokens')
       await page.goto('/trash')
       await snap('trash')
       // 登录页与首启页（不带 cookie 的新 context）

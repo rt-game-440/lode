@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { type APIRequestContext, type BrowserContext, type Page, expect, test } from '@playwright/test'
 
-// 阶段 4：设置页的 API token 管理与 MCP 调用记录。
+// 阶段 4：设置页的 API token 管理与 MCP 调用记录（#23 起分在设置的“MCP 接入”“API token”“调用记录”子页面）。
 // 文件名排在 smoke.spec 之后：smoke 的第一个用例要求实例尚未设置密码。
 // 只在本地测试实例里使用的测试密码
 const PASSWORD = 'e2e-test-password'
@@ -62,7 +62,13 @@ test('设置页创建读写 token：明文只显示一次，可以复制', async
   await page.goto('/')
   await page.getByRole('button', { name: '设置' }).click()
   await expect(page).toHaveURL(/\/settings$/)
+  await page.getByRole('link', { name: /^MCP 接入/ }).click()
+  await expect(page).toHaveURL(/\/settings\/mcp$/)
   await expect(page.getByTestId('mcp-endpoint')).toHaveText(new URL('/mcp', page.url()).href)
+  await page.getByRole('button', { name: '返回设置' }).click()
+  await expect(page).toHaveURL(/\/settings$/)
+  await page.getByRole('link', { name: /^API token/ }).click()
+  await expect(page).toHaveURL(/\/settings\/tokens$/)
 
   // 不填名称直接创建：提示填写
   await page.getByRole('button', { name: '创建 token' }).click()
@@ -87,8 +93,9 @@ test('设置页创建读写 token：明文只显示一次，可以复制', async
   const row = page.getByRole('list', { name: 'API token 列表' }).getByRole('listitem').filter({ hasText: 'Playwright' })
   await expect(row).toContainText('读写')
   await expect(row).toContainText('从未使用')
-  // 列表和刷新后的页面都不再出现明文
+  // 列表和刷新后的页面都不再出现明文；刷新后仍停在 API token 页面
   await page.reload()
+  await expect(page.getByRole('heading', { name: 'API token', level: 1 })).toBeVisible()
   await expect(page.getByText(secret)).toHaveCount(0)
 })
 
@@ -118,6 +125,9 @@ test('MCP 追加一行：打开的笔记无需刷新即可看到，调用记录�
   const missing = await callTool(ctx.request, secret, 'read_note', { path: '不存在.md' })
   expect(missing.isError).toBe(true)
 
+  await page.getByRole('button', { name: '返回设置' }).click()
+  await page.getByRole('link', { name: /^调用记录/ }).click()
+  await expect(page).toHaveURL(/\/settings\/audit$/)
   await page.getByRole('button', { name: '刷新调用记录' }).click()
   const rows = page.getByRole('table', { name: '调用记录' }).getByRole('row')
   await expect(rows.filter({ hasText: 'update_note' })).toContainText('MCP/收件箱.md')
@@ -126,9 +136,6 @@ test('MCP 追加一行：打开的笔记无需刷新即可看到，调用记录�
   await expect(rows.filter({ hasText: '不存在.md' })).toContainText('失败')
   await expect(rows.filter({ hasText: '不存在.md' })).toContainText('找不到')
   await expect(rows.filter({ hasText: '第一条' })).toContainText('search_notes')
-  await expect(page.getByRole('list', { name: 'API token 列表' }).getByRole('listitem').filter({ hasText: 'Playwright' })).not.toContainText(
-    '从未使用',
-  )
   if (shotDir) {
     await page.getByRole('table', { name: '调用记录' }).scrollIntoViewIfNeeded()
     await shot(page, '4-2-audit-log')
@@ -136,18 +143,32 @@ test('MCP 追加一行：打开的笔记无需刷新即可看到，调用记录�
     // 切到手机布局会重新挂载设置页：等布局稳定、调用记录重新加载出来，再滚到底部
     await page.waitForTimeout(500)
     await expect(page.getByRole('table', { name: '调用记录' })).toBeVisible()
-    await page.locator('.view-body.settings').evaluate((el) => el.scrollTo(0, el.scrollHeight))
+    await page.getByTestId('audit-page').evaluate((el) => el.scrollTo(0, el.scrollHeight))
     await shot(page, '4-3-settings-mobile')
     await page.setViewportSize({ width: 1280, height: 800 })
   }
+  // 浏览器后退回到设置首页，再进 API token：最后使用时间已更新
+  await page.goBack()
+  await expect(page).toHaveURL(/\/settings$/)
+  await page.getByRole('link', { name: /^API token/ }).click()
+  await expect(page.getByRole('list', { name: 'API token 列表' }).getByRole('listitem').filter({ hasText: 'Playwright' })).not.toContainText(
+    '从未使用',
+  )
 })
 
-test('吊销 token 后 MCP 请求返回 401', async () => {
+test('在 token 详情页吊销后返回列表，MCP 请求返回 401', async () => {
   const row = page.getByRole('list', { name: 'API token 列表' }).getByRole('listitem').filter({ hasText: 'Playwright' })
-  await row.getByRole('button', { name: '吊销' }).click()
+  await row.getByRole('link').click()
+  await expect(page).toHaveURL(/\/settings\/tokens\/[^/]+$/)
+  const detail = page.getByTestId('token-detail')
+  await expect(detail).toContainText('读写')
+  // 详情页列出这个 token 的调用
+  await expect(detail.getByRole('table')).toContainText('update_note')
+  await detail.getByRole('button', { name: '吊销' }).click()
   await page.getByRole('dialog').getByRole('button', { name: '吊销' }).click()
-  await expect(row).toHaveCount(0)
   await expect(page.getByText('已吊销“Playwright”')).toBeVisible()
+  await expect(page).toHaveURL(/\/settings\/tokens$/)
+  await expect(row).toHaveCount(0)
 
   const res = await mcp(ctx.request, secret, 'tools/list', {})
   expect(res.status()).toBe(401)

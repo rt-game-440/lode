@@ -1,5 +1,5 @@
-import { AlertTriangle, Check, CircleAlert, Pencil, Plus, Server, Trash2 } from 'lucide-react'
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react'
+import { AlertTriangle, Check, CircleAlert, Pencil, PlugZap, Plus, Server, Trash2 } from 'lucide-react'
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import {
   EFFORT_LABEL,
   type AgentModel,
@@ -19,8 +19,12 @@ import { Button, EmptyState, IconButton, Spinner, TextField } from '../../compon
 import { useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
 import { errorMessage } from '../actions'
+import { openSettings, settingsBack } from './nav'
+import { ActionRow, Group, InfoRow, NavRow, RowIcon, SettingsPage } from './parts'
+import { SECTION_TITLE } from './stack'
 
-// 设置里的“助手”：模型供应商、模型和默认选项。保存后刷新全局的助手配置，助手面板立即可用。
+// 设置里的“助手”：默认选项和模型供应商列表（第一级），单个供应商的连接、测试和模型（第二级）。
+// 保存后刷新全局的助手配置，助手面板立即可用。
 
 const DEFAULT_BASE: Record<ProviderKind, string> = {
   openai: 'https://api.openai.com/v1',
@@ -45,37 +49,43 @@ function toast(message: string, tone?: 'error') {
 
 const reload = () => useAgent.getState().loadConfig()
 
-export function AgentSection() {
-  const config = useAgent((s) => s.config)
-  const [editing, setEditing] = useState<Provider | 'new' | null>(null)
+/** 首页“助手”一行的状态摘要。 */
+export function agentSummary(config: { providers: Provider[] } | null): string {
+  if (!config) return ''
+  const n = config.providers.length
+  if (!n) return '未配置'
+  const models = config.providers.reduce((k, p) => k + p.models.filter((m) => m.enabled).length, 0)
+  return `${n} 个供应商 · ${models} 个模型`
+}
 
-  useEffect(() => {
-    void reload()
-  }, [])
+/** 服务器没有主密钥时不能保存 API key 的提示（第一级页面和供应商页都显示）。 */
+function SecretKeyNotice() {
+  return (
+    <p className="settings-warning" role="note">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <span>
+        服务器没有设置 <code>LODE_SECRET_KEY</code>，现在不能保存 API key。用 <code>openssl rand -base64 32</code>{' '}
+        生成一个，设置为环境变量后重启 Lode。只连接不需要 key 的本地模型（如 Ollama）时可以不设。
+      </span>
+    </p>
+  )
+}
+
+function providerSummary(p: Provider): string {
+  const n = p.models.length
+  return n ? `${n} 个模型` : '未添加模型'
+}
+
+export function AgentPage({ sub }: { sub: string[] }) {
+  const config = useAgent((s) => s.config)
+  const [adding, setAdding] = useState(false)
 
   return (
-    <section className="settings-group" aria-labelledby="settings-agent">
-      <div className="settings-heading-row">
-        <h2 id="settings-agent" className="settings-heading">
-          助手
-        </h2>
-        <span className="spacer" />
-        <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setEditing('new')} data-testid="add-provider">
-          添加供应商
-        </Button>
-      </div>
+    <SettingsPage sub={sub} title={SECTION_TITLE.agent}>
       <p className="settings-desc">
         接入 OpenAI 兼容接口、Anthropic 或 Gemini。API key 加密保存在服务器上，之后不会再显示，只显示末 4 位。
       </p>
-      {config && !config.secret_key_set && (
-        <p className="settings-warning" role="note">
-          <AlertTriangle size={16} aria-hidden="true" />
-          <span>
-            服务器没有设置 <code>LODE_SECRET_KEY</code>，现在不能保存 API key。用 <code>openssl rand -base64 32</code>{' '}
-            生成一个，设置为环境变量后重启 Lode。只连接不需要 key 的本地模型（如 Ollama）时可以不设。
-          </span>
-        </p>
-      )}
+      {config && !config.secret_key_set && <SecretKeyNotice />}
 
       {!config ? (
         <div className="settings-card">
@@ -86,23 +96,49 @@ export function AgentSection() {
       ) : (
         <>
           <DefaultsCard />
-          {config.providers.length === 0 ? (
-            <div className="settings-card">
+          <Group title="模型供应商">
+            {config.providers.length === 0 ? (
               <EmptyState icon={<Server size={28} strokeWidth={1.5} />} title="还没有模型供应商" />
-            </div>
-          ) : (
-            config.providers.map((p) => <ProviderCard key={p.id} provider={p} onEdit={() => setEditing(p)} />)
-          )}
+            ) : (
+              <ul className="settings-list" aria-label="模型供应商">
+                {config.providers.map((p) => (
+                  <li key={p.id}>
+                    <NavRow
+                      to={['agent', p.id]}
+                      icon={
+                        <RowIcon tone="slate">
+                          <Server size={16} />
+                        </RowIcon>
+                      }
+                      label={
+                        <span className="provider-name">
+                          {p.name}
+                          <span className="kind-badge">{KIND_LABEL[p.kind]}</span>
+                        </span>
+                      }
+                      value={providerSummary(p)}
+                      testId="provider-row"
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <ActionRow icon={<Plus size={17} aria-hidden="true" />} onClick={() => setAdding(true)} data-testid="add-provider">
+              添加供应商
+            </ActionRow>
+          </Group>
         </>
       )}
 
       <ProviderForm
-        provider={editing === 'new' ? null : editing}
-        open={editing !== null}
+        provider={null}
+        open={adding}
         secretKeySet={config?.secret_key_set ?? false}
-        onClose={() => setEditing(null)}
+        onClose={() => setAdding(false)}
+        // 添加后直接进入它的页面：接着测试连接、添加模型
+        onCreated={(p) => openSettings(['agent', p.id])}
       />
-    </section>
+    </SettingsPage>
   )
 }
 
@@ -118,7 +154,7 @@ function DefaultsCard() {
     }
   }
   return (
-    <div className="settings-card">
+    <Group title="默认">
       <label className="settings-row">
         <span className="settings-row-text row-stack">
           <span className="settings-row-label">默认模型</span>
@@ -153,11 +189,37 @@ function DefaultsCard() {
           data-testid="auto-approve"
         />
       </label>
-    </div>
+    </Group>
   )
 }
 
-function ProviderCard({ provider: p, onEdit }: { provider: Provider; onEdit: () => void }) {
+/** 第二级：单个供应商。删除后列表里已经没有它，但退出动画期间仍显示原来的内容。 */
+export function ProviderPage({ sub, id }: { sub: string[]; id: string }) {
+  const config = useAgent((s) => s.config)
+  const last = useRef<Provider | null>(null)
+  const found = config?.providers.find((p) => p.id === id) ?? null
+  if (found) last.current = found
+  const p = found ?? last.current
+  if (!p) {
+    return (
+      <SettingsPage sub={sub} title="供应商">
+        {!config ? (
+          <div className="view-loading">
+            <Spinner />
+          </div>
+        ) : (
+          <EmptyState icon={<Server size={28} strokeWidth={1.5} />} title="找不到这个供应商">
+            它可能已经被删除
+          </EmptyState>
+        )}
+      </SettingsPage>
+    )
+  }
+  return <ProviderDetail sub={sub} provider={p} secretKeySet={config?.secret_key_set ?? false} />
+}
+
+function ProviderDetail({ sub, provider: p, secretKeySet }: { sub: string[]; provider: Provider; secretKeySet: boolean }) {
+  const [editing, setEditing] = useState(false)
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<TestResult | null>(null)
   const [model, setModel] = useState<AgentModel | 'new' | null>(null)
@@ -185,6 +247,7 @@ function ProviderCard({ provider: p, onEdit }: { provider: Provider; onEdit: () 
     if (!ok) return
     try {
       await agentApi.deleteProvider(p.id)
+      settingsBack(sub)
       await reload()
     } catch (err) {
       toast(errorMessage(err), 'error')
@@ -219,42 +282,37 @@ function ProviderCard({ provider: p, onEdit }: { provider: Provider; onEdit: () 
   const added = new Set(p.models.map((m) => m.model))
 
   return (
-    <div className="settings-card provider-card" data-testid="provider-card">
-      <div className="settings-row provider-head">
-        <span className="settings-row-text row-stack">
-          <span className="settings-row-label">
-            {p.name}
-            <span className="kind-badge">{KIND_LABEL[p.kind]}</span>
-          </span>
-          <span className="settings-meta provider-meta">
-            {p.base_url || DEFAULT_BASE[p.kind]} · {p.has_key ? `key ••••${p.key_last4}` : '未设置 key'}
-          </span>
-        </span>
-        <Button size="sm" variant="secondary" disabled={testing} onClick={() => void test()} data-testid="test-provider">
+    <SettingsPage sub={sub} title={p.name} testId="provider-card">
+      {!secretKeySet && <SecretKeyNotice />}
+      <Group title="连接">
+        <InfoRow label="名称">{p.name}</InfoRow>
+        <InfoRow label="接口类型">{KIND_LABEL[p.kind]}</InfoRow>
+        <InfoRow label="接口地址">
+          <span className="provider-meta">{p.base_url || DEFAULT_BASE[p.kind]}</span>
+        </InfoRow>
+        <InfoRow label="API key">{p.has_key ? `••••${p.key_last4}` : '未设置'}</InfoRow>
+        <ActionRow icon={<Pencil size={16} aria-hidden="true" />} onClick={() => setEditing(true)}>
+          编辑名称、地址和 key
+        </ActionRow>
+        <ActionRow icon={<PlugZap size={16} aria-hidden="true" />} disabled={testing} onClick={() => void test()} data-testid="test-provider">
           {testing ? '正在测试…' : '测试连接'}
-        </Button>
-        <IconButton label={`编辑“${p.name}”`} size="sm" onClick={onEdit}>
-          <Pencil size={15} />
-        </IconButton>
-        <IconButton label={`删除“${p.name}”`} size="sm" onClick={() => void remove()}>
-          <Trash2 size={15} />
-        </IconButton>
-      </div>
+        </ActionRow>
+        {result && (
+          <div className={`settings-row test-result${result.ok ? ' is-ok' : ' is-error'}`} role="status" data-testid="test-result">
+            {result.ok ? <Check size={16} aria-hidden="true" /> : <CircleAlert size={16} aria-hidden="true" />}
+            <span className="test-result-text">
+              {result.ok
+                ? `连接正常，找到 ${result.models.length} 个模型`
+                : `${(result.kind && TEST_KIND_LABEL[result.kind]) || '连接失败'}：${result.message}`}
+            </span>
+          </div>
+        )}
+        {result?.ok && result.models.length > 0 && (
+          <ModelImport models={result.models} added={added} onPick={(m) => (setPreset(m), setModel('new'))} />
+        )}
+      </Group>
 
-      {result && (
-        <div className={`settings-row test-result${result.ok ? ' is-ok' : ' is-error'}`} role="status" data-testid="test-result">
-          {result.ok ? <Check size={16} aria-hidden="true" /> : <CircleAlert size={16} aria-hidden="true" />}
-          <span className="test-result-text">
-            {result.ok
-              ? `连接正常，找到 ${result.models.length} 个模型`
-              : `${(result.kind && TEST_KIND_LABEL[result.kind]) || '连接失败'}：${result.message}`}
-          </span>
-        </div>
-      )}
-      {result?.ok && result.models.length > 0 && (
-        <ModelImport models={result.models} added={added} onPick={(m) => (setPreset(m), setModel('new'))} />
-      )}
-
+      <Group title="模型" footer="关闭的模型不会出现在助手的模型列表里。测试连接后可以从找到的模型里直接添加。">
       <ul className="model-list" aria-label={`${p.name} 的模型`}>
         {p.models.map((m) => (
           <li key={m.id} className="settings-row model-row" data-testid="model-row">
@@ -278,22 +336,26 @@ function ProviderCard({ provider: p, onEdit }: { provider: Provider; onEdit: () 
             </IconButton>
           </li>
         ))}
-        <li className="settings-row">
-          <Button
-            size="sm"
-            variant="plain"
-            icon={<Plus size={14} />}
-            onClick={() => {
-              setPreset(null)
-              setModel('new')
-            }}
-            data-testid="add-model"
-          >
-            添加模型
-          </Button>
-        </li>
       </ul>
+      <ActionRow
+        icon={<Plus size={17} aria-hidden="true" />}
+        onClick={() => {
+          setPreset(null)
+          setModel('new')
+        }}
+        data-testid="add-model"
+      >
+        添加模型
+      </ActionRow>
+      </Group>
 
+      <Group footer="它的 API key 和全部模型配置会一起删除。">
+        <ActionRow danger onClick={() => void remove()}>
+          删除供应商
+        </ActionRow>
+      </Group>
+
+      <ProviderForm provider={p} open={editing} secretKeySet={secretKeySet} onClose={() => setEditing(false)} />
       <ModelForm
         providerId={p.id}
         model={model === 'new' ? null : model}
@@ -301,7 +363,7 @@ function ProviderCard({ provider: p, onEdit }: { provider: Provider; onEdit: () 
         open={model !== null}
         onClose={() => setModel(null)}
       />
-    </div>
+    </SettingsPage>
   )
 }
 
@@ -351,11 +413,13 @@ function ProviderForm({
   open,
   secretKeySet,
   onClose,
+  onCreated,
 }: {
   provider: Provider | null
   open: boolean
   secretKeySet: boolean
   onClose: () => void
+  onCreated?: (p: Provider) => void
 }) {
   const [name, setName] = useState('')
   const [kind, setKind] = useState<ProviderKind>('openai')
@@ -388,11 +452,11 @@ function ProviderForm({
     const apiKey = key.trim() ? key.trim() : provider ? (clearKey ? '' : undefined) : undefined
     try {
       const input = { name: name.trim(), kind, base_url: baseUrl.trim(), ...(apiKey !== undefined ? { api_key: apiKey } : {}) }
-      if (provider) await agentApi.updateProvider(provider.id, input)
-      else await agentApi.createProvider(input)
+      const saved = provider ? await agentApi.updateProvider(provider.id, input) : await agentApi.createProvider(input)
       setKey('')
       await reload()
       onClose()
+      if (!provider) onCreated?.(saved)
     } catch (err) {
       setError(errorMessage(err))
     } finally {

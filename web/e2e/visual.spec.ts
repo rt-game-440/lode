@@ -47,7 +47,7 @@ async function signedIn(browser: Browser, opts: Parameters<Browser['newContext']
 
 /* ---------------- 1. axe 扫描 ---------------- */
 
-type PageKind = 'setup' | 'login' | 'main' | 'settings'
+type PageKind = 'setup' | 'login' | 'main' | 'settings' | 'settings-tokens' | 'settings-agent'
 
 async function openPage(browser: Browser, kind: PageKind, scheme: 'light' | 'dark') {
   if (kind === 'setup' || kind === 'login') {
@@ -67,14 +67,22 @@ async function openPage(browser: Browser, kind: PageKind, scheme: 'light' | 'dar
     await p.goto(`/note/${noteId}`)
     await expect(p.locator('.cm-content')).toContainText('检查对比度')
   } else {
-    await p.goto('/settings')
-    await expect(p.getByRole('heading', { name: 'API token' })).toBeVisible()
+    // 设置首页和两个子页面（#23 起设置是多级页面）
+    const [url, heading] = SETTINGS_PAGES[kind]
+    await p.goto(url)
+    await expect(p.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
   }
   return { c, p }
 }
 
+const SETTINGS_PAGES = {
+  settings: ['/settings', '设置'],
+  'settings-tokens': ['/settings/tokens', 'API token'],
+  'settings-agent': ['/settings/agent', '助手'],
+} as const
+
 for (const scheme of ['light', 'dark'] as const) {
-  for (const kind of ['setup', 'login', 'main', 'settings'] as const) {
+  for (const kind of ['setup', 'login', 'main', 'settings', 'settings-tokens', 'settings-agent'] as const) {
     test(`axe：${kind} ${scheme} 没有 serious / critical 问题`, async ({ browser }) => {
       const { c, p } = await openPage(browser, kind, scheme)
       await p.waitForTimeout(500) // 等入场动画结束，避免半透明中间态影响对比度计算
@@ -206,7 +214,9 @@ for (const width of [375, 768, 1440]) {
     const pages: [string, string, () => Promise<void>][] = [
       ['首页', '/', async () => void (await expect(p.getByRole('tree', { name: '笔记' })).toBeVisible())],
       ['笔记', `/note/${noteId}`, async () => void (await expect(p.locator('.cm-content')).toContainText('检查对比度'))],
-      ['设置', '/settings', async () => void (await expect(p.getByRole('heading', { name: 'API token' })).toBeVisible())],
+      ['设置', '/settings', async () => void (await expect(p.getByRole('heading', { name: '设置', level: 1 })).toBeVisible())],
+      ['设置 API token', '/settings/tokens', async () => void (await expect(p.getByRole('heading', { name: 'API token', level: 1 })).toBeVisible())],
+      ['设置 助手', '/settings/agent', async () => void (await expect(p.getByRole('heading', { name: '助手', level: 1 })).toBeVisible())],
       ['回收站', '/trash', async () => void (await expect(p.getByRole('heading', { name: '回收站' })).toBeVisible())],
       [
         '标签',
@@ -292,9 +302,17 @@ test('手机上可点区域不小于 44×44', async ({ browser }) => {
   await expect(p.getByRole('toolbar', { name: '插入 Markdown' })).toBeVisible()
   await p.waitForTimeout(500)
   await check('笔记（编辑中）')
-  await p.goto('/settings')
-  await expect(p.getByRole('heading', { name: 'API token' })).toBeVisible()
-  await check('设置')
+  for (const [name, url, heading] of [
+    ['设置', '/settings', '设置'],
+    ['设置 API token', '/settings/tokens', 'API token'],
+    ['设置 助手', '/settings/agent', '助手'],
+    ['设置 外观', '/settings/appearance', '外观'],
+  ]) {
+    await p.goto(url)
+    await expect(p.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
+    await p.waitForTimeout(300)
+    await check(name)
+  }
   await p.goto('/trash')
   await expect(p.getByRole('heading', { name: '回收站' })).toBeVisible()
   await check('回收站')

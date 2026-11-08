@@ -2,6 +2,15 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 12:49 #23 设置多级页面
+
+- **路由**：`Route` 的 settings 带 `sub?: string[]`，地址是 `/settings/<段>/...`；页面表和标题在 `web/src/features/settings/stack.ts`。新增设置页时在那里加路径和标题，再在 `SettingsView` 的 `Page` 里加一个分支。
+- **历史**：设置内的链接用 `openSettings()`：pushState 后在这条历史记录的 state 里写 `lodeFrom`（来源路径）。返回按钮只在 `lodeFrom` 正好是上一级时用 `history.back()`，否则 `navigate(上一级, replace)`，所以直接打开深层地址再点返回不会跳出应用，正常进入再返回也不会在历史里多出记录。
+- **导航栈**（`NavStack.tsx`）：从首页到当前页的每一层都保持挂载（返回时保留滚动位置），只有最上层的 x 是 motion value，下层的视差和遮暗由它推导；动画结束时最上层的 transform 是 none，层内的 `position: fixed` 弹窗不受影响。
+- **两个返回手势不冲突**：手机上设置的子页面有自己的左缘手势区（`settings-edge-swipe`），外层 MobileStack 的手势区在设置深度大于 0 时用 CSS `:has()` 隐藏（`settings.css`），没有改 MobileStack。
+- **样式顺序**：`settings.css` 里和 `.view`、`.view-bar`、`.view-title`、`.view-body` 同元素的规则要写成双类选择器（如 `.view-bar.settings-bar`），否则 views.css 后加载会覆盖。
+- **Chrome 模拟触摸**：CDP 派发的快速甩动之后，紧接着的一次 `tap()` 会被吞掉（不产生 click）。e2e 里手势后要轻点时，松手前先停 200ms，或者改用 `click()`。
+
 ## 2026-11-07 19:46 阶段 6 发布与运维决策
 
 - **备份格式**：`lode backup` 输出 tar.gz，内含清单 `lode-backup.json`（格式版本、程序版本、数据库迁移版本、时间）、`app.db`（`VACUUM INTO` 在线快照）、`vault/`、`trash/`。不含 `backups/` 和 `pre-restore-*`，也不含 `LODE_SECRET_KEY`。
