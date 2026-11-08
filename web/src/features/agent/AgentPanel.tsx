@@ -5,6 +5,7 @@ import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
 import { chatModel, enabledModels, useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { PanelToggleSlot } from '../shell/PanelToggle'
 import { Composer } from './Composer'
 import { ApprovalCard, DraftView, MessageView } from './Thread'
 import { resultsByCall, visibleMessages } from './chatState'
@@ -186,6 +187,8 @@ export function AgentPanel({ contextNoteId, mobile, page }: { contextNoteId: str
             <ChevronLeft size={22} />
           </IconButton>
         )}
+        {/* 桌面端助手页面：侧栏收起后展开按钮停在左上角，给它让位（见 shell/PanelToggle） */}
+        {page && !mobile && <PanelToggleSlot side="left" />}
         <h2 className="agent-title" title={title}>
           {title}
         </h2>
