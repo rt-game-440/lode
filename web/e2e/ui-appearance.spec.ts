@@ -1,5 +1,6 @@
 import { mkdirSync, renameSync } from 'node:fs'
 import { resolve } from 'node:path'
+import AxeBuilder from '@axe-core/playwright'
 import { type APIRequestContext, type Browser, type BrowserContext, type Page, expect, test } from '@playwright/test'
 
 // 笔记外观（#47）：按笔记的页宽、字体写进 front matter 的 lode 键；右侧目录条；整体字号。
@@ -461,6 +462,152 @@ test.describe('目录条', () => {
   })
 })
 
+const SIZES = [
+  ['小', 'small', 0.875],
+  ['标准', 'standard', 1],
+  ['大', 'large', 1.125],
+  ['特大', 'xlarge', 1.25],
+] as const
+
+/** 以像素为单位的计算字号 */
+const fontPx = (p: Page, selector: string) => p.locator(selector).first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
+
+/** 页面上文字超出自己盒子（被截断或错位）的控件：可见、且文字范围越出元素边界。省略号截断的长标题是有意的，不在检查范围 */
+function overflowing(p: Page, selector: string) {
+  return p.evaluate((sel) => {
+    const out: string[] = []
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+      if (!el.offsetParent || el.clientWidth === 0) continue
+      if (getComputedStyle(el).textOverflow === 'ellipsis') continue
+      // 比较文字本身的范围和元素的盒子（不用 scrollWidth：扩大点按区域的伪元素也会算进去）
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      const t = range.getBoundingClientRect()
+      const b = el.getBoundingClientRect()
+      if (t.width === 0) continue
+      if (t.left < b.left - 1 || t.right > b.right + 1 || t.top < b.top - 1 || t.bottom > b.bottom + 1)
+        out.push(`${el.className}: ${el.textContent?.slice(0, 20)}`)
+    }
+    if (document.documentElement.scrollWidth > window.innerWidth) out.push('页面出现横向滚动')
+    return out
+  }, selector)
+}
+
+const BODY_LINE = '.cm-line:has-text("正文段落")'
+const CONTROLS = 'button, [role="radio"], [role="switch"], .segment, .choice-label, .settings-row-label, .settings-group-title, .editor-title'
+
+async function openSettingsAppearance(browser: Browser, opts: Parameters<Browser['newContext']>[0] = {}) {
+  const c = await browser.newContext({ locale: 'zh-CN', viewport: DESKTOP, ...opts })
+  await signIn(c)
+  const p = await c.newPage()
+  await p.goto('/settings/appearance')
+  await expect(p.getByRole('radiogroup', { name: '字号' })).toBeVisible()
+  return { c, p }
+}
+
+test.describe('整体字号', () => {
+  let id = ''
+  test.beforeAll(async ({ browser }) => {
+    id = await createNote(browser, '外观/字号.md', BODY)
+  })
+
+  test('四档同时缩放界面和正文，没有截断；按设备保存', async ({ browser }) => {
+    const { c, p } = await openSettingsAppearance(browser)
+    const group = p.getByRole('radiogroup', { name: '字号' })
+    await expect(group.getByRole('radio', { name: '标准' })).toHaveAttribute('aria-checked', 'true')
+    const base = await fontPx(p, 'html')
+    const ui0 = await fontPx(p, '.choice-label')
+    const prev0 = await fontPx(p, '.font-size-preview-body')
+    for (const [label, , scale] of SIZES) {
+      await group.getByRole('radio', { name: label, exact: true }).click()
+      // 实时生效：根字号、界面文字、预览正文按同一比例变化
+      await expect.poll(() => fontPx(p, 'html')).toBeCloseTo(base * scale, 1)
+      expect(await fontPx(p, '.choice-label')).toBeCloseTo(ui0 * scale, 1)
+      expect(await fontPx(p, '.font-size-preview-body')).toBeCloseTo(prev0 * scale, 1)
+      expect(await overflowing(p, CONTROLS)).toEqual([])
+    }
+    // 键盘：方向键切换
+    await group.getByRole('radio', { name: '特大' }).focus()
+    await p.keyboard.press('ArrowLeft')
+    await expect(group.getByRole('radio', { name: '大', exact: true })).toBeFocused()
+    await expect(group.getByRole('radio', { name: '大', exact: true })).toHaveAttribute('aria-checked', 'true')
+
+    // 刷新后保持；笔记正文、标题、工具栏都按“大”渲染
+    await p.goto(`/note/${id}`)
+    await expect(p.locator('.cm-content')).toContainText('正文段落')
+    expect(await fontPx(p, 'html')).toBeCloseTo(base * 1.125, 1)
+    const big = { body: await fontPx(p, BODY_LINE), title: await fontPx(p, '.editor-title') }
+    expect(await overflowing(p, CONTROLS)).toEqual([])
+    // 代码块仍是等宽
+    expect(await firstFamily(p, '.cm-codeblock')).toBe('ui-monospace')
+
+    // 另一台设备（新的浏览器上下文）不受影响，仍是标准
+    const other = await openNote(browser, id)
+    expect(await fontPx(other.p, 'html')).toBeCloseTo(base, 1)
+    const std = { body: await fontPx(other.p, BODY_LINE), title: await fontPx(other.p, '.editor-title') }
+    expect(big.body).toBeCloseTo(std.body * 1.125, 1)
+    expect(big.title).toBeCloseTo(std.title * 1.125, 1)
+    await other.c.close()
+
+    // 改回标准：不留本机记录
+    await p.goto('/settings/appearance')
+    await p.getByRole('radiogroup', { name: '字号' }).getByRole('radio', { name: '标准' }).click()
+    expect(await p.evaluate(() => localStorage.getItem('lode.display.fontSize'))).toBeNull()
+    expect(await p.evaluate(() => document.documentElement.hasAttribute('data-font-size'))).toBe(false)
+    await c.close()
+  })
+
+  test('尊重浏览器的默认字号：各档在它的基础上缩放', async ({ browser }) => {
+    const { c, p } = await openSettingsAppearance(browser)
+    // 模拟用户把浏览器默认字号调成 20px
+    const cdp = await c.newCDPSession(p)
+    await cdp.send('Page.setFontSizes', { fontSizes: { standard: 20 } })
+    await p.reload()
+    await expect.poll(() => fontPx(p, 'html')).toBe(20)
+    await p.getByRole('radiogroup', { name: '字号' }).getByRole('radio', { name: '大', exact: true }).click()
+    await expect.poll(() => fontPx(p, 'html')).toBe(22.5)
+    await c.close()
+  })
+
+  test('手机上特大档没有截断', async ({ browser }) => {
+    const { c, p } = await openSettingsAppearance(browser, { viewport: MOBILE, isMobile: true, hasTouch: true })
+    await p.getByRole('radiogroup', { name: '字号' }).getByRole('radio', { name: '特大' }).click()
+    await expect.poll(() => fontPx(p, 'html')).toBeGreaterThan(19)
+    expect(await overflowing(p, CONTROLS)).toEqual([])
+    await p.goto(`/note/${id}`)
+    await expect(p.locator('.cm-content')).toContainText('正文段落')
+    expect(await overflowing(p, CONTROLS)).toEqual([])
+    await c.close()
+  })
+})
+
+test.describe('无障碍', () => {
+  async function axeBad(p: Page) {
+    await p.waitForTimeout(500) // 等入场动画结束，避免半透明中间态影响对比度计算
+    const result = await new AxeBuilder({ page: p }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+    return result.violations
+      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map((v) => `${v.id}（${v.impact}）：${v.nodes.map((n) => `${n.target.join(' ')} ${n.any[0]?.message ?? ''}`).join('；')}`)
+  }
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`axe ${scheme}：外观面板、目录卡片、字号设置`, async ({ browser }) => {
+      const id = await createNote(browser, '外观/无障碍.md', longNote(6))
+      const { c, p } = await openNote(browser, id, { colorScheme: scheme })
+      await openPanel(p)
+      expect(await axeBad(p)).toEqual([])
+      await p.keyboard.press('Escape')
+      await rail(p).locator('.toc-rail').hover()
+      await expect(tocCard(p)).toBeVisible()
+      expect(await axeBad(p)).toEqual([])
+      await p.goto('/settings/appearance')
+      await expect(p.getByRole('radiogroup', { name: '字号' })).toBeVisible()
+      expect(await axeBad(p)).toEqual([])
+      await c.close()
+    })
+  }
+})
+
 // 设置 LODE_SCREENSHOTS=issue-47 时生成人工检查用的截图，输出到 docs/screenshots/issue-47/
 const shotStage = process.env.LODE_SCREENSHOTS
 const shotDir = shotStage ? resolve(import.meta.dirname, '..', '..', 'docs', 'screenshots', shotStage) : ''
@@ -539,5 +686,32 @@ test.describe('截图', () => {
     const video = p.video()
     await c.close()
     if (video) renameSync(await video.path(), resolve(shotDir, 'video', 'toc-and-width.webm'))
+  })
+
+  test('整体字号各档：设置页、笔记页、手机', async ({ browser }) => {
+    const id = await createNote(browser, '外观/字号截图.md', DEMO)
+    const { c, p } = await openSettingsAppearance(browser)
+    const group = p.getByRole('radiogroup', { name: '字号' })
+    for (const [label, name] of SIZES) {
+      await group.getByRole('radio', { name: label, exact: true }).click()
+      await shot(p, `07-size-settings-${name}`)
+    }
+    // 笔记页（侧栏展开）：小、标准、特大
+    for (const [label, name] of [SIZES[0], SIZES[1], SIZES[3]]) {
+      await p.goto('/settings/appearance')
+      await p.getByRole('radiogroup', { name: '字号' }).getByRole('radio', { name: label, exact: true }).click()
+      await p.goto(`/note/${id}`)
+      await expect(p.locator('.cm-content')).toContainText('桃园结义')
+      await shot(p, `08-size-note-${name}`)
+    }
+    await c.close()
+
+    const m = await openSettingsAppearance(browser, { viewport: MOBILE, isMobile: true, hasTouch: true })
+    await m.p.getByRole('radiogroup', { name: '字号' }).getByRole('radio', { name: '特大' }).click()
+    await shot(m.p, '09-size-mobile-settings-xlarge')
+    await m.p.goto(`/note/${id}`)
+    await expect(m.p.locator('.cm-content')).toContainText('桃园结义')
+    await shot(m.p, '09-size-mobile-note-xlarge')
+    await m.c.close()
   })
 })

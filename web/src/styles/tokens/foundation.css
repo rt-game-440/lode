@@ -28,6 +28,10 @@
   --text-title2: 1.5rem; /* 24 */
   --text-title1: 1.875rem; /* 30 */
   --text-large-title: 2.25rem; /* 36 */
+  /* 整体字号的各档（#47）：根元素 font-size，相对浏览器默认字号；标准档是 100% */
+  --root-size-small: 87.5%;
+  --root-size-large: 112.5%;
+  --root-size-xlarge: 125%;
 
   /* 字重 */
   --weight-regular: 400;

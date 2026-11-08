@@ -2,6 +2,12 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 18:20 #47 整体字号
+
+- **实现**：`stores/displayPrefs.ts`（localStorage `lode.display.fontSize`，标准档不存），`applyFontSize` 在 `main.tsx` 渲染前执行，给 `<html>` 加 `data-font-size`；`global.css` 按它把根字号设为 `--root-size-small/large/xlarge`（87.5% / 112.5% / 125%）。百分比相对浏览器默认字号，所以尊重用户的浏览器设置；界面和正文都用 rem，一起缩放。
+- **界面**：“设置 → 外观 → 字号”，分段控件两端是小 A、大 A，下方是正文预览；分段单选组件抽到 `components/RadioGroup.tsx`，外观面板和设置共用。
+- **测试**：截断检查比较文字的 Range 范围和元素盒子，不用 `scrollWidth`（分段控件、`hit-expand` 的伪元素会扩大点按区域，被算成溢出）。模拟浏览器默认字号用 CDP `Page.setFontSizes`。
+
 ## 2026-11-08 17:55 #47 目录条
 
 - **开关**：全局、按设备，`stores/editorPrefs.ts` 的 `tocRail`（localStorage `lode.editor.tocRail`，默认开）。入口在“设置 → 通用 → 编辑器”和笔记“外观和布局”面板，两处同一个状态。手机不显示，没有标题时不显示。

@@ -26,6 +26,16 @@ html {
   /* 亮暗切换时平滑过渡，避免亮度突变 */
   transition: background-color var(--duration-base) var(--ease-out);
 }
+/* 整体字号（#47，stores/displayPrefs）：相对浏览器默认字号的百分比，界面和正文都按 rem 一起缩放 */
+html[data-font-size='small'] {
+  font-size: var(--root-size-small);
+}
+html[data-font-size='large'] {
+  font-size: var(--root-size-large);
+}
+html[data-font-size='xlarge'] {
+  font-size: var(--root-size-xlarge);
+}
 
 body {
   overflow: hidden;
