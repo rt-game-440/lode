@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -37,14 +39,81 @@ func (s *Service) Tree(ctx context.Context) (Tree, error) {
 		return t, err
 	}
 	defer frows.Close()
+	var all []string
 	for frows.Next() {
 		var p string
 		if err := frows.Scan(&p); err != nil {
 			return t, err
 		}
-		t.Folders = append(t.Folders, p)
+		all = append(all, p)
 	}
-	return t, frows.Err()
+	if err := frows.Err(); err != nil {
+		return t, err
+	}
+	noteDirs := map[string]bool{}
+	for _, n := range t.Notes {
+		for _, d := range parentDirs(n.Path) {
+			noteDirs[d] = true
+		}
+	}
+	t.Folders = s.visibleFolders(all, noteDirs)
+	return t, nil
+}
+
+// visibleFolders 去掉"只有附件、没有笔记"的文件夹（典型的是上传图片时创建的 attachments/）：
+// 它们是存放附件的内部目录，不需要出现在文件树里。用户新建的空文件夹仍然显示。
+// noteDirs 是含有笔记（含子孙目录里的笔记）的目录集合。
+func (s *Service) visibleFolders(folders []string, noteDirs map[string]bool) []string {
+	out := make([]string, 0, len(folders))
+	for _, p := range folders {
+		if !noteDirs[p] && hasAttachmentFiles(s.vault.Abs(p)) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// hasAttachmentFiles 目录（含子目录）里是否有非隐藏的文件。
+func hasAttachmentFiles(dir string) bool {
+	found := false
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if p != dir && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.IsDir() {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
+// noteDirSet 返回含有笔记（含子孙目录里的笔记）的目录集合。
+func (s *Service) noteDirSet(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT path FROM notes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		for _, d := range parentDirs(p) {
+			out[d] = true
+		}
+	}
+	return out, rows.Err()
 }
 
 // List 列出 prefix 下的笔记；recursive 为 false 时只列直接子项。
@@ -100,6 +169,10 @@ func (s *Service) ListFolder(ctx context.Context, prefix string, recursive bool)
 		return Listing{}, err
 	}
 	defer rows.Close()
+	noteDirs, err := s.noteDirSet(ctx)
+	if err != nil {
+		return Listing{}, err
+	}
 	exists := prefix == ""
 	for rows.Next() {
 		var p string
@@ -117,7 +190,7 @@ func (s *Service) ListFolder(ctx context.Context, prefix string, recursive bool)
 			}
 			rest = p[len(prefix)+1:]
 		}
-		if recursive || !strings.Contains(rest, "/") {
+		if (recursive || !strings.Contains(rest, "/")) && (noteDirs[p] || !hasAttachmentFiles(s.vault.Abs(p))) {
 			out.Folders = append(out.Folders, p)
 		}
 	}
