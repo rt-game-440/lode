@@ -11,6 +11,9 @@
  *   ['tokens']            API token
  *   ['tokens', <token id>] 单个 token
  *   ['audit']             调用记录
+ *
+ * 新增一级页面（例如编辑相关开关的“编辑器”，路径 ['editor']）：在 SettingsPageId 和 SECTION_TITLE 里加上它，
+ * 在 SettingsView 的 Page 里加一个分支，并在首页“通用”分组里加一行（那里留了注释）。
  */
 
 export type SettingsPageId =
