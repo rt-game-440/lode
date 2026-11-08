@@ -64,3 +64,17 @@ Lode：自托管、单用户的 Markdown 笔记 PWA，多端即时同步，自�
 - 容器冒烟：`scripts/docker-smoke.sh`（需要 Docker，本机没有时看 CI 的“容器冒烟”任务）；对任意运行中的实例跑冒烟：`LODE_E2E_URL=http://127.0.0.1:8787 pnpm -C web e2e container`（实例必须是未设置密码的全新数据）。
 - 性能基准：先构建，再 `cd server && go run ./cmd/bench -bin ../bin/lode -n 1000,10000`，输出 Markdown 表格，结果记在 [docs/benchmark.md](docs/benchmark.md)。
 - 接口文档：[docs/api.md](docs/api.md)；MCP 接入：[docs/mcp.md](docs/mcp.md)。
+
+## Agent skills
+
+### Issue tracker
+
+issue 和规格放在 GitHub Issues（rt-game-440/lode），用 `gh` 操作。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用默认的五个标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单一上下文：根目录一个 `GLOSSARY.md` 加 `docs/adr/`（都在用到时才创建）。见 `docs/agents/domain.md`。
