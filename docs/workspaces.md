@@ -163,7 +163,7 @@ type Manager interface {
 ## 10. 运维命令
 
 - `lode backup`：默认备份全部工作空间。清单里列出每个工作空间；外部目录的 vault 也打包进去，并在清单里记下原路径。新增 `--workspace <id>`，只备份一个。
-- `lode restore`：恢复全部；外部 vault 恢复到原路径，原路径已存在且非空时拒绝恢复，要求用 `--external-to <目录>` 指定新位置。旧版备份（没有工作空间信息）按“只有默认工作空间”处理。
+- `lode restore`：恢复全部；外部 vault 恢复到原路径，原路径已存在且非空时拒绝恢复，要求用 `--external-to <目录>` 指定新位置。旧版备份（没有工作空间信息）按“只有默认工作空间”处理。`--external-to <目录>` 是父目录，每个外部工作空间恢复到 `<目录>/<id>`。单空间备份（`--workspace`）恢复时只替换那一个空间，语义见 [deploy.md](deploy.md) 的“恢复多个工作空间”。
 - 新增 `lode workspace list|add <名称> [--dir <路径>]|rename|remove`，方便无界面部署时使用，需要停服后执行（和 `restore` 一样）。
 - `reset-password`、`healthcheck` 不变。
 

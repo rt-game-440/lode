@@ -2,6 +2,17 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-09 00:20 #62 多工作空间备份恢复
+
+- **备份格式 2**：清单 `Manifest{Format:2, Scope: all|workspace, Workspaces[]{id,name,sort,created_at,external,vault_dir}}`，工作空间清单从 `app.db` 快照里读（和打包的库一致）。默认空间保持顶层 `app.db`/`vault/`/`trash/`（所以格式 1 备份无需转换，`Manifest.Entries()` 对没有 workspaces 的清单返回只有默认空间）；其他空间 `workspaces/<id>/{index.db,vault/,trash/}`，外部 vault 也放 `workspaces/<id>/vault/`（原路径只在清单里）。恢复接受 format 1 和 2。外部目录不存在时完整备份直接失败（不打出缺笔记的备份）；`trash-workspaces/`、`backups/`、`pre-restore-*` 不进备份，已写进 deploy.md。
+- **`--external-to` 语义**：父目录，所有外部空间一起放到 `<目录>/<id>`（单空间备份同理），因为多个外部空间时一个目录无法表达。目标必须不存在或为空；校验在任何改动之前（数据目录重叠、与其他外部目录相同/嵌套、非绝对路径、根目录）。原路径非空返回 `ops.ErrExternalNotEmpty`（CLI 错误信息含 `--external-to` 提示）。`--external-to` 在没有外部空间的恢复里报错而不是静默忽略。
+- **单空间备份语义**：非默认空间整体替换 `index.db`/`trash`/`vault`（已登记的沿用现在的登记：名称、排序、内置还是外部、外部路径；未登记的追加登记在最后，需要数据目录里已有 `app.db`）。默认空间的索引和全局数据同在 `app.db`：备份带 `app.db` 快照，恢复时在一个事务里用 `ATTACH` 只替换 `defaultIndexTables`（notes、notes_fts、links、tags、folders、versions、changes、trash、agent_chats/messages/pending）和 settings 的 `changes_floor`，并清掉 `sqlite_sequence` 里 changes/agent_messages 的计数使其跟随备份（与整库恢复一致）。现有整库先 `VACUUM INTO` 到 `pre-restore-*/app.db`。`TestDefaultIndexTablesCoverSchema` 逼着以后新增迁移加表时给表分类。单空间备份不含 `secret.key`。
+- **恢复事务**：`internal/ops/txn.go` 的 `txn` 记录 `aside`（现有数据移到 `pre-restore-<时间>/`）、`place`（临时区放进来）、`placeExternal`（只放进空位；不存在先 rename，空目录或跨磁盘退回复制）并按相反顺序撤销；外部目录先放、数据目录后放。完整恢复会把现有 `workspaces/` 整体移走（即使是旧格式备份）；现有外部目录一律不动。`pre-restore-*` 名字同一秒重复时加 `-2` 序号（Windows 上重命名到已有目录会 Access denied，测试里连续恢复曾踩到）。
+- **API**：`ops.Backup(ctx, d, dataDir, out, BackupOptions{ExcludeSecret, Workspace})`；`ops.Restore(...)` 保持 `(kept, err)`，新增 `ops.RestoreArchive(ctx, dataDir, archive, RestoreOptions{ExternalTo}) (Result{Kept,Scope,Workspaces}, error)`、`ops.ReadManifest(archive)`（CLI 在确认前列出备份内容）、`ops.ExternalTarget`。`workspace` 包新增导出的 `SamePath`/`Within`。
+- **tar 安全**：`safeEntry` 允许 `app.db`、`secret.key`、`vault/…`、`trash/…`、`workspaces`、`workspaces/<id>`、`workspaces/<id>/index.db`、`workspaces/<id>/{vault,trash}/…`，`<id>` 必须是合法 id 且不是 default；其余一律拒绝。清单还会与解包出的 `app.db` 登记表交叉校验（id、是否外部、路径）。
+- **冒烟**：`.claude/smoke-backup.sh <lode.exe>`（未提交）起真实服务、`workspace add`、服务运行中备份、清空、拒绝/恢复/`--external-to`/单空间/旧格式，输出存 `docs/evidence/stage-7/backup-restore.txt`。Windows 下 Bash heredoc 会吃反斜杠，含转义序列的 Go/脚本代码用 Write/Edit 写。
+` 的 Go/脚本代码用 Write/Edit 写。
+
 ## 2026-11-08 23:55 #60 外部目录工作空间与 lode workspace
 
 - **登记与路径（#62 备份恢复要用）**：登记表 `workspaces.vault_dir` 存**解析符号链接后的绝对路径**（空=内置）；`workspace.Info.External/VaultDir` 由它得出；`workspace.PathsFor(dataDir, id, vaultDir)` 给出 `Paths{Root,Index,Vault,Trash}`，外部目录只替换 Vault，Root（`data/workspaces/<id>`）、Index、Trash 仍在数据目录。`Manager.List/Info` 取登记信息；`Manager.Create(ctx, CreateOptions{Name, VaultDir})`；`Manager.CheckVaultDir(ctx, dir)` 单独校验（恢复到新位置时可复用，会拿 adminMu）；`Manager.DataDir()`。外部 vault 不在 `data/` 里，所以备份必须按登记表遍历 `vault_dir` 并在清单里记原路径。
@@ -50,7 +61,7 @@
 - **API**：`GET /api/workspaces` → `{"workspaces":[Info]}`，`POST /api/workspaces {name}` → 201 Info。JSON 字段沿用现有接口的 snake_case（`vault_dir`、`note_count`、`created_at`），没有用设计文档里的 camelCase。传 `vault_dir` 时 400（外部目录留给后续票），名称为空、超过 64 字符、含控制字符时 400。重名允许。
 - **助手对话在非默认工作空间**：选了“返回明确错误”——`agentChatRoutes()` 的每个处理函数包一层 `defaultWorkspaceOnly`，非 default 返回 `501 workspace_agent_unsupported`。不走全局对话，因为全局对话的工具绑定的是默认工作空间的笔记，会串数据。#61 拆出 ChatStore 后删掉这层。
 - **测试**：`api` 包的 `newServer` 现在总是带登记表的 Manager（数据目录就是测试临时目录，不启动后台任务；需要的测试在选项里调用 `s.Workspaces.Start(t.Context())`）。`workspace` 包的 goroutine 泄漏测试比较 `runtime.NumGoroutine()`，基线在打开 app.db 之后取。本机没有 gcc，`-race` 跑不了。
-- **没做**：`lode backup/restore` 还不包含 `data/workspaces/`（第 7 项拆分任务），MCP 仍只服务默认工作空间（#59）。
+- **没做**：~~`lode backup/restore` 还不包含 `data/workspaces/`~~（#62 已做），MCP 仍只服务默认工作空间（#59）。
 
 ## 2026-11-08 20:30 #56 工作空间接入点（预重构）
 

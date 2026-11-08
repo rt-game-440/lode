@@ -191,3 +191,9 @@ func checkVaultPresent(dir string) error {
 	}
 	return nil
 }
+
+// SamePath 判断两个（已解析的绝对）路径是不是同一个目录，供备份恢复等包校验外部目录的位置。
+func SamePath(a, b string) bool { return samePath(a, b) }
+
+// Within 判断 child 是否严格位于 parent 里面（两者相同不算）。
+func Within(parent, child string) bool { return within(parent, child) }

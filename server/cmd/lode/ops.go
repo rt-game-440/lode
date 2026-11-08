@@ -25,12 +25,16 @@ import (
 
 const usage = `用法：
   lode serve                     启动服务（不带参数时同样启动）
-  lode backup <输出文件.tar.gz> [--no-secret]
-                                 备份数据库、全部笔记文件和助手 API key 的主密钥 secret.key，
+  lode backup <输出文件.tar.gz> [--workspace <id>] [--no-secret]
+                                 备份数据库、全部工作空间（含外部目录里的笔记）和助手 API key 的主密钥 secret.key，
                                  服务运行中也可以执行；备份文件等同于含有你的 API key，请妥善保管。
+                                 --workspace 只备份一个工作空间（不含 secret.key 和全局数据）；
                                  --no-secret 不包含 secret.key；开启了“用通行密钥保护 API key”时没有 secret.key，
                                  备份里的 API key 只能用加入保护的通行密钥解锁
-  lode restore <备份文件> [-y]    从备份恢复，必须先停止服务；-y 跳过确认
+  lode restore <备份文件> [--external-to <目录>] [-y]
+                                 从备份恢复，必须先停止服务；-y 跳过确认。完整备份恢复全部工作空间，
+                                 单空间备份只替换那一个空间；外部目录的笔记恢复到原路径（已存在且非空时拒绝），
+                                 --external-to 改为恢复到 <目录>/<工作空间id> 并更新登记的路径
   lode reset-password [--clear-passkeys]
                                  重置登录密码（从终端输入，或从标准输入读一行）；默认保留已登记的通行密钥，
                                  --clear-passkeys 同时删除全部通行密钥（开启了通行密钥保护时一并关闭保护，
@@ -44,9 +48,38 @@ const usage = `用法：
 环境变量：LODE_ADDR、LODE_DATA_DIR、LODE_SECRET_KEY（可选，不设置则自动生成 secret.key）、LODE_LOG_LEVEL、LODE_TRUSTED_PROXIES
 详见 README 和 docs/deploy.md。`
 
+// takeValue 从 args 里取出 --name <值> 或 --name=<值>，返回值和剩余参数。
+func takeValue(args []string, name string) (val string, rest []string, err error) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == name:
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("%s 需要一个值", name)
+			}
+			val = args[i+1]
+			i++
+		case strings.HasPrefix(a, name+"="):
+			val = strings.TrimPrefix(a, name+"=")
+		default:
+			rest = append(rest, a)
+			continue
+		}
+		if val == "" {
+			return "", nil, fmt.Errorf("%s 的值不能为空", name)
+		}
+	}
+	return val, rest, nil
+}
+
 // runBackup 实现 lode backup。
 func runBackup(cfg config.Config, args []string) error {
+	const use = "用法：lode backup <输出文件.tar.gz> [--workspace <id>] [--no-secret]"
 	var opts ops.BackupOptions
+	var err error
+	if opts.Workspace, args, err = takeValue(args, "--workspace"); err != nil {
+		return fmt.Errorf("%w\n%s", err, use)
+	}
 	var rest []string
 	for _, a := range args {
 		if a == "--no-secret" {
@@ -57,7 +90,7 @@ func runBackup(cfg config.Config, args []string) error {
 	}
 	args = rest
 	if len(args) != 1 {
-		return errors.New("用法：lode backup <输出文件.tar.gz> [--no-secret]")
+		return errors.New(use)
 	}
 	if _, err := os.Stat(cfg.DBPath()); err != nil {
 		return fmt.Errorf("数据目录 %s 里没有数据库：%w", cfg.DataDir, err)
@@ -77,6 +110,13 @@ func runBackup(cfg config.Config, args []string) error {
 	}
 	st, _ := os.Stat(args[0])
 	fmt.Printf("已备份到 %s（%.1f MB）\n", args[0], float64(st.Size())/(1<<20))
+	if m, err := ops.ReadManifest(args[0]); err == nil {
+		printWorkspaces(os.Stdout, "包含的工作空间：", m.Entries(), "")
+	}
+	if opts.Workspace != "" {
+		fmt.Println("这是单个工作空间的备份：不含 secret.key 和全局数据（密码、token、助手配置），恢复时只替换这个空间。")
+		return nil
+	}
 	if protected, _ := keyprotect.Enabled(ctx, d); protected {
 		fmt.Println("API key 由通行密钥保护，备份里没有主密钥：恢复后用加入保护的通行密钥登录即可解锁，通行密钥都丢了时需要重新填写 API key。")
 	} else if !opts.ExcludeSecret {
@@ -85,8 +125,29 @@ func runBackup(cfg config.Config, args []string) error {
 	return nil
 }
 
+// printWorkspaces 列出备份里的工作空间；外部目录显示备份时的原路径，externalTo 非空时显示将恢复到的位置。
+func printWorkspaces(w io.Writer, title string, entries []ops.WorkspaceEntry, externalTo string) {
+	fmt.Fprintln(w, title)
+	for _, e := range entries {
+		switch {
+		case !e.External:
+			fmt.Fprintf(w, "  - %s（%s，数据目录内）\n", e.ID, e.Name)
+		case externalTo == "":
+			fmt.Fprintf(w, "  - %s（%s，外部目录 %s）\n", e.ID, e.Name, e.VaultDir)
+		default:
+			fmt.Fprintf(w, "  - %s（%s，外部目录，原路径 %s，将恢复到 %s）\n", e.ID, e.Name, e.VaultDir, ops.ExternalTarget(e, externalTo))
+		}
+	}
+}
+
 // runRestore 实现 lode restore。
 func runRestore(cfg config.Config, args []string, in io.Reader) error {
+	const use = "用法：lode restore <备份文件> [--external-to <目录>] [-y]"
+	var opt ops.RestoreOptions
+	var err error
+	if opt.ExternalTo, args, err = takeValue(args, "--external-to"); err != nil {
+		return fmt.Errorf("%w\n%s", err, use)
+	}
 	yes := false
 	var files []string
 	for _, a := range args {
@@ -97,18 +158,33 @@ func runRestore(cfg config.Config, args []string, in io.Reader) error {
 		}
 	}
 	if len(files) != 1 {
-		return errors.New("用法：lode restore <备份文件> [-y]")
+		return errors.New(use)
 	}
-	fmt.Fprintf(os.Stderr, `从 %s 恢复到数据目录 %s。
-注意：
-  - 必须先停止 lode 服务；服务运行中会拒绝恢复。
-  - 数据库和全部笔记文件会被备份里的内容替换，备份之后的修改都会丢失。
+	m, err := ops.ReadManifest(files[0])
+	if err != nil {
+		return fmt.Errorf("读取备份: %w", err)
+	}
+	var notice string
+	if m.ScopeOrAll() == ops.ScopeWorkspace {
+		notice = `  - 这是单个工作空间的备份：只替换下面这个工作空间（笔记、历史版本、回收站和助手对话），
+    其他工作空间、密码、token、助手配置和 secret.key 都不动；备份之后对它的修改会丢失。
+    被替换的内容会移到数据目录下的 pre-restore-<时间>/，确认无误后可以手动删除。
+  - 外部目录的笔记恢复到现在登记的路径（还没登记则用备份里记的原路径），路径已存在且非空时会拒绝（不覆盖你的文件），
+    这时用 --external-to <目录> 恢复到 <目录>/<工作空间id> 并更新登记的路径。
+`
+	} else {
+		notice = `  - 数据库和全部工作空间会被备份里的内容替换，备份之后的修改都会丢失。
     现有数据会移到数据目录下的 pre-restore-<时间>/，确认无误后可以手动删除。
+  - 外部目录的笔记恢复到备份时记的原路径，路径已存在且非空时会拒绝（不覆盖你的文件），
+    这时用 --external-to <目录> 恢复到 <目录>/<工作空间id> 并更新登记的路径；现有的外部目录不会被移动或删除。
   - 备份里的 secret.key 会一并恢复，已保存的助手 API key 恢复后直接可用；
     如果备份时没包含它，或你用环境变量 LODE_SECRET_KEY 提供主密钥，则需要使用同一个密钥，否则 API key 需要重新填写。
   - 登录密码、登录会话和 API token 都回到备份时的状态，备份之后创建的 token 会失效；
     各设备上尚未同步的离线修改会与恢复后的版本合并，合并不了时生成冲突副本。
-`, files[0], cfg.DataDir)
+`
+	}
+	fmt.Fprintf(os.Stderr, "从 %s 恢复到数据目录 %s。\n注意：\n  - 必须先停止 lode 服务；服务运行中会拒绝恢复。\n%s", files[0], cfg.DataDir, notice)
+	printWorkspaces(os.Stderr, "备份里的工作空间：", m.Entries(), opt.ExternalTo)
 	if !yes {
 		fmt.Fprint(os.Stderr, "输入 yes 继续：")
 		line, _ := bufio.NewReader(in).ReadString('\n')
@@ -116,7 +192,7 @@ func runRestore(cfg config.Config, args []string, in io.Reader) error {
 			return errors.New("已取消")
 		}
 	}
-	kept, err := ops.Restore(context.Background(), cfg.DataDir, files[0])
+	res, err := ops.RestoreArchive(context.Background(), cfg.DataDir, files[0], opt)
 	if errors.Is(err, ops.ErrLocked) {
 		return errors.New("lode 服务正在运行，请先停止服务再恢复")
 	}
@@ -124,8 +200,13 @@ func runRestore(cfg config.Config, args []string, in io.Reader) error {
 		return err
 	}
 	fmt.Println("恢复完成。启动服务后会自动对账笔记文件。")
-	if kept != "" {
-		fmt.Printf("原有数据保存在 %s\n", kept)
+	for _, e := range res.Workspaces {
+		if e.External && (opt.ExternalTo != "" || m.ScopeOrAll() == ops.ScopeWorkspace) {
+			fmt.Printf("工作空间 %s（%s）的笔记已恢复到 %s\n", e.ID, e.Name, e.VaultDir)
+		}
+	}
+	if res.Kept != "" {
+		fmt.Printf("原有数据保存在 %s\n", res.Kept)
 	}
 	return nil
 }
