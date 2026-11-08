@@ -16,6 +16,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/config"
 	"github.com/rt-game-440/lode/server/internal/db"
 	"github.com/rt-game-440/lode/server/internal/ops"
+	"github.com/rt-game-440/lode/server/internal/passkey"
 	"golang.org/x/term"
 )
 
@@ -26,7 +27,9 @@ const usage = `用法：
                                  服务运行中也可以执行；备份文件等同于含有你的 API key，请妥善保管。
                                  --no-secret 不包含 secret.key
   lode restore <备份文件> [-y]    从备份恢复，必须先停止服务；-y 跳过确认
-  lode reset-password            重置登录密码（从终端输入，或从标准输入读一行）
+  lode reset-password [--clear-passkeys]
+                                 重置登录密码（从终端输入，或从标准输入读一行）；默认保留已登记的通行密钥，
+                                 --clear-passkeys 同时删除全部通行密钥
   lode healthcheck               检查本机服务是否正常（容器健康检查用）
   lode --version                 显示版本
 
@@ -118,7 +121,14 @@ func runRestore(cfg config.Config, args []string, in io.Reader) error {
 }
 
 // runResetPassword 实现 lode reset-password：终端上输入两次（不回显），否则从标准输入读一行。
-func runResetPassword(cfg config.Config) error {
+func runResetPassword(cfg config.Config, args []string) error {
+	clearPasskeys := false
+	for _, a := range args {
+		if a != "--clear-passkeys" {
+			return errors.New("用法：lode reset-password [--clear-passkeys]")
+		}
+		clearPasskeys = true
+	}
 	var pw string
 	if fd := int(os.Stdin.Fd()); term.IsTerminal(fd) {
 		fmt.Fprint(os.Stderr, "新密码（至少 8 位）：")
@@ -161,6 +171,15 @@ func runResetPassword(cfg config.Config) error {
 		return err
 	}
 	fmt.Println("密码已重置，所有设备需要重新登录。")
+	if clearPasskeys {
+		n, err := passkey.New(d, nil).Clear(ctx)
+		if err != nil {
+			return fmt.Errorf("密码已重置，但清除通行密钥失败：%w", err)
+		}
+		fmt.Println("已删除", n, "个通行密钥。")
+	} else {
+		fmt.Println("已登记的通行密钥保留不变；如需一并清除，加 --clear-passkeys。")
+	}
 	return nil
 }
 

@@ -6,6 +6,7 @@
  *   ['appearance']        外观
  *   ['editor']            编辑器
  *   ['keyboard']          键盘
+ *   ['passkeys']          通行密钥
  *   ['agent']             助手
  *   ['agent', <供应商 id>] 单个供应商
  *   ['mcp']               MCP 接入
@@ -22,6 +23,7 @@ export type SettingsPageId =
   | 'appearance'
   | 'editor'
   | 'keyboard'
+  | 'passkeys'
   | 'agent'
   | 'provider'
   | 'mcp'
@@ -40,6 +42,7 @@ export const SECTION_TITLE = {
   appearance: '外观',
   editor: '编辑器',
   keyboard: '键盘',
+  passkeys: '通行密钥',
   agent: '助手',
   mcp: 'MCP 接入',
   tokens: 'API token',

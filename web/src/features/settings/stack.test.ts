@@ -24,6 +24,8 @@ describe('设置子页面的地址', () => {
     expect(settingsPage([])).toEqual({ id: 'root' })
     expect(settingsPage(['appearance'])).toEqual({ id: 'appearance' })
     expect(settingsPage(['keyboard'])).toEqual({ id: 'keyboard' })
+    expect(settingsPage(['passkeys'])).toEqual({ id: 'passkeys' })
+    expect(settingsPage(['passkeys', 'x'])).toBeNull()
     expect(settingsPage(['agent'])).toEqual({ id: 'agent' })
     expect(settingsPage(['agent', 'p1'])).toEqual({ id: 'provider', param: 'p1' })
     expect(settingsPage(['mcp'])).toEqual({ id: 'mcp' })

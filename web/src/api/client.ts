@@ -8,6 +8,8 @@ import type {
   MoveResult,
   Note,
   NoteContent,
+  Passkey,
+  PasskeyCeremony,
   SearchResult,
   TagCount,
   TokenScope,
@@ -103,6 +105,15 @@ export const api = {
   setup: (password: string) => request<void>('POST', '/api/auth/setup', { password }),
   login: (password: string) => request<void>('POST', '/api/auth/login', { password }),
   logout: () => request<void>('POST', '/api/auth/logout'),
+
+  passkeyLoginBegin: () => request<PasskeyCeremony>('POST', '/api/auth/passkey/begin'),
+  passkeyLoginFinish: (ceremony: string, credential: unknown) =>
+    request<void>('POST', `/api/auth/passkey/finish${q({ ceremony })}`, credential),
+  passkeys: () => request<{ passkeys: Passkey[] }>('GET', '/api/passkeys').then((r) => r.passkeys),
+  passkeyRegisterBegin: (name: string) => request<PasskeyCeremony>('POST', '/api/passkeys/begin', { name }),
+  passkeyRegisterFinish: (ceremony: string, credential: unknown) =>
+    request<{ passkey: Passkey }>('POST', `/api/passkeys/finish${q({ ceremony })}`, credential).then((r) => r.passkey),
+  deletePasskey: (id: string) => request<void>('DELETE', `/api/passkeys/${encodeURIComponent(id)}`),
 
   tree: () => request<Tree>('GET', '/api/tree'),
   readNote: (id: string) => request<NoteContent>('GET', `/api/notes/${encodeURIComponent(id)}`),

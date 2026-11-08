@@ -1,12 +1,14 @@
-import { EyeOff, History, KeyRound, Keyboard, Palette, PenLine, Plug, Sparkles } from 'lucide-react'
+import { EyeOff, Fingerprint, History, KeyRound, Keyboard, Palette, PenLine, Plug, Sparkles } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { EmptyState } from '../../components/ui'
 import { useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
 import { useEditorPrefs } from '../../stores/editorPrefs'
+import { passkeyAvailable } from '../../lib/webauthn'
 import { AgentPage, ProviderPage, agentSummary } from './AgentSettings'
 import { AppearancePage, EditorPage, KeyboardPage, SHORTCUT_COUNT, THEME_LABEL } from './GeneralSettings'
 import { NavStack } from './NavStack'
+import { PasskeysPage } from './PasskeySettings'
 import { useSettingsData } from './data'
 import { settingsBack } from './nav'
 import { Group, NavRow, RowIcon, SettingsContext, SettingsPage } from './parts'
@@ -43,6 +45,7 @@ function useSettingsSync() {
     const load = () => {
       void useAgent.getState().loadConfig()
       void useSettingsData.getState().loadTokens()
+      if (passkeyAvailable()) void useSettingsData.getState().loadPasskeys()
       void useSettingsData.getState().loadAudit()
     }
     load()
@@ -63,6 +66,8 @@ function Page({ sub }: { sub: string[] }) {
       return <EditorPage sub={sub} />
     case 'keyboard':
       return <KeyboardPage sub={sub} />
+    case 'passkeys':
+      return <PasskeysPage sub={sub} />
     case 'agent':
       return <AgentPage sub={sub} />
     case 'provider':
@@ -90,6 +95,7 @@ function SettingsHome() {
   const formatToolbar = useEditorPrefs((s) => s.formatToolbar)
   const config = useAgent((s) => s.config)
   const tokens = useSettingsData((s) => s.tokens)
+  const passkeys = useSettingsData((s) => s.passkeys)
   const audit = useSettingsData((s) => s.audit)
   const latest = audit?.[0]
   return (
@@ -134,6 +140,26 @@ function SettingsHome() {
           </li>
         </ul>
       </Group>
+      {/* 非安全上下文（http://局域网 IP）和 IP 访问下不显示通行密钥 */}
+      {passkeyAvailable() && (
+        <Group title="安全" footer="用指纹、面容或系统 PIN 一步登录。密码仍然保留，作为备用的登录方式。">
+          <ul className="settings-list">
+            <li>
+              <NavRow
+                to={['passkeys']}
+                icon={
+                  <RowIcon tone="emerald">
+                    <Fingerprint size={17} />
+                  </RowIcon>
+                }
+                label={SECTION_TITLE.passkeys}
+                value={passkeys ? (passkeys.length ? `${passkeys.length} 个` : '未登记') : ''}
+                testId="settings-passkeys"
+              />
+            </li>
+          </ul>
+        </Group>
+      )}
       <Group title="助手" footer="模型供应商、模型、API key 和默认选项。">
         <ul className="settings-list">
           <li>

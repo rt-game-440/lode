@@ -2,6 +2,16 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 13:20 #28 通行密钥（WebAuthn）
+
+- **库**：`github.com/go-webauthn/webauthn`（纯 Go，`CGO_ENABLED=0` 可编译，依赖 fxamacker/cbor、golang-jwt、go-tpm 等均无 CGO）。已经内置 PRF 扩展选项（`WithExtensionPRFSupport`、`WithExtensionPRF` 等），#29 直接用。
+- **RP ID / origin**：每次仪式按请求推导（`passkey.RPFromHost`）：Host（直连方是可信代理时优先 `X-Forwarded-Host`）去掉端口作 RP ID，`isHTTPS` 决定协议；IP 地址（含 127.0.0.1、::1）不是合法 RP ID，返回 `passkey_unsupported`。每次仪式单独 `webauthn.New`，仪式记录里存 RP/origin，完成时沿用（等于把仪式绑在开始时的 origin 上）。仪式记录存内存，5 分钟过期、只能完成一次、最多 64 个。
+- **数据模型**：迁移 `0005_passkeys.sql`，表 `passkeys(id, name, rp_id, credential, extra, created_at, last_used_at)`。`credential` 是 `webauthn.Credential` 的 JSON（含签名计数），`extra` 是预留的 JSON（恒为 `{}`），#29 把每个通行密钥各自包裹的主密钥放进 `extra`（或另建关联表）。选项构造的扩展点是 `passkey.Service.RegistrationOptions` / `LoginOptions`，#29 在那里追加 PRF 选项，PRF 结果通过浏览器 `getClientExtensionResults()` 取得（前端 `lib/webauthn.ts` 已把 `clientExtensionResults` 带给服务端）。
+- **登录**：可发现凭据（`residentKey: required`、`userVerification: required`），不限定 `allowCredentials`；用户句柄是存在 `settings.passkey_user_handle` 里的 32 字节随机数。登录接口沿用密码登录的 `Limiter`（同一个计数），begin 只检查是否被锁定，finish 失败才计一次。签名计数异常（`CloneWarning`）只记日志不拒绝，因为有密码兜底。
+- **reset-password**：默认保留通行密钥，`--clear-passkeys` 才删除。理由写在 docs/deploy.md。
+- **前端可用性**：`passkeyAvailable()` = `isSecureContext` + 支持 WebAuthn + 主机名不是 IP。登录页按钮还要求服务端 `auth/status.passkey` 为真（该域名下登记过）。
+- **测试**：Go 用 `internal/passkey/passkeytest` 的软件认证器（ES256、无证明）驱动完整仪式；e2e 用 CDP `WebAuthn.addVirtualAuthenticator`，必须经 `http://localhost:<端口>`（`127.0.0.1` 不能当 RP ID），spec 为 `ui-passkey.spec.ts`（排在 smoke 之后）。Go 测试里要在同一连接上模拟不同 Host，标准库 cookie 罐会按 Host 头区分站点，测试自己管 cookie。
+
 ## 2026-11-08 12:49 #23 设置多级页面
 
 - **路由**：`Route` 的 settings 带 `sub?: string[]`，地址是 `/settings/<段>/...`；页面表和标题在 `web/src/features/settings/stack.ts`。新增设置页时在那里加路径和标题，再在 `SettingsView` 的 `Page` 里加一个分支，并在首页加一行。#26 的“显示格式工具栏”开关在 `/settings/editor`（`GeneralSettings.tsx` 的 `EditorPage`）。

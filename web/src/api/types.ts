@@ -76,6 +76,22 @@ export interface MoveResult {
 export interface AuthStatus {
   initialized: boolean
   authenticated: boolean
+  /** 当前访问的域名下是否登记了通行密钥（登录页据此显示通行密钥按钮） */
+  passkey?: boolean
+}
+
+/** 登记的通行密钥（不含密钥材料）。last_used_at 为 0 表示从未使用。 */
+export interface Passkey {
+  id: string
+  name: string
+  created_at: number
+  last_used_at: number
+}
+
+/** begin 接口的响应：仪式 ID 加浏览器 WebAuthn API 的选项（JSON 形式）。 */
+export interface PasskeyCeremony {
+  ceremony: string
+  options: { publicKey: Record<string, any> }
 }
 
 export type TokenScope = 'read' | 'write'

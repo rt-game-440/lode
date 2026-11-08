@@ -40,6 +40,21 @@
   font-size: var(--text-footnote);
   color: var(--color-danger);
 }
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--text-footnote);
+  color: var(--color-label-secondary);
+}
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-separator);
+}
 @media (max-width: 480px) {
   .auth {
     place-items: start center;

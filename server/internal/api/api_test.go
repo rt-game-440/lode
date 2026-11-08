@@ -23,6 +23,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/db"
 	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
+	"github.com/rt-game-440/lode/server/internal/passkey"
 	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
 )
@@ -44,7 +45,7 @@ func newServer(t *testing.T, opts ...func(*Server)) *client {
 	v, _ := vault.New(filepath.Join(dir, "vault"))
 	svc := notes.New(notes.Options{DB: d, Vault: v, TrashDir: filepath.Join(dir, "trash")})
 	a, log := auth.New(d), audit.New(d)
-	s := &Server{Notes: svc, Auth: a, Version: "test", Audit: log,
+	s := &Server{Notes: svc, Auth: a, Version: "test", Audit: log, Passkeys: passkey.New(d, nil),
 		MCP: mcpserver.Handler(mcpserver.Options{Tools: tools.New(svc), Auth: a, Audit: log, Version: "test"})}
 	for _, o := range opts {
 		o(s)

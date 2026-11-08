@@ -49,6 +49,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now lode
 - WebSocket：`/api/ws` 需要 `Upgrade` / `Connection` 头（Nginx：`proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`），读超时不要短于 60 秒。
 - SSE：助手的事件流 `/api/agent/chats/{id}/stream` 不能缓冲（Nginx：`proxy_buffering off;`）。
 - 请求体上限至少 32MB（附件 20MB、助手带图片的消息 32MB）。
+- 通行密钥登录要求浏览器看到的域名与服务看到的一致：保持原始 `Host`（Nginx：`proxy_set_header Host $host;`），或者传 `X-Forwarded-Host`（仅在直连方是可信代理时采用）。
 - 传 `X-Forwarded-For` 和 `X-Forwarded-Proto`；代理不在本机时把它的地址加进 `LODE_TRUSTED_PROXIES`，否则会话 cookie 不会带 `Secure`、登录限速会把所有人当成同一个 IP。
 
 ## 2. NAS（群晖、威联通、Unraid 等）
@@ -151,6 +152,15 @@ docker compose exec lode lode reset-password                           # Docker
 ```
 
 重置后所有已登录的设备需要重新登录。
+
+**通行密钥**：`reset-password` 默认**保留**已登记的通行密钥，它们仍然可以登录。忘记密码通常只是忘了密码，通行密钥是独立的登录方式；而能在服务器上执行这条命令的人本来就能读写全部数据，清除通行密钥不增加安全性。如果是设备丢失、想一并作废全部通行密钥，加 `--clear-passkeys`：
+
+```bash
+sudo -u lode env LODE_DATA_DIR=/var/lib/lode lode reset-password --clear-passkeys
+docker compose exec lode lode reset-password --clear-passkeys
+```
+
+也可以登录后在“设置 → 通行密钥”里逐个删除。通行密钥只在 HTTPS 或 localhost 下可用，并且要通过域名访问（不能用 IP 地址）；通过 `http://局域网 IP` 访问时界面不显示通行密钥选项，用密码登录。
 
 ## 健康检查与日志
 

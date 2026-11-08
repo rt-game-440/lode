@@ -23,6 +23,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/mcpserver"
 	"github.com/rt-game-440/lode/server/internal/notes"
 	"github.com/rt-game-440/lode/server/internal/ops"
+	"github.com/rt-game-440/lode/server/internal/passkey"
 	"github.com/rt-game-440/lode/server/internal/secret"
 	"github.com/rt-game-440/lode/server/internal/tools"
 	"github.com/rt-game-440/lode/server/internal/vault"
@@ -66,7 +67,7 @@ func main() {
 	case "restore":
 		err = runRestore(cfg, args, os.Stdin)
 	case "reset-password":
-		err = runResetPassword(cfg)
+		err = runResetPassword(cfg, args)
 	case "healthcheck":
 		err = runHealthcheck(cfg)
 	default:
@@ -127,7 +128,7 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	defer agentSvc.Close() // 在关闭数据库之前停止生成（defer 逆序执行）
 
 	srv := &api.Server{Notes: svc, Auth: authSvc, Version: version, Web: webui.Handler(), Log: log, TrustedProxies: cfg.TrustedProxies,
-		Audit: auditLog, MCP: mcpHandler, Agent: agentSvc}
+		Audit: auditLog, MCP: mcpHandler, Agent: agentSvc, Passkeys: passkey.New(database, log)}
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           srv.Handler(),
