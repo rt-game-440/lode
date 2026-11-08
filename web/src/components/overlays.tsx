@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { useUI } from '../stores/ui'
@@ -219,9 +219,17 @@ export interface MenuItem {
   label: string
   icon?: ReactNode
   danger?: boolean
+  /** 单选菜单：true 表示当前项（打勾）、false 表示可选项；不传则是普通菜单项 */
+  checked?: boolean
+  /** 右侧的简短提示（例如模型的能力） */
+  hint?: string
   run: () => void
 }
-export type MenuEntry = MenuItem | 'separator'
+/** 分组标题：不可聚焦，只起分隔和说明作用 */
+export interface MenuHeading {
+  heading: string
+}
+export type MenuEntry = MenuItem | MenuHeading | 'separator'
 
 interface MenuState {
   /**
@@ -291,8 +299,15 @@ export function MenuHost() {
     const flipUp = open.y + r.height > vh - 8
     const top = flipUp ? Math.max(8, open.above - r.height) : open.y
     setPos({ left, top, origin: `${open.x - left}px ${flipUp ? '100%' : '0'}` })
-    ref.current.querySelector<HTMLButtonElement>('.menu-item')?.focus()
   }, [open])
+
+  // 定位完成、菜单可见之后再聚焦（visibility: hidden 的元素聚焦不了）。单选菜单先聚焦当前项，其余聚焦第一项
+  useLayoutEffect(() => {
+    if (!pos || !ref.current) return
+    const first = ref.current.querySelector<HTMLButtonElement>('.menu-item[aria-checked="true"]') ?? ref.current.querySelector<HTMLButtonElement>('.menu-item')
+    first?.focus()
+    first?.scrollIntoView({ block: 'nearest' })
+  }, [pos])
 
   useEffect(() => {
     if (!open) return
@@ -347,10 +362,15 @@ export function MenuHost() {
           {open.items.map((it, i) =>
             it === 'separator' ? (
               <div key={`sep-${i}`} className="menu-sep" role="separator" />
+            ) : 'heading' in it ? (
+              <div key={`head-${i}`} className="menu-heading" role="presentation">
+                {it.heading}
+              </div>
             ) : (
               <button
-                key={it.label}
-                role="menuitem"
+                key={`${i}-${it.label}`}
+                role={it.checked === undefined ? 'menuitem' : 'menuitemradio'}
+                aria-checked={it.checked}
                 className={`menu-item${it.danger ? ' is-danger' : ''}`}
                 onClick={() => {
                   closeMenu()
@@ -358,7 +378,9 @@ export function MenuHost() {
                 }}
               >
                 {it.icon}
-                <span>{it.label}</span>
+                <span className="menu-label">{it.label}</span>
+                {it.hint && <span className="menu-hint">{it.hint}</span>}
+                {it.checked !== undefined && <Check size={14} className="menu-check" aria-hidden="true" style={{ visibility: it.checked ? 'visible' : 'hidden' }} />}
               </button>
             ),
           )}

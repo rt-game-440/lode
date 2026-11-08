@@ -188,7 +188,7 @@ test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 
   const panel = popup.getByTestId('agent-panel')
   await expect(panel).toBeVisible()
   await expect(panel.locator('.mention-chip.is-context')).toContainText('待办')
-  await expect(panel.getByTestId('model-select')).toHaveValue(/.+/)
+  await expect(panel.getByTestId('model-select')).toContainText('mock-smart')
 
   // 3. 发送：流式回复逐字出现，随后是工具卡片
   await panel.getByTestId('agent-input').fill('帮我把买牛奶勾上')
@@ -225,8 +225,9 @@ test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 
 
   // 6. 切换模型后，下一轮请求发给新模型
   await page.waitForTimeout(shotDir ? 1000 : 0)
-  await panel.getByTestId('model-select').selectOption({ label: 'mock-fast' })
-  await expect(panel.getByTestId('model-select')).toHaveValue(/.+/)
+  await panel.getByTestId('model-select').click()
+  await page.getByRole('menuitemradio', { name: /mock-fast/ }).click()
+  await expect(panel.getByTestId('model-select')).toContainText('mock-fast')
   await panel.getByTestId('agent-input').fill('换个模型说一句')
   await panel.getByTestId('agent-send').click()
   await expect(panel.getByTestId('msg-assistant').last()).toContainText('这是 mock-fast 的回复')

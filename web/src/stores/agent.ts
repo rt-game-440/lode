@@ -11,6 +11,7 @@ import {
 } from '../api/agent'
 import { ApiError, errorMessage } from '../api/client'
 import { type ChatState, applyEvent, fromView } from '../features/agent/chatState'
+import { useAgentDraft } from './agentDraft'
 import { useUI } from './ui'
 
 const ACTIVE_KEY = 'lode.agent.chat'
@@ -154,10 +155,17 @@ export const useAgent = create<AgentState>((set, get) => {
     else disconnect()
   }
 
+  /** 发第一条消息 / 换模型时才创建对话；这不算“换会话”，输入框里“不再自动附上的笔记”要保留 */
+  let creating = false
   const createAndOpen = async (modelId: string) => {
     const c = await agentApi.createChat(modelId)
     set({ chats: [c, ...(get().chats ?? [])] })
-    await get().open(c.id)
+    creating = true
+    try {
+      await get().open(c.id)
+    } finally {
+      creating = false
+    }
     return c.id
   }
 
@@ -190,6 +198,8 @@ export const useAgent = create<AgentState>((set, get) => {
     activeId: localStorage.getItem(ACTIVE_KEY),
     current: null,
     open: async (id) => {
+      // 换会话（或回到新对话）：自动附上当前笔记的规则从头开始（#44）
+      if (!creating && id !== get().activeId) useAgentDraft.getState().resetSuppressed()
       if (id) localStorage.setItem(ACTIVE_KEY, id)
       else localStorage.removeItem(ACTIVE_KEY)
       set({ activeId: id, current: get().current?.chat.id === id ? get().current : null })
@@ -210,6 +220,7 @@ export const useAgent = create<AgentState>((set, get) => {
     },
     // 新对话先只是空白状态，发第一条消息（或换模型）时才在服务端创建
     newChat: async () => {
+      useAgentDraft.getState().resetSuppressed()
       await get().open(null)
     },
     removeChat: async (id) => {
