@@ -99,6 +99,8 @@ func (s *Server) Handler() http.Handler {
 	p.HandleFunc("POST /api/tokens", s.createToken)
 	p.HandleFunc("DELETE /api/tokens/{id}", s.revokeToken)
 	p.HandleFunc("GET /api/audit", s.listAudit)
+	p.HandleFunc("GET /api/workspaces", s.listWorkspaces)
+	p.HandleFunc("POST /api/workspaces", s.createWorkspace)
 	if s.Passkeys != nil {
 		p.HandleFunc("GET /api/passkeys", s.listPasskeys)
 		p.HandleFunc("POST /api/passkeys/begin", s.passkeyRegisterBegin)

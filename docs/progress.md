@@ -161,7 +161,9 @@
 
 - #56 预重构：新增 `internal/workspace` Manager（目前只管默认工作空间，负责后台的监听、对账、历史清理）；按工作空间区分的接口改为从 request context 取工作空间，并额外挂到 `/api/w/{ws}/...`（只认 `default`，未知返回 `404 workspace_not_found`）。测试：`internal/workspace` 的启动顺序和关停测试，`internal/api/workspace_test.go` 的两种前缀结果对比（含 WebSocket）和未知工作空间 404。
 
-下一步：#57 按需打开新工作空间。
+- #57 新建内置工作空间：迁移 0006（`workspaces` 登记表，`api_tokens`/`audit_log` 加 `workspace_id`）；`GET/POST /api/workspaces`；新空间放在 `data/workspaces/<id>/{index.db,vault,trash}`，第一次访问时打开（先监听再对账），保持到退出，`Close` 停掉所有已打开空间的后台任务并关闭索引库；助手对话在非默认空间返回 `501 workspace_agent_unsupported`（#61 之前）。测试：`internal/workspace/registry_test.go`（升级后同构、按需打开与对账、关停不泄漏 goroutine）、`internal/api/workspaces_test.go`（隔离、WebSocket 隔离、列出新建、助手对话 501）。
+
+下一步：#58、#63 等依赖 #57 的票。注意 `lode backup/restore` 还不包含 `data/workspaces/`。
 
 ## 发布前
 

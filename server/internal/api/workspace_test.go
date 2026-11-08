@@ -121,7 +121,7 @@ func TestWorkspacePrefixDoesNotExposeGlobalRoutes(t *testing.T) {
 	opt, _ := withAgent(t, "m", &lockedBuffer{})
 	c := newServer(t, opt)
 	c.setup()
-	for _, p := range []string{"/tokens", "/audit", "/passkeys", "/agent/config", "/health", "/auth/status"} {
+	for _, p := range []string{"/tokens", "/audit", "/passkeys", "/agent/config", "/health", "/auth/status", "/workspaces"} {
 		st, b := c.rawH("GET", wsDefault+p, nil, "")
 		if st != 404 {
 			t.Errorf("全局接口不应挂在工作空间前缀下：GET %s%s = %d %s", wsDefault, p, st, b)

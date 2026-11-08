@@ -1,4 +1,9 @@
 // Package db 打开 SQLite 数据库并执行迁移。
+//
+// 全局库 app.db（兼作默认工作空间的索引）和每个工作空间的 index.db 跑同一套迁移，
+// 两种库永远同构（docs/workspaces.md 第 3 节）。所以只涉及全局表的迁移也会在每个 index.db 上执行，
+// 在那里它们的表都是空的。约定：迁移不能依赖全局表里的数据——不能从 settings、api_tokens 等表读值再回填，
+// 只能写结构变更和常量；需要按全局数据处理的升级放到启动代码里做。
 package db
 
 import (
@@ -85,12 +90,14 @@ func backupBeforeMigrate(ctx context.Context, db *sql.DB, path string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	out := filepath.Join(dir, fmt.Sprintf("app-v%d-%s.db", cur, time.Now().Format("20060102-150405")))
+	// 按库文件名区分：app.db 备份为 app-v*.db，工作空间的 index.db 备份为 index-v*.db
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	out := filepath.Join(dir, fmt.Sprintf("%s-v%d-%s.db", base, cur, time.Now().Format("20060102-150405")))
 	if err := Snapshot(ctx, db, out); err != nil {
 		return err
 	}
 	// 只保留最近的几份
-	old, _ := filepath.Glob(filepath.Join(dir, "app-v*.db"))
+	old, _ := filepath.Glob(filepath.Join(dir, base+"-v*.db"))
 	sort.Slice(old, func(i, j int) bool { return modTime(old[i]).Before(modTime(old[j])) })
 	for len(old) > keepMigrationBackups {
 		os.Remove(old[0])
@@ -115,6 +122,11 @@ func modTime(p string) time.Time {
 
 // Migrate 按文件名顺序执行未执行过的迁移。迁移文件名形如 0001_xxx.sql。
 func Migrate(ctx context.Context, db *sql.DB) error {
+	return MigrateTo(ctx, db, LatestVersion())
+}
+
+// MigrateTo 执行版本号不超过 target 的未执行迁移。测试用它构造旧版本的数据库。
+func MigrateTo(ctx context.Context, db *sql.DB, target int) error {
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
 		return err
 	}
@@ -127,7 +139,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	for _, m := range migs {
-		if m.version <= current {
+		if m.version <= current || m.version > target {
 			continue
 		}
 		tx, err := db.BeginTx(ctx, nil)

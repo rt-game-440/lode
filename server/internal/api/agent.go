@@ -12,6 +12,7 @@ import (
 	"github.com/rt-game-440/lode/server/internal/agent"
 	"github.com/rt-game-440/lode/server/internal/llm"
 	"github.com/rt-game-440/lode/server/internal/secret"
+	"github.com/rt-game-440/lode/server/internal/workspace"
 )
 
 // 助手接口：供应商与模型配置、对话、SSE 事件流、停止和批准。见 docs/api.md 的“助手”一节。
@@ -31,7 +32,7 @@ func (s *Server) routeAgent(p *http.ServeMux) {
 
 // agentChatRoutes 是按工作空间区分的助手对话接口。
 func (s *Server) agentChatRoutes() []route {
-	return []route{
+	rs := []route{
 		{"GET /api/agent/chats", s.listChats},
 		{"POST /api/agent/chats", s.createChat},
 		{"GET /api/agent/chats/{id}", s.getChat},
@@ -42,13 +43,29 @@ func (s *Server) agentChatRoutes() []route {
 		{"POST /api/agent/chats/{id}/stop", s.stopChat},
 		{"POST /api/agent/chats/{id}/approvals/{callId}", s.resolveApproval},
 	}
+	for i := range rs {
+		rs[i].handler = defaultWorkspaceOnly(rs[i].handler)
+	}
+	return rs
 }
 
-// chatAgent 返回处理当前工作空间对话的助手服务。目前助手只服务默认工作空间（请求能走到这里，
-// 说明工作空间已经由中间件确认存在）；#61 拆出按工作空间的 ChatStore 后改为按 currentWorkspace(r) 取依赖。
+// chatAgent 返回处理当前工作空间对话的助手服务。目前助手只服务默认工作空间：其他工作空间的请求
+// 已经被 defaultWorkspaceOnly 挡掉。#61 拆出按工作空间的 ChatStore 后改为按 currentWorkspace(r) 取依赖。
 func (s *Server) chatAgent(r *http.Request) *agent.Service {
 	_ = currentWorkspace(r)
 	return s.Agent
+}
+
+// defaultWorkspaceOnly 让助手对话接口只在默认工作空间可用。其他工作空间返回
+// 501 workspace_agent_unsupported，而不是悄悄用默认工作空间的对话和笔记（那样会串数据）。#61 去掉它。
+func defaultWorkspaceOnly(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if currentWorkspace(r).ID != workspace.DefaultID {
+			writeError(w, http.StatusNotImplemented, "workspace_agent_unsupported", "这个工作空间暂不支持助手对话", nil)
+			return
+		}
+		h(w, r)
+	}
 }
 
 // agentFail 先映射助手的错误，其余交给 fail。

@@ -119,3 +119,42 @@ func apiPrefix(ws *workspace.Workspace) string {
 	}
 	return "/api/w/" + ws.ID
 }
+
+// ---- 工作空间登记（全局接口）----
+
+// listWorkspaces 列出所有工作空间，不会打开它们。
+func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Workspaces.List(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workspaces": list})
+}
+
+// createWorkspace 新建一个内置位置的工作空间（data/workspaces/<id>/），不立即打开。
+// 外部目录（vault_dir）由之后的票支持，现在传了就拒绝，免得被悄悄建成内置位置。
+func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name     string `json:"name"`
+		VaultDir string `json:"vault_dir"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if in.VaultDir != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "暂不支持外部目录", nil)
+		return
+	}
+	info, err := s.Workspaces.Create(r.Context(), workspace.CreateOptions{Name: in.Name})
+	if errors.Is(err, workspace.ErrInvalid) {
+		writeError(w, http.StatusBadRequest, "bad_request", strings.TrimPrefix(err.Error(), workspace.ErrInvalid.Error()+": "), nil)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, info)
+}

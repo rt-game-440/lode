@@ -108,9 +108,12 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	// 默认工作空间：索引在 app.db，vault 在 data/vault。其他工作空间由 Manager 按需打开（#57）。
+	// 默认工作空间：索引在 app.db，vault 在 data/vault。其他工作空间登记在 app.db 的 workspaces 表里，
+	// 放在 data/workspaces/<id>/，由 Manager 在第一次访问时打开，保持到退出。
 	workspaces := workspace.New(workspace.Options{
 		Default: notes.New(notes.Options{DB: database, Vault: v, TrashDir: cfg.TrashDir(), Logger: log}),
+		DB:      database,
+		DataDir: cfg.DataDir,
 		Logger:  log,
 	})
 	def := workspaces.Default()
@@ -160,9 +163,9 @@ func serve(cfg config.Config, log *slog.Logger) error {
 	}
 	httpSrv.RegisterOnShutdown(srv.Close) // 让 WebSocket 连接随关闭退出
 
-	// 后台任务：每个工作空间先建立文件监听，再全量对账（中间的外部修改由监听事件补上），并定期清理历史版本；
-	// 会话清理是全局的。HTTP 服务立即可用。
-	// 退出时先停掉后台任务并等它们结束，再关闭数据库（defer 逆序执行）。
+	// 后台任务：每个已打开的工作空间（启动时只有默认工作空间，其他的在第一次访问时打开）先建立文件监听，
+	// 再全量对账（中间的外部修改由监听事件补上），并定期清理历史版本；会话清理是全局的。HTTP 服务立即可用。
+	// 退出时先停掉所有已打开工作空间的后台任务并等它们结束、关闭它们的索引库，再关闭 app.db（defer 逆序执行）。
 	bgCtx, cancelBg := context.WithCancel(ctx)
 	var bg sync.WaitGroup
 	defer func() {

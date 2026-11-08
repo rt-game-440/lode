@@ -2,6 +2,15 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 21:03 #57 新建内置工作空间、按需打开
+
+- **迁移 0006**：`workspaces(id, name, vault_dir, sort, created_at)` 登记表并插入 `('default','笔记','',0,now)`；同时加 `api_tokens.workspace_id`、`audit_log.workspace_id`（默认 `'default'`），#59 不用再迁移。`index.db` 和 `app.db` 跑同一套迁移，所以 `index.db` 里也有一行 default 登记（没人读）。约定写在 `db` 包注释：迁移只能写结构变更和常量，不能读全局表的数据回填。新增 `db.MigrateTo(ctx, db, version)` 用来在测试里构造旧版本库；迁移前备份按库文件名命名（`app-v*.db` / `index-v*.db`）。
+- **Manager**：`workspace.Options` 加 `DB`（app.db，登记表）、`DataDir`、`Now`；`DB` 为 nil 时只有默认工作空间（`api.Server` 只传 `Notes` 的旧写法）。`Create(ctx, CreateOptions{Name}) (Info, error)`：id 为 6 位 `[a-z0-9]`（crypto/rand，跳过已登记和目录已存在的），先建 `vault/`、`trash/` 和迁移好的 `index.db` 再写登记表（`sort = max+1`），失败时删掉目录；不打开。`List(ctx) ([]Info, error)` 不打开工作空间，`note_count` 对没打开的临时 `db.Connect` 它的 index.db 数一次。`Get` 对未打开的：校验 id 格式 → 查登记表 → 打开 index.db（`db.Open` 迁移）→ `notes.New`；并发 Get 用 `opening` 通道只打开一次，打开过程用 `context.WithoutCancel`；Start 之后打开的立即 `startLocked`（先监听再对账，历史清理各跑一份）。`Close` 后 `Get` 未打开的返回 `ErrClosed`；Close 等后台任务结束后关闭 Manager 打开的 index.db（app.db 仍由 main 关）。`PathsFor(dataDir, id, vaultDir) Paths{Root, Index, Vault, Trash}` 统一路径（default 是 `data/{app.db,vault,trash}`）。`IsOpen(id)` 供测试。新增 `notes.Service.NoteCount`。
+- **API**：`GET /api/workspaces` → `{"workspaces":[Info]}`，`POST /api/workspaces {name}` → 201 Info。JSON 字段沿用现有接口的 snake_case（`vault_dir`、`note_count`、`created_at`），没有用设计文档里的 camelCase。传 `vault_dir` 时 400（外部目录留给后续票），名称为空、超过 64 字符、含控制字符时 400。重名允许。
+- **助手对话在非默认工作空间**：选了“返回明确错误”——`agentChatRoutes()` 的每个处理函数包一层 `defaultWorkspaceOnly`，非 default 返回 `501 workspace_agent_unsupported`。不走全局对话，因为全局对话的工具绑定的是默认工作空间的笔记，会串数据。#61 拆出 ChatStore 后删掉这层。
+- **测试**：`api` 包的 `newServer` 现在总是带登记表的 Manager（数据目录就是测试临时目录，不启动后台任务；需要的测试在选项里调用 `s.Workspaces.Start(t.Context())`）。`workspace` 包的 goroutine 泄漏测试比较 `runtime.NumGoroutine()`，基线在打开 app.db 之后取。本机没有 gcc，`-race` 跑不了。
+- **没做**：`lode backup/restore` 还不包含 `data/workspaces/`（第 7 项拆分任务），MCP 仍只服务默认工作空间（#59）。
+
 ## 2026-11-08 20:30 #56 工作空间接入点（预重构）
 
 - **Manager**：`internal/workspace`。`workspace.New(Options{Default: *notes.Service, Logger, Debounce, PruneInterval})` 立即可用；`Start(ctx)` 启动每个已打开工作空间的后台任务（先 `Watch` 建好监听再 `Reconcile`，另一个任务定期 `PruneHistory`），`Close()` 取消并等它们结束，可重复调用。`Get(ctx, id)` 现在只认 `default`，其他返回 `workspace.ErrNotFound`；#57 在 `Get` 里按需打开（打开后用 `Start` 时保存的 ctx 启动后台任务）。`Workspace{ID, Notes, Tools}`，`Tools` 由 `tools.New(Notes)` 构造，MCP 和助手都从默认工作空间取。会话清理仍在 `main.go`，是全局的。`main.go` 退出顺序：取消会话清理 → `workspaces.Close()` → `agentSvc.Close()` → 关库。

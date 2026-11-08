@@ -126,8 +126,8 @@ type Manager interface {
   涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。
 - 全局路由不变：`auth/*`、`passkeys*`、`tokens*`（新增可选字段 `workspace`）、`audit`（新增 `workspace` 筛选）、`agent/providers*`、`agent/models*`、`agent/settings`、`agent/config`、`key-protection*`、`health`。
 - 新增：
-  - `GET /api/workspaces` → `[{id, name, external, vaultDir, sort, noteCount}]`（`vaultDir` 只对外部目录返回）
-  - `POST /api/workspaces` `{name, vaultDir?}` → 201，新建的工作空间
+  - `GET /api/workspaces` → `{"workspaces":[{id, name, external, vault_dir, sort, created_at, note_count}]}`（`vault_dir` 只对外部目录返回；字段沿用现有接口的 snake_case）
+  - `POST /api/workspaces` `{name, vault_dir?}` → 201，新建的工作空间
   - `PATCH /api/workspaces/{id}` `{name?, sort?}`
   - `DELETE /api/workspaces/{id}`：见第 9 节
 - 实现：用一个中间件解析 `{ws}`，交给 `Manager.Get`，把结果放进 request context；处理函数改成从 context 取工作空间，不再读 `s.Notes`。id 不存在时返回 `404 {"error":"workspace_not_found"}`。

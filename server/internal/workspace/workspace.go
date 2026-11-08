@@ -1,12 +1,15 @@
 // Package workspace 管理工作空间：每个工作空间是一个互相隔离的笔记库（vault、索引、回收站、变更推送），
-// 由 Manager 统一打开和关停。设计见 docs/workspaces.md 第 5 节。
+// 由 Manager 统一登记、打开和关停。设计见 docs/workspaces.md 第 3、5 节。
 //
-// 目前（#56）只有默认工作空间：它的索引在 app.db，vault 在 data/vault，和引入工作空间之前完全一样。
-// 之后的票在这里扩展：按需打开其他工作空间（#57）、每个工作空间的助手对话（#61）。
+// 默认工作空间（id = default）的索引在 app.db，vault 在 data/vault，和引入工作空间之前完全一样；
+// 其他工作空间登记在 app.db 的 workspaces 表里（registry.go），文件在 data/workspaces/<id>/{index.db,vault,trash}，
+// 第一次被访问时才打开，打开后保持到 Close。
+// 之后的票在这里扩展：外部目录、改名排序删除、每个工作空间的助手对话（#61）。
 package workspace
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"runtime/debug"
@@ -20,8 +23,16 @@ import (
 // DefaultID 是默认工作空间的 id（保留，不能删除）。现有的 /api/... 路径都表示它。
 const DefaultID = "default"
 
-// ErrNotFound 表示没有这个工作空间。
-var ErrNotFound = errors.New("workspace not found")
+var (
+	// ErrNotFound 表示没有这个工作空间。
+	ErrNotFound = errors.New("workspace not found")
+	// ErrInvalid 表示新建参数不合法（名称为空、过长等），错误信息去掉前缀后可以直接给用户看。
+	ErrInvalid = errors.New("invalid workspace")
+	// ErrClosed 表示 Manager 已经关闭，不再打开新的工作空间。
+	ErrClosed = errors.New("workspace manager closed")
+	// ErrNoRegistry 表示 Manager 没有登记表（Options.DB 为空），不能新建工作空间。
+	ErrNoRegistry = errors.New("workspace registry not configured")
+)
 
 // 后台任务的默认参数。
 const (
@@ -36,6 +47,7 @@ type Workspace struct {
 	// Tools 是绑定到本工作空间笔记的工具注册表，助手和 MCP 共用。
 	Tools *tools.Registry
 
+	db     *sql.DB            // 本工作空间的索引库，由 Manager 打开和关闭；默认工作空间为 nil（app.db 归调用方）
 	cancel context.CancelFunc // 停止后台任务；未启动时为 nil
 	bg     sync.WaitGroup
 }
@@ -44,30 +56,48 @@ type Workspace struct {
 type Options struct {
 	// Default 是默认工作空间的笔记服务（必填）。
 	Default *notes.Service
+	// DB 是全局库 app.db，工作空间登记表在这里。为 nil 时只有默认工作空间，不能新建
+	// （兼容只传 Notes 的调用方，例如 api.Server 的旧写法）。
+	DB *sql.DB
+	// DataDir 是数据目录，其他工作空间放在 DataDir/workspaces/<id>/。DB 不为 nil 时必填。
+	DataDir string
 	Logger  *slog.Logger
 	// Debounce 是文件监听的去抖时间，默认 DefaultDebounce。
 	Debounce time.Duration
 	// PruneInterval 是清理历史版本的间隔，默认 DefaultPruneInterval。
 	PruneInterval time.Duration
+	// Now 返回当前时间，默认 time.Now。
+	Now func() time.Time
 }
 
-// Manager 管理工作空间的打开和关停。可以并发使用。
+// Manager 管理工作空间的登记、打开和关停。可以并发使用。
 type Manager struct {
 	log      *slog.Logger
 	debounce time.Duration
 	prune    time.Duration
+	global   *sql.DB
+	dataDir  string
+	now      func() time.Time
+
+	createMu sync.Mutex // 串行化 Create（分配 id 和排序）
 
 	mu      sync.Mutex
-	open    map[string]*Workspace // 已打开的工作空间
-	order   []string              // 打开顺序，Opened 按它返回
-	baseCtx context.Context       // Start 之后非 nil；之后打开的工作空间用它启动后台任务
+	open    map[string]*Workspace    // 已打开的工作空间
+	opening map[string]chan struct{} // 正在打开的工作空间，打开结束（成功或失败）时关闭
+	order   []string                 // 打开顺序，Opened 按它返回
+	baseCtx context.Context          // Start 之后非 nil；之后打开的工作空间用它启动后台任务
 	closed  bool
+
+	closeDBs sync.Once
 }
 
 // New 创建 Manager，默认工作空间立即可用（但后台任务要等 Start）。
 func New(o Options) *Manager {
 	if o.Default == nil {
 		panic("workspace: Options.Default 不能为空")
+	}
+	if o.DB != nil && o.DataDir == "" {
+		panic("workspace: 设置了 Options.DB 时 DataDir 不能为空")
 	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()
@@ -78,13 +108,23 @@ func New(o Options) *Manager {
 	if o.PruneInterval <= 0 {
 		o.PruneInterval = DefaultPruneInterval
 	}
-	m := &Manager{log: o.Logger, debounce: o.Debounce, prune: o.PruneInterval, open: map[string]*Workspace{}}
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+	m := &Manager{log: o.Logger, debounce: o.Debounce, prune: o.PruneInterval, global: o.DB, dataDir: o.DataDir, now: o.Now,
+		open: map[string]*Workspace{}, opening: map[string]chan struct{}{}}
 	m.add(newWorkspace(DefaultID, o.Default))
 	return m
 }
 
 func newWorkspace(id string, svc *notes.Service) *Workspace {
 	return &Workspace{ID: id, Notes: svc, Tools: tools.New(svc)}
+}
+
+func (w *Workspace) closeDB() {
+	if w.db != nil {
+		w.db.Close()
+	}
 }
 
 func (m *Manager) add(w *Workspace) {
@@ -99,15 +139,66 @@ func (m *Manager) Default() *Workspace {
 	return m.open[DefaultID]
 }
 
-// Get 返回 id 对应的工作空间；不存在时返回 ErrNotFound。
-// 以后（#57）其他工作空间在第一次 Get 时打开：打开库、迁移、启动后台任务（先监听再对账）。
+// Get 返回 id 对应的工作空间；没有登记时返回 ErrNotFound。
+// 其他工作空间在第一次 Get 时打开（打开并迁移 index.db、构造笔记服务）：Start 之后打开的立即启动后台任务
+// （先监听再全量对账），Start 之前打开的等 Start。打开后保持到 Close。并发的 Get 只打开一次。
 func (m *Manager) Get(ctx context.Context, id string) (*Workspace, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if w := m.open[id]; w != nil {
+	for {
+		m.mu.Lock()
+		if w := m.open[id]; w != nil {
+			m.mu.Unlock()
+			return w, nil
+		}
+		if m.global == nil || !ValidID(id) {
+			m.mu.Unlock()
+			return nil, ErrNotFound
+		}
+		if m.closed {
+			m.mu.Unlock()
+			return nil, ErrClosed
+		}
+		if ch := m.opening[id]; ch != nil {
+			m.mu.Unlock()
+			select {
+			case <-ch:
+				continue // 别人打开完了（或失败了），重新看一次
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		ch := make(chan struct{})
+		m.opening[id] = ch
+		m.mu.Unlock()
+
+		// 打开过程不受单个请求取消的影响，免得一个断开的请求连累并发等待的请求
+		w, err := m.openWorkspace(context.WithoutCancel(ctx), id)
+
+		m.mu.Lock()
+		delete(m.opening, id)
+		close(ch)
+		if err == nil && m.closed {
+			w.closeDB()
+			err = ErrClosed
+		}
+		if err != nil {
+			m.mu.Unlock()
+			return nil, err
+		}
+		m.add(w)
+		if m.baseCtx != nil {
+			m.startLocked(w)
+		}
+		m.mu.Unlock()
+		hook(id, "opened")
 		return w, nil
 	}
-	return nil, ErrNotFound
+}
+
+// IsOpen 判断工作空间 id 是否已经打开（不会触发打开）。
+func (m *Manager) IsOpen(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.open[id] != nil
 }
 
 // Opened 按打开顺序返回所有已打开的工作空间。
@@ -135,7 +226,8 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
-// Close 停止所有工作空间的后台任务并等它们结束。调用方应在关闭数据库之前调用。可以重复调用。
+// Close 停止所有已打开工作空间的后台任务并等它们结束，再关闭 Manager 打开的索引库；
+// 之后 Get 不再打开新的工作空间。调用方应在关闭 app.db 之前调用。可以重复调用。
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closed = true
@@ -152,9 +244,14 @@ func (m *Manager) Close() {
 	for _, w := range ws {
 		w.bg.Wait()
 	}
+	m.closeDBs.Do(func() {
+		for _, w := range ws {
+			w.closeDB()
+		}
+	})
 }
 
-// testHook 供测试观察后台任务的顺序：watching（监听已建立）、reconcile（开始对账）、
+// testHook 供测试观察工作空间的打开和后台任务：opened（按需打开完成）、watching（监听已建立）、reconcile（开始对账）、
 // ready（对账完成）、stopped（某个后台任务退出）。
 var testHook func(id, event string)
 

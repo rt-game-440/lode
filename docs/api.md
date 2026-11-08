@@ -15,7 +15,7 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
   - 两边改动重叠，或 `base_rev` 那一版已被清理：服务器版本不变，请求内容另存为冲突副本 `名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md`（与原笔记同目录，设备名取 `X-Device-Name`，缺省为“未知设备”），返回 `409 conflict`，带 `current_rev`、`conflict_id`、`conflict_path`。
   - 阶段 1 中 `base_rev` 过期一律返回 409；阶段 2 起只有无法自动合并时才返回 409，且 409 意味着请求内容已经保存在冲突副本里，客户端不需要重试。
 - **请求体上限**：JSON 32 MB；附件 20 MB。
-- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。目前只有 `default`，设计见 [workspaces.md](workspaces.md)。
+- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。工作空间的列出和新建见下文“工作空间”一节，设计见 [workspaces.md](workspaces.md)。助手对话（`agent/chats*`）目前只在默认工作空间可用，其他工作空间返回 `501 workspace_agent_unsupported`。
 
 ### 错误格式
 
@@ -40,6 +40,7 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
 | 422 | `patch_failed` | patch 的某处 `old` 没有唯一匹配 | `index`（从 0 开始）、`matches` |
 | 429 | `rate_limited` | 同一 IP 连续 5 次密码错误后锁定 | `retry_after`（秒），并带 `Retry-After` 头 |
 | 500 | `internal` | 服务器内部错误（详情只写服务器日志） | |
+| 501 | `workspace_agent_unsupported` | 在默认工作空间以外调用助手对话接口（暂不支持） | |
 
 ### 数据类型
 
@@ -121,6 +122,19 @@ RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直�
 | POST | `/api/key-protection/disable` | `{"discard":bool}` | `200 {"key_protection":{…},"cleared_keys":n}`：已解锁时把主密钥写回 `secret.key`，已保存的 key 不受影响；锁定时必须 `discard: true`，生成新的 `secret.key` 并清除已保存的 API key |
 
 错误码：`409 env_secret_key`（设置了 `LODE_SECRET_KEY`）、`409 already_enabled` / `not_enabled`、`400 prf_unsupported`（通行密钥没有给出 PRF 输出）、`409 not_enrolled`（这个通行密钥没加入保护）、`400 unwrap_failed`（PRF 输出解不开包裹）、`409 keys_locked`（需要先解锁）、`400 passkey_failed` / `ceremony_expired`、`404 not_found`（当前域名下没有可用的通行密钥）。
+
+## 工作空间（阶段 7）
+
+全局接口，不挂工作空间前缀。
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| GET | `/api/workspaces` | | `200 {"workspaces":[Workspace]}`，按 `sort` 排序，默认工作空间在最前；不会打开任何工作空间 |
+| POST | `/api/workspaces` | `{"name":"…"}` | `201 Workspace`；名称去掉首尾空白后为空、超过 64 个字符或含控制字符时 `400 bad_request`；带 `vault_dir`（外部目录）时 `400`（暂不支持） |
+
+`Workspace`：`{"id":"k3f9a2","name":"工作","external":false,"sort":1,"created_at":1794142854549,"note_count":0}`。`id` 是 6 位小写字母或数字，创建后不变；`default` 是默认工作空间（名称“笔记”）。`vault_dir` 只对外部目录返回。`note_count` 是索引里的笔记数，还没打开过的工作空间读的是上次的索引。
+
+新建的工作空间放在数据目录的 `workspaces/<id>/` 下（`index.db`、`vault/`、`trash/`），之后用 `/api/w/<id>/...` 访问。它在第一次被访问时才打开（建立文件监听、全量对账，直接放进 `vault/` 的文件这时进入索引），之后保持到服务退出。各工作空间的笔记、搜索、标签、反链、回收站、变更序号和 WebSocket 推送互不影响。
 
 ## 笔记
 
