@@ -1,5 +1,5 @@
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
-import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { Drawer } from '../../components/Drawer'
 import { DialogHost, MenuHost, ToastHost } from '../../components/overlays'
 import { useEditor } from '../../stores/editor'
@@ -17,7 +17,7 @@ import { AgentPanel } from '../agent/AgentPanel'
 import { ShortcutsDialog, isTypingTarget } from './ShortcutsDialog'
 import { MobileStack } from './MobileStack'
 import { SidebarResizer } from './SidebarResizer'
-import { usePanelMotion } from './panelMotion'
+import { PanelEdgesContext, usePanelMotion } from './panelMotion'
 import { springPanel } from '../../styles/tokens/motion'
 import './shell.css'
 
@@ -180,22 +180,29 @@ export function AppShell() {
 }
 
 /**
- * 桌面三栏：侧栏、主区域、右栏。展开收起和调宽只改 transform（见 usePanelMotion），
- * 主区域的宽度只在动画开始或结束时变化一次。
+ * 桌面三栏：侧栏、主区域、右栏。侧栏和右栏的展开收起只改 transform（见 usePanelMotion）；
+ * 主区域的左右边缘逐帧贴住两侧面板的边缘，所以标题栏按钮始终可见、正文居中列连续移动，
+ * 不会在动画开始或结束时一次性跳变。主区域本身不加 transform（CodeMirror 的 fixed 提示框按视口定位）。
  */
 function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInline: boolean; rightId: string | null }) {
   const rightTab = useUI((s) => s.rightTab)
   const sidebarOpen = useUI((s) => s.sidebarOpen)
   const storedWidth = useUI((s) => s.sidebarWidth)
   const sbW = useMotionValue(storedWidth)
-  // 先于 usePanelMotion 同步宽度：展开时按保存的宽度动画
-  useEffect(() => {
-    if (sidebarOpen) sbW.set(storedWidth)
-  }, [sidebarOpen, storedWidth, sbW])
+  const reduced = useReducedMotion()
   const left = usePanelMotion(sidebarOpen, sbW)
+  // 展开时恢复保存的宽度（拖过最小宽度收起时，收起动画用的是拖拽中的宽度）。
+  // 调宽手柄松手回弹时宽度正在动画，不要打断它；收起途中反向展开时宽度也用弹簧过渡，边缘不跳。
+  useEffect(() => {
+    if (!sidebarOpen || sbW.isAnimating() || sbW.get() === storedWidth) return
+    if (left.progress.get() > 0 && !reduced) {
+      const c = animate(sbW, storedWidth, springPanel)
+      return () => c.stop()
+    }
+    sbW.set(storedWidth)
+  }, [sidebarOpen, storedWidth, sbW, left.progress, reduced])
   const rTarget = rightTab === 'agent' ? AGENT_W : RIGHT_W
   const rW = useMotionValue(rTarget)
-  const reduced = useReducedMotion()
   // 切换到助手时右栏加宽：宽度用弹簧过渡，主区域随之让出空间
   useEffect(() => {
     if (!rightInline || reduced) {
@@ -207,36 +214,33 @@ function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInli
   }, [rTarget, rightInline, reduced, rW])
   const right = usePanelMotion(rightInline, rW)
 
-  const sbX = useTransform(() => left.offset.get() - sbW.get())
-  const mainLeft = useTransform(() => left.reserved.get() * sbW.get())
-  const mainX = useTransform(() => left.offset.get() - left.reserved.get() * sbW.get())
-  const mainWidth = useTransform(
-    () => `calc(100% - ${left.reserved.get() * sbW.get() + right.reserved.get() * rW.get()}px)`,
-  )
-  const rightX = useTransform(() => rW.get() - right.offset.get())
-  const resizerX = useTransform(() => left.offset.get())
+  const sbX = useTransform(() => left.edge.get() - sbW.get())
+  const rightX = useTransform(() => rW.get() - right.edge.get())
+  const edges = useMemo(() => ({ left: left.edge, right: right.edge }), [left.edge, right.edge])
 
   return (
-    <div className="shell">
-      <motion.div
-        className="shell-sidebar"
-        style={{ x: sbX, width: sbW, visibility: left.visible ? 'visible' : 'hidden' }}
-        inert={!sidebarOpen}
-        data-testid="shell-sidebar"
-      >
-        <Sidebar />
-      </motion.div>
-      {sidebarOpen && left.visible && <SidebarResizer width={sbW} x={resizerX} />}
-      <motion.main className="shell-main" style={{ left: mainLeft, x: mainX, width: mainWidth }}>
-        <MainView mobile={false} route={route} contextNoteId={rightId} />
-      </motion.main>
-      <motion.div
-        className="shell-right"
-        style={{ x: rightX, width: rW, visibility: right.visible ? 'visible' : 'hidden' }}
-        inert={!rightInline}
-      >
-        {right.visible && <RightPanel id={rightId} />}
-      </motion.div>
-    </div>
+    <PanelEdgesContext.Provider value={edges}>
+      <div className="shell">
+        <motion.div
+          className="shell-sidebar"
+          style={{ x: sbX, width: sbW, visibility: left.visible ? 'visible' : 'hidden' }}
+          inert={!sidebarOpen}
+          data-testid="shell-sidebar"
+        >
+          <Sidebar />
+        </motion.div>
+        {sidebarOpen && left.visible && <SidebarResizer width={sbW} x={left.edge} />}
+        <motion.main className="shell-main" style={{ left: left.edge, right: right.edge }}>
+          <MainView mobile={false} route={route} contextNoteId={rightId} />
+        </motion.main>
+        <motion.div
+          className="shell-right"
+          style={{ x: rightX, width: rW, visibility: right.visible ? 'visible' : 'hidden' }}
+          inert={!rightInline}
+        >
+          {right.visible && <RightPanel id={rightId} />}
+        </motion.div>
+      </div>
+    </PanelEdgesContext.Provider>
   )
 }

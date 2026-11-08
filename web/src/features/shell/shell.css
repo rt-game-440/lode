@@ -1,4 +1,5 @@
-/* ---- 桌面三栏：各栏绝对定位，展开收起只改 transform（见 panelMotion.ts） ---- */
+/* ---- 桌面三栏：各栏绝对定位。侧栏、右栏展开收起只改 transform，
+   主区域的 left / right 逐帧贴住两侧面板的边缘（见 panelMotion.ts） ---- */
 .shell {
   position: relative;
   height: 100%;
