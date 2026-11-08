@@ -222,6 +222,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
 
   const showToolbar = useEditorPrefs((s) => s.formatToolbar)
   const pageWidth = useNoteAppearance((s) => s.width)
+  const noteFont = useNoteAppearance((s) => s.font)
   const animateWidth = useNoteAppearance((s) => s.animate)
   const showEditor = !!doc && doc.id === id && !notFound
 
@@ -282,7 +283,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
       )}
 
       {/* 页宽只在桌面端生效（editor.css）；切换时过渡，载入笔记时直接到位 */}
-      <div className="editor-scroll" ref={scrollRef} data-width={pageWidth} data-animate={animateWidth ? '' : undefined}>
+      <div className="editor-scroll" ref={scrollRef} data-width={pageWidth} data-font={noteFont} data-animate={animateWidth ? '' : undefined}>
         {note && showEditor && (
           <TitleInput
             key={note.id + note.title}

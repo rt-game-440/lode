@@ -11,7 +11,8 @@ export const editorTheme = EditorView.theme({
   },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': {
-    fontFamily: 'var(--font-sans)',
+    // 按笔记的字体（editor.css 的 --note-font）；代码、行内代码、front matter 另外指定等宽
+    fontFamily: 'var(--note-font, var(--font-sans))',
     lineHeight: 'var(--leading-body)',
     // 外层 .editor-scroll 负责滚动，标题和正文一起滚动
     overflow: 'visible',

@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { type APIRequestContext, type Browser, type BrowserContext, type Page, expect, test } from '@playwright/test'
 
 // 笔记外观（#47）：按笔记的页宽、字体写进 front matter 的 lode 键；右侧目录条；整体字号。
@@ -109,7 +111,8 @@ test.describe('单篇笔记页宽', () => {
 
     const panel = await openPanel(p)
     await expect(panel.getByRole('radio', { name: '适中' })).toHaveAttribute('aria-checked', 'true')
-    await expect(panel.getByRole('radio', { name: '适中' })).toBeFocused()
+    // 焦点进面板第一组（字体）的选中项
+    await expect(panel.getByRole('radio', { name: '默认' })).toBeFocused()
 
     await panel.getByRole('radio', { name: '宽', exact: true }).click()
     await expect(panel.getByRole('radio', { name: '宽', exact: true })).toHaveAttribute('aria-checked', 'true')
@@ -225,5 +228,129 @@ test.describe('单篇笔记页宽', () => {
     await expect.poll(() => contentWidth(again.p)).toBeGreaterThan(1000)
     expect(await readNote(again.c, nid)).toContain('lode:\n  width: wide')
     await again.c.close()
+  })
+})
+
+/** 元素计算后的第一个字体族 */
+const firstFamily = (p: Page, sel: string) =>
+  p.locator(sel).first().evaluate((el) => getComputedStyle(el).fontFamily.split(',')[0].trim().replace(/['"]/g, ''))
+
+test.describe('单篇笔记字体', () => {
+  let id = ''
+  test.beforeAll(async ({ browser }) => {
+    id = await createNote(browser, '外观/字体.md', BODY)
+  })
+
+  test('三种字体写进 front matter，正文和标题换字体，代码块始终等宽', async ({ browser }) => {
+    const { c, p } = await openNote(browser, id)
+    expect(await firstFamily(p, '.cm-line')).toBe('-apple-system')
+    const panel = await openPanel(p)
+    const cards = panel.getByRole('radiogroup', { name: '字体' }).getByRole('radio')
+    await expect(cards).toHaveText(['Ag默认', 'Ag衬线', 'Ag等宽'])
+    await expect(panel.getByRole('radio', { name: '默认' })).toHaveAttribute('aria-checked', 'true')
+    // 预览字样用各自的字体渲染
+    expect(await firstFamily(p, '.font-card-sample.font-serif')).toBe('ui-serif')
+    expect(await firstFamily(p, '.font-card-sample.font-mono')).toBe('ui-monospace')
+
+    await panel.getByRole('radio', { name: '衬线' }).click()
+    await expect(panel.getByRole('radio', { name: '衬线' })).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(() => firstFamily(p, '.cm-line:not(.cm-codeblock)')).toBe('ui-serif')
+    expect(await firstFamily(p, '.editor-title')).toBe('ui-serif')
+    expect(await firstFamily(p, '.cm-codeblock')).toBe('ui-monospace')
+    expect(await firstFamily(p, '.cm-inline-code')).toBe('ui-monospace')
+    await saved(p)
+    expect(await readNote(c, id)).toBe(`---\nlode:\n  font: serif\n---\n${BODY}`)
+
+    // 方向键在字体之间切换
+    await panel.getByRole('radio', { name: '衬线' }).press('ArrowRight')
+    await expect(panel.getByRole('radio', { name: '等宽' })).toBeFocused()
+    await expect.poll(() => firstFamily(p, '.cm-line:not(.cm-codeblock)')).toBe('ui-monospace')
+    await saved(p)
+    expect(await readNote(c, id)).toBe(`---\nlode:\n  font: mono\n---\n${BODY}`)
+
+    // 和页宽共存
+    await panel.getByRole('radio', { name: '宽', exact: true }).click()
+    await saved(p)
+    expect(await readNote(c, id)).toBe(`---\nlode:\n  font: mono\n  width: wide\n---\n${BODY}`)
+
+    // 刷新后保持
+    await p.reload()
+    await expect.poll(() => firstFamily(p, '.cm-line:not(.cm-codeblock)')).toBe('ui-monospace')
+    await c.close()
+  })
+
+  test('手机上同样生效，改回默认后文件复原', async ({ browser }) => {
+    const { c, p } = await openNote(browser, id, { viewport: MOBILE, isMobile: true, hasTouch: true })
+    await expect.poll(() => firstFamily(p, '.cm-line:not(.cm-codeblock)')).toBe('ui-monospace')
+    const panel = await openPanel(p)
+    await panel.getByRole('radio', { name: '衬线' }).click()
+    await expect.poll(() => firstFamily(p, '.cm-line:not(.cm-codeblock)')).toBe('ui-serif')
+    expect(await firstFamily(p, '.cm-codeblock')).toBe('ui-monospace')
+    await panel.getByRole('radio', { name: '默认' }).click()
+    await saved(p)
+    // 手机上看不到页宽，页宽设置保持不变
+    expect(await readNote(c, id)).toBe(`---\nlode:\n  width: wide\n---\n${BODY}`)
+    await c.close()
+
+    const d = await openNote(browser, id)
+    await (await openPanel(d.p)).getByRole('radio', { name: '适中' }).click()
+    await saved(d.p)
+    expect(await readNote(d.c, id)).toBe(BODY)
+    await d.c.close()
+  })
+})
+
+// 设置 LODE_SCREENSHOTS=issue-47 时生成人工检查用的截图，输出到 docs/screenshots/issue-47/
+const shotStage = process.env.LODE_SCREENSHOTS
+const shotDir = shotStage ? resolve(import.meta.dirname, '..', '..', 'docs', 'screenshots', shotStage) : ''
+async function shot(p: Page, name: string) {
+  mkdirSync(shotDir, { recursive: true })
+  await p.waitForTimeout(450)
+  await p.screenshot({ path: resolve(shotDir, `${name}.png`) })
+}
+
+const DEMO = [
+  '# 读《三国演义》',
+  '',
+  '滚滚长江东逝水，浪花淘尽英雄。是非成败转头空，青山依旧在，几度夕阳红。The quick brown fox jumps over the lazy dog.',
+  '',
+  '## 人物',
+  '',
+  '刘备、关羽、张飞桃园结义，诸葛亮隆中对策，三分天下的格局由此奠定。全书以宏大的篇幅描写了从东汉末年到西晋初年之间近百年的历史风云。',
+  '',
+  '### 曹操',
+  '',
+  '宁教我负天下人，休教天下人负我。',
+  '',
+  '```js',
+  "const heroes = ['刘备', '关羽', '张飞']",
+  '```',
+  '',
+  '## 结构',
+  '',
+  '全书一百二十回，前半部分以群雄逐鹿为主，后半部分以三国鼎立、诸葛亮北伐为主线。',
+  '',
+].join('\n')
+
+test.describe('截图', () => {
+  test.skip(!shotStage, '设置 LODE_SCREENSHOTS 后才生成截图')
+
+  test('页宽三档、字体三种', async ({ browser }) => {
+    const id = await createNote(browser, '外观/截图.md', DEMO)
+    const { c, p } = await openNote(browser, id)
+    const panel = await openPanel(p)
+    await shot(p, '01-panel')
+    for (const [w, name] of [['窄', 'narrow'], ['适中', 'standard'], ['宽', 'wide']] as const) {
+      await panel.getByRole('radio', { name: w, exact: true }).click()
+      await shot(p, `02-width-${name}`)
+    }
+    await panel.getByRole('radio', { name: '适中' }).click()
+    for (const [f, name] of [['默认', 'sans'], ['衬线', 'serif'], ['等宽', 'mono']] as const) {
+      await panel.getByRole('radio', { name: f }).click()
+      await shot(p, `03-font-${name}`)
+    }
+    await panel.getByRole('radio', { name: '默认' }).click()
+    await saved(p)
+    await c.close()
   })
 })

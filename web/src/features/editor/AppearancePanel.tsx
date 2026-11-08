@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { type KeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { usePop } from '../../components/usePop'
-import type { PageWidth } from '../../lib/noteAppearance'
+import { NOTE_FONTS, type NoteFont, type PageWidth } from '../../lib/noteAppearance'
 import { useNoteAppearance } from '../../stores/noteAppearance'
 import { fadeOutQuick, springSnappy } from '../../styles/tokens/motion'
 import { applyNoteAppearance } from './cm/appearance'
@@ -23,6 +23,7 @@ export function closeAppearancePanel() {
 }
 
 export const WIDTH_LABEL: Record<PageWidth, string> = { narrow: '窄', standard: '适中', wide: '宽' }
+export const FONT_LABEL: Record<NoteFont, string> = { sans: '默认', serif: '衬线', mono: '等宽' }
 
 export function AppearancePanelHost({ mobile }: { mobile: boolean }) {
   const anchor = usePanel((s) => s.anchor)
@@ -94,11 +95,35 @@ export function AppearancePanelHost({ mobile }: { mobile: boolean }) {
 
 function AppearanceControls({ mobile }: { mobile: boolean }) {
   const width = useNoteAppearance((s) => s.width)
+  const font = useNoteAppearance((s) => s.font)
   const set = (patch: Parameters<typeof applyNoteAppearance>[1]) => {
     if (editorRef.view) applyNoteAppearance(editorRef.view, patch)
   }
   return (
     <>
+      <Section title="字体" id="appearance-font">
+        <RadioGroup
+          labelledBy="appearance-font"
+          className="font-cards"
+          value={font}
+          options={NOTE_FONTS.map((f) => ({
+            value: f,
+            name: FONT_LABEL[f],
+            label: (
+              <>
+                <span className={`font-card-sample font-${f}`} aria-hidden="true">
+                  Ag
+                </span>
+                <span className="font-card-label" aria-hidden="true">
+                  {FONT_LABEL[f]}
+                </span>
+              </>
+            ),
+          }))}
+          itemClass={(on) => `font-card${on ? ' is-selected' : ''}`}
+          onChange={(f) => set({ font: f })}
+        />
+      </Section>
       {!mobile && (
         <Section title="页宽" id="appearance-width">
           <RadioGroup

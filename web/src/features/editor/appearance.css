@@ -28,3 +28,55 @@
   font-weight: var(--weight-regular);
   color: var(--color-label-secondary);
 }
+
+/* 字体：三张卡片，用各自的字体渲染“Ag”，选中的加底色、字样用强调色 */
+.font-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1);
+}
+.font-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-0-5);
+  padding: var(--space-2) 0 var(--space-1-5);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-label);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.font-card:hover {
+  background: var(--color-fill);
+}
+.font-card:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--duration-instant) var(--ease-out);
+}
+.font-card.is-selected {
+  background: var(--color-fill-selected);
+}
+.font-card-sample {
+  font-size: var(--text-title2);
+  line-height: var(--leading-tight);
+}
+.font-card.is-selected .font-card-sample {
+  color: var(--color-accent);
+}
+.font-card-label {
+  font-size: var(--text-caption);
+  color: var(--color-label-secondary);
+}
+.font-card.is-selected .font-card-label {
+  color: var(--color-label);
+}
+.font-sans {
+  font-family: var(--font-sans);
+}
+.font-serif {
+  font-family: var(--font-serif);
+}
+.font-mono {
+  font-family: var(--font-mono-text);
+}
