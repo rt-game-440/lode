@@ -179,7 +179,12 @@ func TestWrapStorage(t *testing.T) {
 		t.Fatalf("Wrapped = %v", ids)
 	}
 	list, _ := s.List(ctx)
-	if !list[0].KeyWrapped || list[1].KeyWrapped {
+	// 两个通行密钥可能在同一毫秒登记，列表顺序不固定，按 ID 判断
+	wrapped := map[string]bool{}
+	for _, it := range list {
+		wrapped[it.ID] = it.KeyWrapped
+	}
+	if len(list) != 2 || !wrapped[a.ID()] || wrapped[b.ID()] {
 		t.Fatalf("列表应标出持有包裹的通行密钥：%+v", list)
 	}
 	// 列表的 JSON 不含包裹内容
