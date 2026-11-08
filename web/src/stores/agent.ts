@@ -11,10 +11,12 @@ import {
 } from '../api/agent'
 import { ApiError, errorMessage } from '../api/client'
 import { type ChatState, applyEvent, fromView } from '../features/agent/chatState'
+import { WORKSPACE_STORAGE, currentWorkspace, storageKey } from '../lib/workspace'
 import { useAgentDraft } from './agentDraft'
 import { useUI } from './ui'
 
-const ACTIVE_KEY = 'lode.agent.chat'
+/** 当前对话按工作空间记住：默认工作空间沿用 `lode.agent.chat`，其他加 `:<id>`。 */
+const activeKey = () => storageKey(WORKSPACE_STORAGE.agentChat, currentWorkspace())
 
 export interface ModelOption extends AgentModel {
   provider: Provider
@@ -39,6 +41,10 @@ interface AgentState {
 
   chats: Chat[] | null
   loadChats: () => Promise<void>
+  /** 当前工作空间还不支持助手对话（服务端返回 501 workspace_agent_unsupported，#61 之前的非默认工作空间） */
+  unsupported: boolean
+  /** 切换工作空间：断开事件流，回到新工作空间记住的对话（对话列表重新载入） */
+  switchWorkspace: () => void
 
   /** 当前打开的对话 */
   activeId: string | null
@@ -61,6 +67,8 @@ interface AgentState {
 function toastError(err: unknown) {
   useUI.getState().toast({ message: errorMessage(err), tone: 'error' })
 }
+
+const isUnsupported = (err: unknown) => err instanceof ApiError && err.code === 'workspace_agent_unsupported'
 
 export const useAgent = create<AgentState>((set, get) => {
   let source: EventSource | null = null
@@ -187,21 +195,37 @@ export const useAgent = create<AgentState>((set, get) => {
 
     chats: null,
     loadChats: async () => {
+      const ws = currentWorkspace()
       try {
-        set({ chats: await agentApi.chats() })
+        const chats = await agentApi.chats()
+        if (ws === currentWorkspace()) set({ chats, unsupported: false })
       } catch (err) {
-        toastError(err)
-        set({ chats: [] })
+        if (ws !== currentWorkspace()) return
+        if (isUnsupported(err)) set({ chats: [], unsupported: true })
+        else {
+          toastError(err)
+          set({ chats: [] })
+        }
       }
     },
 
-    activeId: localStorage.getItem(ACTIVE_KEY),
+    unsupported: false,
+    switchWorkspace: () => {
+      disconnect()
+      if (frame) cancelAnimationFrame(frame)
+      frame = 0
+      // 草稿里 @ 的笔记属于原来的工作空间
+      useAgentDraft.setState({ mentions: [], attachments: [], suppressed: [] })
+      set({ chats: null, unsupported: false, activeId: localStorage.getItem(activeKey()), current: null })
+    },
+
+    activeId: localStorage.getItem(activeKey()),
     current: null,
     open: async (id) => {
       // 换会话（或回到新对话）：自动附上当前笔记的规则从头开始（#44）
       if (!creating && id !== get().activeId) useAgentDraft.getState().resetSuppressed()
-      if (id) localStorage.setItem(ACTIVE_KEY, id)
-      else localStorage.removeItem(ACTIVE_KEY)
+      if (id) localStorage.setItem(activeKey(), id)
+      else localStorage.removeItem(activeKey())
       set({ activeId: id, current: get().current?.chat.id === id ? get().current : null })
       disconnect()
       if (!id) return
@@ -212,8 +236,12 @@ export const useAgent = create<AgentState>((set, get) => {
         ensureConnected()
       } catch (err) {
         if (get().activeId !== id) return
+        if (isUnsupported(err)) {
+          set({ unsupported: true, current: null })
+          return
+        }
         // 对话已在别处删除：回到空白状态
-        localStorage.removeItem(ACTIVE_KEY)
+        localStorage.removeItem(activeKey())
         set({ activeId: null, current: null })
         if (!(err instanceof ApiError && err.status === 404)) toastError(err)
       }

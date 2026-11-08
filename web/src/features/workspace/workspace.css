@@ -1,0 +1,45 @@
+/* 侧栏顶部的工作空间名（替代原来的 Lode 标题）：只有默认工作空间时看起来和原来的标题一样 */
+.ws-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  height: 2rem;
+  padding: 0 var(--space-1-5) 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-label);
+  font-size: var(--text-callout);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-body);
+  user-select: none;
+  transition:
+    transform var(--duration-instant) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+.ws-switcher:hover {
+  background: var(--color-fill);
+}
+.ws-switcher:active {
+  transform: scale(var(--press-scale));
+  background: var(--color-fill-strong);
+}
+.ws-switcher-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 只有一个工作空间时箭头更淡（装饰用，不承载信息） */
+.ws-switcher-chevron {
+  flex: none;
+  color: var(--color-label-quaternary);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.ws-switcher.has-many .ws-switcher-chevron,
+.ws-switcher:hover .ws-switcher-chevron,
+.ws-switcher:focus-visible .ws-switcher-chevron {
+  color: var(--color-label-secondary);
+}

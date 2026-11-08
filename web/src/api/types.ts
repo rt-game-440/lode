@@ -136,3 +136,16 @@ export interface AuditEntry {
   error?: string
   duration_ms: number
 }
+
+/** 工作空间（docs/api.md 的“工作空间”一节）。id 创建后不变，`default` 是默认工作空间。 */
+export interface WorkspaceInfo {
+  id: string
+  name: string
+  external: boolean
+  /** 只对外部目录返回 */
+  vault_dir?: string
+  sort: number
+  created_at: number
+  /** 索引里的笔记数；还没打开过的工作空间读的是上次的索引 */
+  note_count: number
+}

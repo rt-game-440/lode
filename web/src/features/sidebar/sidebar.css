@@ -20,12 +20,6 @@
   box-sizing: content-box;
   flex: none;
 }
-.sidebar-brand {
-  padding-left: var(--space-1);
-  font-size: var(--text-callout);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-body);
-}
 
 .sidebar > .segmented {
   margin: var(--space-1) var(--space-3) var(--space-2);

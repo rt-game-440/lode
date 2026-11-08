@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { agentBackAction, withAgentFrom, withoutAgentFrom } from '../lib/agentNav'
 import { rememberNoteScroll } from '../lib/scrollMemory'
+import { currentWorkspace, splitWorkspacePath, workspacePath } from '../lib/workspace'
 
 export type Route =
   | { view: 'home' }
@@ -25,6 +26,7 @@ export interface Toast {
   persistent?: boolean
 }
 
+/** 工作空间内的页面路径（不含 `/w/<id>` 前缀）→ 页面。 */
 export function parseRoute(pathname: string): Route {
   const parts = pathname.split('/').filter(Boolean).map(decodeURIComponent)
   if (parts[0] === 'note' && parts[1]) return { view: 'note', id: parts[1] }
@@ -35,6 +37,7 @@ export function parseRoute(pathname: string): Route {
   return { view: 'home' }
 }
 
+/** 页面 → 工作空间内的页面路径（不含 `/w/<id>` 前缀，地址栏里的完整路径见 lib/workspace 的 workspacePath）。 */
 export function routePath(r: Route): string {
   switch (r.view) {
     case 'note':
@@ -93,7 +96,9 @@ export function applyTheme(t: Theme) {
 
 interface UIState {
   route: Route
+  /** 在当前工作空间内跳转（地址栏自动带上工作空间前缀）；切换工作空间见 stores/workspace */
   navigate: (r: Route, replace?: boolean) => void
+  /** 按地址栏更新页面（浏览器前进后退）；地址栏换了工作空间时由 stores/workspace 先切换 */
   syncFromLocation: () => void
 
   sidebarOpen: boolean
@@ -141,13 +146,13 @@ export const useUI = create<UIState>((set, get) => {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify({ sidebarOpen, sidebarWidth, rightOpen, rightTab } satisfies Layout))
   }
   const layout = loadLayout()
-  const initialRoute = parseRoute(location.pathname)
+  const initialRoute = parseRoute(splitWorkspacePath(location.pathname).rest)
   // 直接打开或刷新的助手页没有来源（刷新会保留 history.state，这里去掉）
   if (initialRoute.view === 'agent' && history.state) history.replaceState(withoutAgentFrom(history.state), '')
   return {
     route: initialRoute,
     navigate: (r, replace = false) => {
-      const path = routePath(r)
+      const path = workspacePath(currentWorkspace(), routePath(r))
       if (path !== location.pathname) {
         if (replace) history.replaceState(null, '', path)
         else history.pushState(null, '', path)
@@ -155,7 +160,7 @@ export const useUI = create<UIState>((set, get) => {
       set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail', ...(r.view === 'note' ? {} : { agentPopup: false }) })
     },
     syncFromLocation: () => {
-      const r = parseRoute(location.pathname)
+      const r = parseRoute(splitWorkspacePath(location.pathname).rest)
       set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail', ...(r.view === 'note' ? {} : { agentPopup: false }) })
     },
 

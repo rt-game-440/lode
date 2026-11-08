@@ -163,7 +163,9 @@
 
 - #57 新建内置工作空间：迁移 0006（`workspaces` 登记表，`api_tokens`/`audit_log` 加 `workspace_id`）；`GET/POST /api/workspaces`；新空间放在 `data/workspaces/<id>/{index.db,vault,trash}`，第一次访问时打开（先监听再对账），保持到退出，`Close` 停掉所有已打开空间的后台任务并关闭索引库；助手对话在非默认空间返回 `501 workspace_agent_unsupported`（#61 之前）。测试：`internal/workspace/registry_test.go`（升级后同构、按需打开与对账、关停不泄漏 goroutine）、`internal/api/workspaces_test.go`（隔离、WebSocket 隔离、列出新建、助手对话 501）。
 
-下一步：#58、#63 等依赖 #57 的票。注意 `lode backup/restore` 还不包含 `data/workspaces/`。
+- #58 前端切换工作空间：侧栏顶部换成工作空间名（`features/workspace/WorkspaceSwitcher`），点开是工作空间列表（当前项打勾、笔记数）和“新建工作空间…”；命令面板输入“切换工作空间”或工作空间名列出其他工作空间，也有“新建工作空间…”。默认工作空间地址不变，其他用 `/w/<id>/...`，API 加 `/api/w/<id>`（`lib/workspace.ts`）。同步引擎按工作空间实例化（IndexedDB `lode` / `lode:<id>`），切换时销毁旧引擎和 WebSocket，写队列留在各自的库里，切回来补发；最近打开、展开状态、当前助手对话按工作空间存（`lode.recent:<id>` 等），主题、布局、字号、编辑器偏好仍是全局的。非默认工作空间打开助手时显示“这个工作空间暂时不能用助手”和切回“笔记”的按钮。顺带修了快速切换器的过滤（标题匹配不上时加权后仍是非负，所有笔记都会列出来）和菜单高亮项提示文字的对比度。测试：`web/src/lib/workspace.test.ts`、`web/src/sync/workspace.test.ts`、`web/e2e/ui-workspaces.spec.ts`；截图在 `docs/screenshots/stage-7/`。
+
+下一步：#59（设置里的工作空间管理、MCP token 选择工作空间）、#61（助手按工作空间）、#63 等。注意 `lode backup/restore` 还不包含 `data/workspaces/`。
 
 ## 发布前
 

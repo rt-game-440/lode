@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { ApiError, api, setUnauthorizedHandler } from '../api/client'
 import { getPasskey } from '../lib/webauthn'
 import { sync } from '../sync/engine'
+import { clearAllLocalCaches } from './workspace'
 
 type Phase = 'loading' | 'setup' | 'login' | 'ready' | 'offline'
 
@@ -51,7 +52,7 @@ export const useSession = create<SessionState>((set) => ({
   },
   logout: async () => {
     await api.logout().catch(() => {})
-    await sync.db.clearCache().catch(() => {})
+    await clearAllLocalCaches().catch(() => {})
     set({ phase: 'login' })
   },
 }))

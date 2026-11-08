@@ -1,10 +1,12 @@
-import { AlertCircle, ChevronLeft, History, Maximize2, MessageSquarePlus, Settings, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, ArrowRightLeft, ChevronLeft, History, Maximize2, MessageSquarePlus, Settings, Sparkles, Trash2, X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { confirmDialog } from '../../components/overlays'
 import { Button, EmptyState, IconButton, Spinner } from '../../components/ui'
 import { chatModel, enabledModels, useAgent } from '../../stores/agent'
 import { useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
+import { useWorkspace, workspaceName } from '../../stores/workspace'
+import { DEFAULT_WORKSPACE } from '../../lib/workspace'
 import { PanelToggleSlot } from '../shell/PanelToggle'
 import { Composer } from './Composer'
 import { ApprovalCard, DraftView, MessageView } from './Thread'
@@ -159,6 +161,28 @@ function NoModels({ secretKeySet }: { secretKeySet: boolean }) {
   )
 }
 
+/** 非默认工作空间暂时不能用助手（服务端返回 501 workspace_agent_unsupported，#61 之后去掉）。 */
+function Unsupported() {
+  const defaultName = useWorkspace((s) => workspaceName(s.list, DEFAULT_WORKSPACE))
+  return (
+    <div className="agent-center" data-testid="agent-unsupported">
+      <EmptyState icon={<Sparkles size={28} strokeWidth={1.5} />} title="这个工作空间暂时不能用助手">
+        {`助手目前只能读写“${defaultName}”里的笔记。切换到“${defaultName}”后再打开助手。`}
+        <div className="agent-empty-action">
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<ArrowRightLeft size={14} />}
+            onClick={() => void useWorkspace.getState().switchTo(DEFAULT_WORKSPACE)}
+          >
+            {`切换到“${defaultName}”`}
+          </Button>
+        </div>
+      </EmptyState>
+    </div>
+  )
+}
+
 /** 弹窗里的助手：标题栏多出“展开”和“关闭”两个按钮 */
 export interface AgentPopupActions {
   /** 展开到助手页面，接着同一个会话继续 */
@@ -190,19 +214,24 @@ export function AgentPanel({
   const activeId = useAgent((s) => s.activeId)
   const attach = useAgent((s) => s.attach)
   const newChat = useAgent((s) => s.newChat)
+  const unsupported = useAgent((s) => s.unsupported)
+  const chats = useAgent((s) => s.chats)
+  const ws = useWorkspace((s) => s.current)
   const contextPath = useVault((s) => (contextNoteId ? (s.notes[contextNoteId]?.path ?? null) : null))
   const [listOpen, setListOpen] = useState(false)
 
   useEffect(() => attach(), [attach])
+  // 对话按工作空间区分：切换工作空间后重新载入列表和记住的对话
   useEffect(() => {
     const st = useAgent.getState()
     void st.loadConfig()
     void st.loadChats()
     if (st.activeId && !st.current) void st.open(st.activeId)
-  }, [])
+  }, [ws])
 
   const model = chatModel(config, current?.chat)
-  const ready = config !== null
+  // 对话列表也要等：非默认工作空间要从它的结果知道助手能不能用
+  const ready = config !== null && chats !== null
   const noModels = ready && enabledModels(config).length === 0
   const chat = current?.chat
   const title = listOpen ? '对话' : chat?.title || '新对话'
@@ -258,6 +287,8 @@ export function AgentPanel({
         <div className="agent-thread">
           <ChatList onPicked={() => setListOpen(false)} />
         </div>
+      ) : unsupported ? (
+        <Unsupported />
       ) : !ready ? (
         <div className="agent-center">
           <Spinner />

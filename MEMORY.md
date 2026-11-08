@@ -2,6 +2,18 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-08 21:35 #58 前端切换工作空间
+
+- **当前工作空间**：`lib/workspace.ts` 是唯一来源。`currentWorkspace()` / `setCurrentWorkspace(ws)`（模块加载时从 `location.pathname` 解析），纯函数 `apiPrefix(ws)`（`/api` 或 `/api/w/<id>`）、`routePrefix` / `workspacePath(ws, path)` / `splitWorkspacePath(pathname)`（默认空间不加前缀，其他是 `/w/<id>`，首页是 `/w/<id>`）、`storageKey(base, ws)`（默认原键名，其他加 `:<id>`）、`WORKSPACE_STORAGE`（recent、expanded、agentChat）、`localDbName(ws)`。`stores/ui` 的 `parseRoute` / `routePath` 仍是不带前缀的路径，`navigate` 和 `syncFromLocation` 负责加减前缀；设置页的 `lodeFrom` 存不带前缀的路径。
+- **API 客户端**：`api` 是全局接口加 `notesApi(() => apiPrefix(currentWorkspace()))`，笔记相关接口每次调用时读当前工作空间；`workspaceApi(ws)` 固定前缀，给同步引擎用（旧引擎在切换后收尾的请求不会打到新空间）。助手的对话接口按工作空间，供应商、模型、设置是全局的。`setWorkspaceMissingHandler`：任何请求收到 `404 workspace_not_found` 时提示并切回默认空间（地址写错、空间被删）。
+- **同步引擎换实例**：`sync/engine` 的 `export let sync` 是活绑定，`switchSyncEngine(ws)` 新建引擎、`adopt` 旧引擎的订阅（listeners 对象和 `isKnown`）、`dispose` 旧的（停止 WebSocket，不再发事件、不再改 `useSync`，进行中的补发和追赶结束后关闭 IndexedDB），已启动时立即启动新的。所有代码都通过 `sync.xxx` 访问，不要把 `sync` 存到局部变量里跨 await 使用（`vault.load` 用 `engine !== sync` 丢弃过期结果）。
+- **切换流程**（`stores/workspace` 的 `switchTo`，串行执行）：编辑器 `flush` 把没交给同步引擎的修改交给旧引擎（离线时进入旧空间的写队列）→ 写笔记树缓存 → `setCurrentWorkspace` → 关编辑器、`resetVault`、`useAgent.switchWorkspace()`、关助手弹窗和快速切换器 → `switchSyncEngine` → 导航（默认 push，后退能回到原空间；浏览器前进后退用 `history: 'none'`）→ 载入笔记树、刷新列表。`MainView` 没有按工作空间加 key（手机上会把旧笔记滑出到新空间），各组件自己订阅 `useWorkspace(s => s.current)`。`FileTree` 按工作空间加 key，展开状态各存各的。
+- **列表缓存**：`lode.workspaces`（全局键）缓存工作空间列表，离线冷启动也能显示名称。退出登录用 `clearAllLocalCaches()` 清掉所有已知工作空间的离线缓存（写队列保留）。
+- **助手**：非默认空间的对话接口返回 501，`useAgent` 设 `unsupported: true`，面板显示 `agent-unsupported` 提示和切回“笔记”的按钮，不弹错误提示。#61 实现后去掉。
+- **命令面板**：至少两个字才列命令（避免一个字模糊匹配到“切换工作空间”），命令排在笔记结果之后、“新建笔记”之前。顺带修了已有的过滤问题：标题分数 -1 加 50 后变成 49，所有笔记都会出现在任何查询里。
+- **菜单提示文字**：高亮项（强调色背景）上的 `.menu-hint` 去掉了 0.8 透明度，axe 测到对比度不足。
+- **e2e**：`ui-workspaces.spec` 在公共实例里建了一个名为“工作”的空间；后面只有 visual.spec，不受影响。重新打开快速切换器前要等它关闭动画结束，否则 AnimatePresence 复用正在退出的组件，输入框里还有上次的文字。
+
 ## 2026-11-08 21:03 #57 新建内置工作空间、按需打开
 
 - **迁移 0006**：`workspaces(id, name, vault_dir, sort, created_at)` 登记表并插入 `('default','笔记','',0,now)`；同时加 `api_tokens.workspace_id`、`audit_log.workspace_id`（默认 `'default'`），#59 不用再迁移。`index.db` 和 `app.db` 跑同一套迁移，所以 `index.db` 里也有一行 default 登记（没人读）。约定写在 `db` 包注释：迁移只能写结构变更和常量，不能读全局表的数据回填。新增 `db.MigrateTo(ctx, db, version)` 用来在测试里构造旧版本库；迁移前备份按库文件名命名（`app-v*.db` / `index-v*.db`）。

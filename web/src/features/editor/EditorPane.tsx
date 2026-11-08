@@ -137,6 +137,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
       isDirty: () => saverRef.current?.dirty ?? false,
       saveSoon: () => saverRef.current?.kick(),
       discardPending: () => saverRef.current?.reset() ?? null,
+      flush: () => saverRef.current?.flush() ?? Promise.resolve(),
     }
     editorBridge.current = bridge
 

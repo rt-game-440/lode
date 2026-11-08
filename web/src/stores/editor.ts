@@ -30,6 +30,8 @@ export interface EditorBridge {
   saveSoon: () => void
   /** 丢弃尚未交给同步引擎的修改，返回被丢弃的全文（没有则为 null） */
   discardPending: () => string | null
+  /** 立即把尚未交给同步引擎的修改交出去（切换工作空间前调用；离线时进入写队列） */
+  flush: () => Promise<void>
 }
 
 export const editorBridge: { current: EditorBridge | null } = { current: null }
