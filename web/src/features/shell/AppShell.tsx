@@ -1,3 +1,4 @@
+import { PanelLeft, PanelRight } from 'lucide-react'
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react'
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { Drawer } from '../../components/Drawer'
@@ -18,6 +19,7 @@ import { ShortcutsDialog, isTypingTarget } from './ShortcutsDialog'
 import { MobileStack } from './MobileStack'
 import { SidebarResizer } from './SidebarResizer'
 import { PanelEdgesContext, usePanelMotion } from './panelMotion'
+import { PanelToggle, PanelToggleProvider, usePanelToggle } from './PanelToggle'
 import { springPanel } from '../../styles/tokens/motion'
 import './shell.css'
 
@@ -218,29 +220,57 @@ function DesktopShell({ route, rightInline, rightId }: { route: Route; rightInli
   const rightX = useTransform(() => rW.get() - right.edge.get())
   const edges = useMemo(() => ({ left: left.edge, right: right.edge }), [left.edge, right.edge])
 
+  // 收起按钮沿面板边缘移动，收起后停在编辑区标题栏同侧的角上（#19）。右栏按钮只在笔记页出现
+  const toggleSidebar = useUI((s) => s.toggleSidebar)
+  const rightOpen = useUI((s) => s.rightOpen)
+  const toggleRight = useUI((s) => s.toggleRight)
+  const leftToggle = usePanelToggle('left', left.edge, sidebarOpen)
+  const rightToggle = usePanelToggle('right', right.edge, rightInline)
+  const hasRightToggle = route.view === 'note'
+  const toggles = useMemo(
+    () => ({ cover: { left: leftToggle.cover, right: rightToggle.cover }, right: hasRightToggle }),
+    [leftToggle.cover, rightToggle.cover, hasRightToggle],
+  )
+
   return (
     <PanelEdgesContext.Provider value={edges}>
-      <div className="shell">
-        <motion.div
-          className="shell-sidebar"
-          style={{ x: sbX, width: sbW, visibility: left.visible ? 'visible' : 'hidden' }}
-          inert={!sidebarOpen}
-          data-testid="shell-sidebar"
-        >
-          <Sidebar />
-        </motion.div>
-        {sidebarOpen && left.visible && <SidebarResizer width={sbW} x={left.edge} />}
-        <motion.main className="shell-main" style={{ left: left.edge, right: right.edge }}>
-          <MainView mobile={false} route={route} contextNoteId={rightId} />
-        </motion.main>
-        <motion.div
-          className="shell-right"
-          style={{ x: rightX, width: rW, visibility: right.visible ? 'visible' : 'hidden' }}
-          inert={!rightInline}
-        >
-          {right.visible && <RightPanel id={rightId} />}
-        </motion.div>
-      </div>
+      <PanelToggleProvider value={toggles}>
+        <div className="shell">
+          <motion.div
+            className="shell-sidebar"
+            style={{ x: sbX, width: sbW, visibility: left.visible ? 'visible' : 'hidden' }}
+            inert={!sidebarOpen}
+            data-testid="shell-sidebar"
+          >
+            <Sidebar />
+          </motion.div>
+          {sidebarOpen && left.visible && <SidebarResizer width={sbW} x={left.edge} />}
+          {/* 放在侧栏和主区域之间：Tab 顺序上紧挨编辑区标题栏之前 */}
+          <PanelToggle
+            toggle={leftToggle}
+            label={sidebarOpen ? '隐藏侧栏 (Ctrl+\\)' : '显示侧栏 (Ctrl+\\)'}
+            onClick={() => toggleSidebar()}
+          >
+            <PanelLeft size={18} />
+          </PanelToggle>
+          <motion.main className="shell-main" style={{ left: left.edge, right: right.edge }}>
+            <MainView mobile={false} route={route} contextNoteId={rightId} />
+          </motion.main>
+          {/* 放在主区域和右栏之间：Tab 顺序上紧挨右栏标签之前 */}
+          {hasRightToggle && (
+            <PanelToggle toggle={rightToggle} label={rightOpen ? '隐藏右栏' : '显示右栏'} onClick={() => toggleRight()}>
+              <PanelRight size={18} />
+            </PanelToggle>
+          )}
+          <motion.div
+            className="shell-right"
+            style={{ x: rightX, width: rW, visibility: right.visible ? 'visible' : 'hidden' }}
+            inert={!rightInline}
+          >
+            {right.visible && <RightPanel id={rightId} />}
+          </motion.div>
+        </div>
+      </PanelToggleProvider>
     </PanelEdgesContext.Provider>
   )
 }

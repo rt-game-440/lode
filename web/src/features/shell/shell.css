@@ -65,6 +65,34 @@
   cursor: col-resize;
 }
 
+/* 侧栏 / 右栏的收起按钮：浮在三栏之上，和标题栏垂直居中；
+   离窗口边缘一个内边距，多出来的水平位移由 PanelToggle.tsx 逐帧给出（transform） */
+.panel-toggle {
+  position: absolute;
+  top: env(safe-area-inset-top);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  height: var(--bar-height);
+}
+.panel-toggle.is-left {
+  left: var(--space-2);
+}
+.panel-toggle.is-right {
+  right: var(--space-2);
+}
+/* 面板标题行里按钮的占位（尺寸来自 .icon-btn-md），按钮浮在它上面 */
+.panel-toggle-anchor {
+  display: block;
+  flex: none;
+  pointer-events: none;
+}
+/* 主区域标题栏里给停在角上的按钮让位，宽度逐帧变化 */
+.panel-toggle-slot {
+  flex: none;
+  align-self: stretch;
+}
+
 /* ---- 手机单栏导航栈 ---- */
 .shell.is-mobile {
   /* 键盘弹出时跟随可视区域（--vv-* 由 lib/viewport.ts 设置），编辑器和工具栏不被遮挡 */
