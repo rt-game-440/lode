@@ -177,7 +177,7 @@
 
 - #64 文档与验收收尾：SPEC 新增“工作空间”一节和阶段表第 7 行，`AGENTS.md` 补阶段 7 = #54 的例外、新 e2e spec、`WORKSPACES=`、`backup-smoke`；`docs/workspaces.md` 改为已实现并更正字段名；CHANGELOG 新增 Unreleased（含全量 e2e 修复带出的产品修复：删除供应商/模型后清空默认模型、768 宽目录条不再遮挡标题、`@` 补全列表可聚焦、深色模式对比度、快速切换器筛选）；`scripts/backup-smoke.sh` / `.ps1` 取代临时脚本，证据 `docs/evidence/stage-7/backup-restore.txt`；3 级截图 `docs/screenshots/stage-7/ws-switcher-*.png`、`ws-settings-*.png`（手机 375 / 平板 768 / 桌面 1440，由 `screenshots.spec.ts` 的“截图 工作空间”用例生成，已推送 Telegram）；4 级清单 `docs/checklist/stage-7.md`（第 5–7 条为手机 PWA 切换、手机上管理并删除空间、绑定空间的 MCP token）；全量验证证据 `docs/evidence/stage-7/e2e-full.txt`、`tests.txt`。
 
-状态：代码与文档完成，待阶段 7 的 PR 上 CI 全绿并合并。
+状态：已完成。PR #65 已合并（2026-11-08）；人工验收 `docs/checklist/stage-7.md` 第 1–7 条全部通过（2026-11-11）。
 
 遗留：
 
@@ -185,7 +185,7 @@
 - 同一个外部目录被两个 Lode 实例使用无法阻止，只在 `docs/deploy.md` 里写明。
 - 助手真实供应商冒烟仍需自备 key（阶段 5 遗留，与本阶段无关）。
 
-下一步：人工验收 `docs/checklist/stage-7.md`（Obsidian 外部库交叉编辑、手机 PWA 切换与删除）；通过后合并阶段 7 的 PR。
+下一步：发布 v0.2.0（CHANGELOG 已定稿，合并后打 `v0.2.0` tag，需用户确认）。
 
 ## 发布前
 
@@ -194,4 +194,4 @@
 - 验收反馈的 13 个问题（`docs/checklist/issues.md`，父 issue #16）拆成 ticket #17–#29，由子代理按指标选模型分三波修复，PR #30–#42 已合并（2026-11-08）。
 - 第二轮验收反馈的 10 个问题（第 14–23 条，父 issue #43）拆成 ticket #44–#47，PR #48–#51 已合并，另有 PR #52 修复手机面板里 Esc 连带关闭（2026-11-08）。
 
-下一步：人工验收（阶段 1–6、修复 A–T）已全部通过；合并验收记录 PR #15 后打 `v0.1.0` tag 发版（均需用户确认）。
+已发布 v0.1.0（2026-11-08）。
