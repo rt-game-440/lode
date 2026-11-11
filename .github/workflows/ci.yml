@@ -60,7 +60,16 @@ jobs:
         run: scripts/build.sh
       - name: Playwright 冒烟
         run: |
-          pnpm -C web exec playwright install --with-deps chromium
+          # 浏览器本体从 Playwright CDN 下载，偶发失败时重试
+          for attempt in 1 2 3; do
+            pnpm -C web exec playwright install chromium && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "::warning::浏览器下载第 ${attempt} 次失败，30 秒后重试"
+            sleep 30
+          done
+          # 系统依赖走 apt。GitHub runner 上曾出现整段域名解析失败（apt 镜像不可达），
+          # 所以这里只告警不失败：浏览器能否启动，由后续冒烟测试判定
+          timeout 300 pnpm -C web exec playwright install-deps chromium || echo "::warning::系统依赖安装失败，由后续冒烟测试判定浏览器能否启动"
           pnpm -C web e2e smoke
       - name: 失败时上传 Playwright 结果
         if: failure()
@@ -123,7 +132,15 @@ jobs:
       - name: 前端依赖与 Playwright
         run: |
           pnpm -C web install --frozen-lockfile
-          pnpm -C web exec playwright install --with-deps chromium
+          # 浏览器本体从 Playwright CDN 下载，偶发失败时重试
+          for attempt in 1 2 3; do
+            pnpm -C web exec playwright install chromium && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "::warning::浏览器下载第 ${attempt} 次失败，30 秒后重试"
+            sleep 30
+          done
+          # 系统依赖走 apt，偶发不可达时只告警：浏览器能否启动，由容器冒烟判定
+          timeout 300 pnpm -C web exec playwright install-deps chromium || echo "::warning::系统依赖安装失败，由容器冒烟判定浏览器能否启动"
       - name: 发布脚本（全部平台）
         run: scripts/release.sh
       - name: 容器冒烟（compose、--memory=256m、发布二进制）
