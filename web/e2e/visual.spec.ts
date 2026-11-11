@@ -325,7 +325,7 @@ test('手机上可点区域不小于 44×44', async ({ browser }) => {
 
 test('文件树超过 2000 项时虚拟滚动，键盘导航能走到未渲染的行', async ({ browser }) => {
   test.setTimeout(120_000)
-  const dir = join(vault, '大量笔记')
+  const dir = join(vault, 'zzz大量笔记')
   mkdirSync(dir, { recursive: true })
   const N = 2500
   for (let i = 0; i < N; i++) writeFileSync(join(dir, `笔记 ${String(i).padStart(4, '0')}.md`), `第 ${i} 篇`)
@@ -336,7 +336,7 @@ test('文件树超过 2000 项时虚拟滚动，键盘导航能走到未渲染�
     .toBeGreaterThanOrEqual(N)
   const p = await c.newPage()
   await p.goto('/')
-  await p.evaluate(() => localStorage.setItem('lode.expanded', JSON.stringify(['大量笔记'])))
+  await p.evaluate(() => localStorage.setItem('lode.expanded', JSON.stringify(['zzz大量笔记'])))
   await p.reload()
   const tree = p.getByRole('tree', { name: '笔记' })
   await expect(tree.getByRole('treeitem', { name: '笔记 0000' })).toBeVisible()
@@ -353,7 +353,7 @@ test('文件树超过 2000 项时虚拟滚动，键盘导航能走到未渲染�
   await p.locator('.sidebar-body').evaluate((el) => (el.scrollTop = 0))
   await tree.getByRole('treeitem', { name: '笔记 0000' }).focus()
   for (let i = 0; i < 80; i++) await p.keyboard.press('ArrowDown')
-  await expect(p.locator(':focus')).toHaveAttribute('data-path', '大量笔记/笔记 0080.md')
+  await expect(p.locator(':focus')).toHaveAttribute('data-path', 'zzz大量笔记/笔记 0080.md')
   await expect(p.locator(':focus')).toBeInViewport()
   await c.close()
 })

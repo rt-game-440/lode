@@ -75,7 +75,9 @@ export function linkClicks(h: LinkHandlers) {
       if (!el) return false
       const pos = view.posAtDOM(el)
       const line = view.state.doc.lineAt(pos).number
+      // 渲染态表格里的链接没有“正在编辑的行”，点击总是直接打开
       const onActiveLine =
+        !el.closest('.cm-table-widget') &&
         view.hasFocus && view.state.selection.ranges.some((r) => view.state.doc.lineAt(r.head).number === line)
       const mod = e.ctrlKey || e.metaKey
       if (onActiveLine && !mod) return false
