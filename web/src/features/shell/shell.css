@@ -256,3 +256,31 @@ kbd {
     backdrop-filter: none !important;
   }
 }
+
+/* 拖入文件导入：全窗虚线描边 + 目标目录提示（不拦截指针） */
+.drop-overlay {
+  position: fixed;
+  inset: var(--space-2);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: var(--space-8);
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius-xl);
+  background: var(--color-fill-selected);
+  pointer-events: none;
+}
+
+.drop-overlay-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-elevated);
+  color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
