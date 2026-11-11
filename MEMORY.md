@@ -2,6 +2,20 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-11 20:55 拖拽文件到窗口导入并打开
+
+- **监听在 window 捕获阶段**（`import/useDropImport.tsx`）：要早于 CodeMirror，否则编辑器会把拖入的文本文件内容直接插进正文。只含图片的拖拽不接管，仍由编辑器上传成附件；冒泡阶段另有兜底，把没人处理的文件拖放设为 `dropEffect=none`，避免浏览器直接打开文件、离开应用。
+- **`webkitGetAsEntry` 必须在 drop 事件里同步取**，之后 `DataTransfer` 失效；取不到全部条目时整体退回 `dt.files`（脚本构造的 DataTransfer 就是这样）。遍历目录要循环 `readEntries` 直到空数组，并跳过 `.` 开头的目录。
+- **落点**：文件夹行 → 该文件夹，笔记行 → 它所在文件夹，其他 → 根；导入后打开计划顺序里第一篇成功的笔记（`flow.tsx` 的 `open`），导入期间切走工作空间则不跳转。
+- **e2e 无法真拖系统文件**：在页面里用 `DataTransfer` + `DragEvent` 派发；真实拖文件夹靠 `dropped.test.ts` 的假 `FileSystemEntry` 和人工清单。
+
+## 2026-11-11 20:50 从本地文档导入笔记
+
+- **纯前端导入**：浏览器读文件，逐篇（并发 3）调用现有 `POST /api/notes`（`auto_rename`），后端不改；新建本来就不进离线队列，离线导入直接报错。代码在 `web/src/features/import/`（`plan.ts` 纯函数可单测，`runImport.tsx` 执行，`pick.tsx` 选择与菜单入口）。
+- **规则**：只收 `.md/.markdown/.txt`（统一存成 `.md`）；任一路径段以 `.` 开头（`.obsidian`、`.git`）整条跳过；非法字符换成 `-`；先严格 UTF-8、失败回退 GB18030，去 BOM、保留换行；单篇上限 32 MB。
+- **入口**：侧栏头部“导入笔记”按钮（导入到根）、文件树空白处和文件夹右键菜单（导入到该处）。`webkitdirectory` 不支持时隐藏“导入文件夹”。
+- **e2e 提示**：toast 最多叠 3 条且带“查看详情”的不自动消失，断言要用本用例独有的文本，或直接轮询磁盘文件。
+
 ## 2026-11-09 00:40 全量 e2e 既有失败修复
 
 - **默认模型**：删除供应商或模型后，若 `settings.default_model` 指向的模型已不存在就清空（`agent/store.go` 的 `clearStaleDefault`），保证下一个新增模型自动成为默认。

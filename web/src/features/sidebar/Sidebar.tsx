@@ -1,4 +1,4 @@
-import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, Search, Settings, Sparkles, Sun, Trash } from 'lucide-react'
+import { FilePlus, FolderPlus, Hash, LogOut, Monitor, Moon, Search, Settings, Sparkles, Sun, Trash, Upload } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { confirmDialog } from '../../components/overlays'
 import { EmptyState, IconButton } from '../../components/ui'
@@ -7,6 +7,7 @@ import { type SidebarTab, type Theme, useUI } from '../../stores/ui'
 import { useVault } from '../../stores/vault'
 import { useSync } from '../../sync/engine'
 import { newFolder, newNote } from '../actions'
+import { openImportMenu } from '../import/pick'
 import { PanelToggleAnchor } from '../shell/PanelToggle'
 import { WorkspaceSwitcher } from '../workspace/WorkspaceSwitcher'
 import { FileTree } from './FileTree'
@@ -101,6 +102,9 @@ export function Sidebar(_props: { mobile?: boolean }) {
         {/* 当前工作空间名，点击切换或新建（原来是固定的 Lode 标题） */}
         <WorkspaceSwitcher />
         <span className="spacer" />
+        <IconButton label="导入笔记" onClick={(e) => openImportMenu(e.currentTarget, '')} data-testid="import-notes">
+          <Upload size={18} />
+        </IconButton>
         <IconButton label="新建文件夹" onClick={() => void newFolder('')}>
           <FolderPlus size={18} />
         </IconButton>

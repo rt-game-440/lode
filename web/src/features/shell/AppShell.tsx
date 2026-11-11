@@ -8,6 +8,7 @@ import { type Route, useUI } from '../../stores/ui'
 import { loadTree, syncWorkspaceFromLocation, useWorkspace } from '../../stores/workspace'
 import { sync } from '../../sync/engine'
 import { newNote } from '../actions'
+import { DropOverlay, useDropImport } from '../import/useDropImport'
 import { EditorPane } from '../editor/EditorPane'
 import { RightPanel } from '../right/RightPanel'
 import { Sidebar } from '../sidebar/Sidebar'
@@ -132,6 +133,7 @@ export function AppShell() {
 
   useRealtimeSync()
   useShortcuts()
+  useDropImport()
 
   const noteId = route.view === 'note' ? route.id : null
   // 右栏收起动画期间继续显示原来那篇笔记的内容
@@ -147,6 +149,7 @@ export function AppShell() {
       <DialogHost />
       <MenuHost />
       <ToastHost />
+      <DropOverlay />
     </>
   )
 

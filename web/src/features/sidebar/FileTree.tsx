@@ -36,6 +36,7 @@ import {
   promptRenameFolder,
   promptRenameNote,
 } from '../actions'
+import { importEntries } from '../import/pick'
 
 const DRAG_TYPE = 'application/x-lode-item'
 
@@ -233,6 +234,7 @@ function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
         openMenu({ x: e.clientX, y: e.clientY }, [
           { label: '新建笔记', icon: <FilePlus size={16} />, run: () => void newNote('') },
           { label: '新建文件夹', icon: <FolderPlus size={16} />, run: () => void newFolder('') },
+          ...importEntries(''),
         ])
       }}
     >
@@ -350,6 +352,7 @@ function menuFor(node: TreeNode): MenuEntry[] {
     return [
       { label: '新建笔记', icon: <FilePlus size={16} />, run: () => void newNote(node.path) },
       { label: '新建文件夹', icon: <FolderPlus size={16} />, run: () => void newFolder(node.path) },
+      ...importEntries(node.path),
       'separator',
       { label: '重命名', icon: <Pencil size={16} />, run: () => void promptRenameFolder(node.path) },
       { label: '删除文件夹', icon: <Trash size={16} />, danger: true, run: () => void deleteFolder(node.path) },

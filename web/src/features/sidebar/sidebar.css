@@ -332,3 +332,13 @@
     animation: none;
   }
 }
+
+/* 导入结果详情对话框里的列表 */
+.import-details {
+  max-height: 50vh;
+  margin: 0;
+  padding-left: var(--space-4);
+  overflow-y: auto;
+  font-size: 0.875rem;
+  word-break: break-all;
+}
