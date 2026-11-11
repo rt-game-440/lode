@@ -20,6 +20,8 @@ export const editorTheme = EditorView.theme({
   '.cm-content': {
     // 按笔记的页宽（editor.css 的 --note-width）
     maxWidth: 'var(--note-width, var(--editor-max-width))',
+    // 在 flex 的 .cm-scroller 里默认 min-width:auto，宽表格会把正文撑出页面；允许收缩，表格在自己的容器里横向滚动
+    minWidth: '0',
     margin: '0 auto',
     padding: 'var(--space-3) var(--space-6) 40vh',
     caretColor: 'var(--color-accent)',
@@ -144,6 +146,26 @@ export const editorTheme = EditorView.theme({
     borderRadius: 'var(--radius-md)',
   },
   '.cm-image-broken img': { display: 'none' },
+
+  // 表格：渲染态是 widget，编辑态（源码）整块等宽
+  '.cm-table-widget': { margin: 'var(--space-2) 0' },
+  '.cm-table-scroll': { overflowX: 'auto', maxWidth: '100%' },
+  '.cm-table-widget table': { borderCollapse: 'collapse', fontSize: '0.95em', lineHeight: 'var(--leading-body)' },
+  '.cm-table-widget th, .cm-table-widget td': {
+    border: '1px solid var(--color-separator-strong)',
+    padding: 'var(--space-1) var(--space-3)',
+    textAlign: 'left',
+    verticalAlign: 'top',
+    minWidth: '6em',
+    cursor: 'text',
+  },
+  '.cm-table-widget th': { backgroundColor: 'var(--color-fill)', fontWeight: 'var(--weight-semibold)' },
+  '.cm-table-raw': {
+    fontFamily: 'var(--font-mono)',
+    fontSize: '0.9em',
+    color: 'var(--color-label-secondary)',
+  },
+  '.cm-table-raw *': { color: 'inherit' },
 
   // 补全弹层
   '.cm-tooltip': {

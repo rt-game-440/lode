@@ -2,6 +2,15 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-11 21:10 编辑器里渲染 Markdown 表格
+
+- **块级装饰必须由 StateField 提供**（`editor/cm/tablePreview.ts`）：CodeMirror 不允许 ViewPlugin 给出 block 装饰，所以没有改 `livePreview.ts`（ViewPlugin），表格单独一个 field。只渲染顶层表格，引用 / 列表里的嵌套表格保持源码（避免吃掉 `>` 前缀）。
+- **源码 / 渲染的切换看“用户是否操作过”**：笔记打开时光标默认在正文开头并自动聚焦，如果表格正好在开头会一直显示源码。所以 `interaction` field 记录 `focused` 与 `engaged`（出现过 select / input / delete / move / undo / redo 用户事件），两者都为真且选区与表格相交才切源码；整表被选中（Ctrl+A）仍保持渲染。
+- **widget 的 `ignoreEvent()` 要返回 false**：返回 true 时 CodeMirror 的 `domEventHandlers`（包括 `linkClicks`）收不到 widget 内的事件。单元格位置存相对表格起点的偏移（`data-off`），点击时用 `view.posAtDOM(widget)` 换算，这样表格上方改动时 widget 不用重建。
+- **方向键越过 widget**：垂直移动会直接跳过整块 widget，所以加了高优先级的 ArrowDown / ArrowUp，紧挨表格的那一行按键时把光标放进表格。
+- **宽表格**：`.cm-content` 在 flex 的 `.cm-scroller` 里默认 `min-width:auto`，宽表格会撑出页面，要设 `min-width:0`，表格在 `.cm-table-scroll` 里横向滚动。
+- **e2e 笔记名要排在“笔记 N”前面**：中文排序下 `tbl-*` 这类拉丁名排在“笔记”（pinyin bi）之后，会挤掉 visual.spec 滚到底的断言；本次 e2e 笔记用 `a-` 前缀。`split-view` 的逐帧采样用例在整套串行跑时偶发失败，单独重跑通过。
+
 ## 2026-11-11 20:55 拖拽文件到窗口导入并打开
 
 - **监听在 window 捕获阶段**（`import/useDropImport.tsx`）：要早于 CodeMirror，否则编辑器会把拖入的文本文件内容直接插进正文。只含图片的拖拽不接管，仍由编辑器上传成附件；冒泡阶段另有兜底，把没人处理的文件拖放设为 `dropEffect=none`，避免浏览器直接打开文件、离开应用。

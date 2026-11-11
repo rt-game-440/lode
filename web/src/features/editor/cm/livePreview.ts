@@ -65,7 +65,7 @@ class RuleWidget extends WidgetType {
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i
 
-class ImageWidget extends WidgetType {
+export class ImageWidget extends WidgetType {
   constructor(
     readonly sources: string[],
     readonly alt: string,
@@ -98,7 +98,7 @@ class ImageWidget extends WidgetType {
 }
 
 /** 嵌入目标对应的候选 URL：带目录的按 vault 路径，否则依次尝试笔记同目录、根目录和 attachments/。 */
-function embedSources(target: string, notePath: string): string[] {
+export function embedSources(target: string, notePath: string): string[] {
   const t = target.replace(/^\.?\//, '')
   if (t.includes('/')) return [fileUrl(t)]
   const dir = dirname(notePath)
@@ -106,7 +106,7 @@ function embedSources(target: string, notePath: string): string[] {
   return [...new Set(list)].map(fileUrl)
 }
 
-function imageSources(url: string, notePath: string): string[] {
+export function imageSources(url: string, notePath: string): string[] {
   if (/^(https?:|data:|blob:)/i.test(url)) return [url]
   let u = url
   try {

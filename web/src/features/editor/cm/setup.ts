@@ -10,6 +10,7 @@ import { noteAppearance } from './appearance'
 import { type LinkCandidate, type LinkHandlers, autoCloseWikiLink, imagePaste, linkClicks, wikiLinkCompletion } from './extras'
 import { FORMAT_ACTIONS } from './formatActions'
 import { type PreviewContext, livePreview } from './livePreview'
+import { tablePreview } from './tablePreview'
 import { editorHighlight, editorTheme } from './theme'
 import { wikiLinkSyntax } from './wikilinkSyntax'
 
@@ -42,6 +43,7 @@ export function editorExtensions(env: EditorEnv): Extension[] {
     autoCloseWikiLink,
     autocompletion({ override: [wikiLinkCompletion(env.candidates)], icons: false, activateOnTyping: true }),
     livePreview(env),
+    tablePreview(env),
     noteAppearance((tr) => !!tr.annotation(remoteSync), env.onAppearance),
     linkClicks(env),
     imagePaste(env.upload, env.onUploadError),
