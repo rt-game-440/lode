@@ -162,7 +162,7 @@ class TableWidget extends WidgetType {
 
 /** 选区是否让这个表格进入源码状态：有焦点且用户操作过，且某个选区与表格相交（整表被选中时仍保持渲染）。 */
 function isEditing(state: EditorState, from: number, to: number, focused: boolean): boolean {
-  if (!focused) return false
+  if (!focused || state.readOnly) return false
   return state.selection.ranges.some((r) => {
     if (r.to < from || r.from > to) return false
     return r.empty || r.from > from || r.to < to
@@ -196,6 +196,8 @@ function build(state: EditorState, ctx: PreviewContext): DecorationSet {
 const cellClick = EditorView.domEventHandlers({
   mousedown(e, view) {
     if (e.button !== 0) return false
+    // 浏览模式：表格始终是渲染态，单元格不切源码
+    if (view.state.readOnly) return false
     const el = e.target as HTMLElement
     if (el.closest('.cm-wikilink, .cm-md-link, .cm-tag')) return false
     const cell = el.closest<HTMLElement>('.cm-table-widget td, .cm-table-widget th')
@@ -223,7 +225,7 @@ export function tablePreview(ctx: PreviewContext) {
   const enter = (dir: 1 | -1) => (view: EditorView) => {
     const { state } = view
     const sel = state.selection.main
-    if (!sel.empty) return false
+    if (!sel.empty || state.readOnly) return false
     const line = state.doc.lineAt(sel.head)
     const edge = dir === 1 ? line.to + 1 : line.from - 1
     let target = -1

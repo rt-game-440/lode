@@ -139,6 +139,8 @@ export async function insertImages(
 export function imagePaste(upload: (file: File) => Promise<string>, onError: (err: unknown) => void) {
   const handle = (view: EditorView, files: File[], pos: number | null) => {
     if (!files.some((f) => f.type.startsWith('image/'))) return false
+    // 浏览模式：拖入的图片不插入（调用方已 preventDefault，不会让浏览器打开图片）
+    if (view.state.readOnly) return true
     void insertImages(view, files, upload, onError, pos)
     return true
   }

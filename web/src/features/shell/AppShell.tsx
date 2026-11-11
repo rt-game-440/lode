@@ -3,6 +3,7 @@ import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { Drawer } from '../../components/Drawer'
 import { DialogHost, MenuHost, ToastHost } from '../../components/overlays'
+import { useBrowseMode } from '../../stores/browseMode'
 import { useEditor } from '../../stores/editor'
 import { type Route, useUI } from '../../stores/ui'
 import { loadTree, syncWorkspaceFromLocation, useWorkspace } from '../../stores/workspace'
@@ -77,6 +78,10 @@ function useShortcuts() {
       } else if (key === 'n' && e.altKey) {
         e.preventDefault()
         void newNote('')
+      } else if (key === 'e' && e.shiftKey && ui.route.view === 'note') {
+        // 仅浏览 / 编辑切换；只在笔记页有意义
+        e.preventDefault()
+        useBrowseMode.getState().toggle()
       }
     }
     window.addEventListener('keydown', onKey)
