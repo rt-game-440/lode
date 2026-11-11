@@ -2,7 +2,13 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
-## 2026-11-11 21:10 编辑器里渲染 Markdown 表格
+## 2026-11-11 22:20 笔记页仅浏览模式
+
+- **只读靠 Compartment 而不是临时改 dispatch**：`browseCompartment`（`editor/cm/setup.ts`）装 `EditorState.readOnly` + `EditorView.editable(false)`。`editorRef.extensions` 不含它，create / setState 时由 EditorPane 单独带上当前值，切换用 `reconfigure`，文档和光标都不动。
+- **`readOnly` 只挡输入命令，挡不住代码直接 dispatch**：格式快捷键（`FORMAT_ACTIONS`）、图片粘贴拖入（`imagePaste`）、表格单元格点击和方向键进入表格、`revealLine` 的聚焦都要自己读 `state.readOnly` 判断。任务复选框（`toggleTask`）不拦，因为浏览时要能勾选。
+- **浏览态存内存，不进 front matter**：`stores/browseMode.ts`；每次打开笔记按 `lode.editor.browseByDefault`（默认关）重置，不跨设备同步。
+- **快捷键选 Ctrl+Shift+E**：Ctrl+E 已被行内代码占用（`formatActions.ts`），在 `AppShell.useShortcuts` 的 window 监听里处理，只在 `route.view === 'note'` 生效。
+- **浏览时隐藏会改内容的入口**：“重命名”和“外观和布局”（会写 front matter 的 `lode` 键）从更多菜单移除；“移到回收站”保留。
 
 - **块级装饰必须由 StateField 提供**（`editor/cm/tablePreview.ts`）：CodeMirror 不允许 ViewPlugin 给出 block 装饰，所以没有改 `livePreview.ts`（ViewPlugin），表格单独一个 field。只渲染顶层表格，引用 / 列表里的嵌套表格保持源码（避免吃掉 `>` 前缀）。
 - **源码 / 渲染的切换看“用户是否操作过”**：笔记打开时光标默认在正文开头并自动聚焦，如果表格正好在开头会一直显示源码。所以 `interaction` field 记录 `focused` 与 `engaged`（出现过 select / input / delete / move / undo / redo 用户事件），两者都为真且选区与表格相交才切源码；整表被选中（Ctrl+A）仍保持渲染。

@@ -35,6 +35,7 @@ export const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: s
     items: [
       { keys: [MOD, 'Z'], label: '撤销' },
       { keys: [MOD, '⇧', 'Z'], label: '重做' },
+      { keys: [MOD, '⇧', 'E'], label: '切换仅浏览 / 编辑（笔记页）' },
       { keys: ['[['], label: '插入笔记链接（带补全）' },
       { keys: [MOD, 'B'], label: '加粗（斜体 I，行内代码 E；其余见格式工具栏按钮提示）' },
       { keys: [MOD, '单击'], label: '打开正在编辑那一行里的链接（其他行直接单击）' },

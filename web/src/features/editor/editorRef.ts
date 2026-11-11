@@ -24,5 +24,6 @@ export function revealLine(line: number) {
   const n = Math.min(Math.max(1, line), view.state.doc.lines)
   const pos = view.state.doc.line(n).from
   view.dispatch({ selection: { anchor: pos }, scrollIntoView: true })
-  view.focus()
+  // 浏览模式下只滚动到位置，不抢焦点（否则会弹出键盘）
+  if (!view.state.readOnly) view.focus()
 }

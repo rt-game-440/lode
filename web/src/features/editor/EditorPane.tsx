@@ -1,6 +1,6 @@
 import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { ArrowLeft, CaseSensitive, Ellipsis, FileText, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
+import { ArrowLeft, CaseSensitive, Ellipsis, Eye, FileText, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { openMenu } from '../../components/overlays'
@@ -16,10 +16,11 @@ import { deleteNote, errorMessage, openWikiLink, renameNote } from '../actions'
 import { refreshPreview } from './cm/livePreview'
 import { sync } from '../../sync/engine'
 import { diffChangeSet, rebase } from '../../sync/textdiff'
-import { type EditorEnv, editorExtensions, remoteSync } from './cm/setup'
+import { type EditorEnv, browseCompartment, browseExtension, editorExtensions, remoteSync } from './cm/setup'
 import { editorRef, takeTitleFocus } from './editorRef'
 import { takeNoteScroll } from '../../lib/scrollMemory'
 import { useEditorPrefs } from '../../stores/editorPrefs'
+import { useBrowseMode } from '../../stores/browseMode'
 import { PanelToggleSlot } from '../shell/PanelToggle'
 import { useNoteAppearance } from '../../stores/noteAppearance'
 import { AppearancePanelHost, closeAppearancePanel, openAppearancePanel } from './AppearancePanel'
@@ -55,6 +56,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   const setAgentPopup = useUI((s) => s.setAgentPopup)
   const navigate = useUI((s) => s.navigate)
   const toast = useUI((s) => s.toast)
+  const browse = useBrowseMode((s) => s.browse)
 
   const host = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -108,7 +110,10 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
       onAppearance: (a, animate) => useNoteAppearance.getState().publish(a, animate),
     }
     const extensions = editorExtensions(env)
-    const view = new EditorView({ parent: host.current!, state: EditorState.create({ doc: '', extensions }) })
+    const view = new EditorView({
+      parent: host.current!,
+      state: EditorState.create({ doc: '', extensions: [extensions, browseCompartment.of(browseExtension(useBrowseMode.getState().browse))] }),
+    })
     viewRef.current = view
     setView(view)
     editorRef.view = view
@@ -181,22 +186,45 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         },
         isComposing: () => viewRef.current?.composing ?? false,
       })
+      // 每篇笔记打开时按“打开笔记默认浏览”设置重置浏览模式
+      const startBrowse = useEditorPrefs.getState().browseByDefault
+      useBrowseMode.getState().setBrowse(startBrowse)
       // 光标放在正文开头：front matter 里只有外观设置时它是藏起来的（cm/appearance）
-      view.setState(EditorState.create({ doc: doc.content, selection: { anchor: bodyStart(doc.content) }, extensions: editorRef.extensions }))
+      view.setState(
+        EditorState.create({
+          doc: doc.content,
+          selection: { anchor: bodyStart(doc.content) },
+          extensions: [editorRef.extensions, browseCompartment.of(browseExtension(startBrowse))],
+        }),
+      )
       // 从助手页返回同一篇笔记时回到进入前的滚动位置，其余情况回到顶部
       const restore = takeNoteScroll(id)
       scrollRef.current?.scrollTo({ top: restore ?? 0 })
       if (restore !== null) requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: restore }))
       if (takeTitleFocus(id)) {
-        titleRef.current?.focus()
-        titleRef.current?.select()
-      } else if (!mobile) {
+        if (!startBrowse) {
+          titleRef.current?.focus()
+          titleRef.current?.select()
+        }
+      } else if (!mobile && !startBrowse) {
         view.focus()
       }
     }
     loadedFor.current = { id, version: docVersion }
     useEditor.getState().setHeadings(extractHeadings(doc.content))
   }, [doc, docVersion, id, mobile])
+
+  // 切换浏览 / 编辑：原地 reconfigure，文档、光标和滚动位置都不变
+  useLayoutEffect(() => {
+    const view = viewRef.current
+    if (!view || view.state.readOnly === browse) return
+    view.dispatch({ effects: browseCompartment.reconfigure(browseExtension(browse)) })
+    if (browse) {
+      // 收起键盘（手机）并关掉会改写 front matter 的外观面板
+      view.contentDOM.blur()
+      closeAppearancePanel()
+    }
+  }, [browse])
 
   // 笔记列表变化后刷新链接的存在状态
   useEffect(() => {
@@ -243,6 +271,11 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         <div className="editor-crumb">{note && dirname(note.path) ? dirname(note.path).split('/').join(' / ') : ''}</div>
         <span className="spacer" />
         <SaveIndicator status={status} error={error} onRetry={() => void saverRef.current?.flush()} />
+        {note && (
+          <IconButton label="仅浏览" active={browse} onClick={() => useBrowseMode.getState().toggle()} data-testid="browse-toggle">
+            <Eye size={18} />
+          </IconButton>
+        )}
         <IconButton label="助手" active={agentPopup} onClick={() => setAgentPopup(!agentPopup)} data-testid="open-agent-popup">
           <Sparkles size={18} />
         </IconButton>
@@ -258,14 +291,24 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
               const anchor = e.currentTarget
               openMenu(anchor, [
                 {
-                  label: '重命名',
-                  icon: <Pencil size={16} />,
-                  run: () => {
-                    titleRef.current?.focus()
-                    titleRef.current?.select()
-                  },
+                  label: browse ? '切换到编辑' : '切换到仅浏览',
+                  icon: <Eye size={16} />,
+                  run: () => useBrowseMode.getState().toggle(),
                 },
-                { label: '外观和布局', icon: <CaseSensitive size={16} />, submenu: true, run: () => openAppearancePanel(anchor) },
+                // 浏览模式下不提供会改动笔记内容（标题、front matter 里的外观设置）的入口
+                ...(browse
+                  ? []
+                  : [
+                      {
+                        label: '重命名',
+                        icon: <Pencil size={16} />,
+                        run: () => {
+                          titleRef.current?.focus()
+                          titleRef.current?.select()
+                        },
+                      },
+                      { label: '外观和布局', icon: <CaseSensitive size={16} />, submenu: true, run: () => openAppearancePanel(anchor) },
+                    ]),
                 'separator',
                 { label: '移到回收站', icon: <Trash size={16} />, danger: true, run: () => void deleteNote(note) },
               ])
@@ -277,7 +320,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         {!mobile && <PanelToggleSlot side="right" />}
       </header>
 
-      {!mobile && showToolbar && view && showEditor && (
+      {!mobile && showToolbar && view && showEditor && !browse && (
         <FormatToolbar
           view={view}
           upload={uploadImage}
@@ -293,6 +336,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
             key={note.id + note.title}
             ref={titleRef}
             title={note.title}
+            readOnly={browse}
             onCommit={(v) => renameNote(note, v)}
             onEnter={() => viewRef.current?.focus()}
           />
@@ -312,7 +356,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
       <AppearancePanelHost mobile={mobile} />
       {mobile && (
         <MobileToolbar
-          view={view}
+          view={browse ? null : view}
           upload={uploadImage}
           onUploadError={(err) => toast({ message: `图片上传失败：${errorMessage(err)}`, tone: 'error' })}
         />
@@ -374,12 +418,13 @@ function SaveIndicator({ status, error, onRetry }: { status: keyof typeof STATUS
 
 interface TitleProps {
   title: string
+  /** 浏览模式下只读 */
+  readOnly: boolean
   onCommit: (v: string) => Promise<boolean>
   onEnter: () => void
 }
 
-
-const TitleInput = forwardRef<HTMLInputElement, TitleProps>(function TitleInput({ title, onCommit, onEnter }, ref) {
+const TitleInput = forwardRef<HTMLInputElement, TitleProps>(function TitleInput({ title, readOnly, onCommit, onEnter }, ref) {
   const [value, setValue] = useState(title)
   const committing = useRef(false)
   const commit = async () => {
@@ -401,6 +446,7 @@ const TitleInput = forwardRef<HTMLInputElement, TitleProps>(function TitleInput(
       aria-label="笔记标题"
       value={value}
       spellCheck={false}
+      readOnly={readOnly}
       onChange={(e) => setValue(e.target.value)}
       onBlur={() => void commit()}
       onKeyDown={(e) => {

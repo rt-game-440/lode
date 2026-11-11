@@ -3,6 +3,7 @@ import { create } from 'zustand'
 // 编辑器偏好（仅存在本机 localStorage）。与设置页的界面分开，设置页迁移时只需调用这里。
 const KEY = 'lode.editor.formatToolbar'
 const TOC_KEY = 'lode.editor.tocRail'
+const BROWSE_KEY = 'lode.editor.browseByDefault'
 
 function load(key: string, off: string): boolean {
   try {
@@ -20,6 +21,15 @@ function store(key: string, value: string) {
   }
 }
 
+/** 默认关闭的开关：只有明确存了 on 才为真。 */
+function loadOn(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === 'on'
+  } catch {
+    return false
+  }
+}
+
 interface EditorPrefs {
   /** 桌面端是否显示格式顶栏 */
   formatToolbar: boolean
@@ -27,6 +37,9 @@ interface EditorPrefs {
   /** 桌面端是否在正文右侧显示目录条（#47） */
   tocRail: boolean
   setTocRail: (show: boolean) => void
+  /** 打开笔记时是否默认进入浏览模式（默认关闭） */
+  browseByDefault: boolean
+  setBrowseByDefault: (on: boolean) => void
 }
 
 export const useEditorPrefs = create<EditorPrefs>((set) => ({
@@ -39,5 +52,10 @@ export const useEditorPrefs = create<EditorPrefs>((set) => ({
   setTocRail: (show) => {
     store(TOC_KEY, show ? 'shown' : 'hidden')
     set({ tocRail: show })
+  },
+  browseByDefault: loadOn(BROWSE_KEY),
+  setBrowseByDefault: (on) => {
+    store(BROWSE_KEY, on ? 'on' : 'off')
+    set({ browseByDefault: on })
   },
 }))

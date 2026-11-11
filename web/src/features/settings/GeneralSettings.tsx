@@ -78,9 +78,25 @@ export function EditorPage({ sub }: { sub: string[] }) {
   const setShow = useEditorPrefs((s) => s.setFormatToolbar)
   const toc = useEditorPrefs((s) => s.tocRail)
   const setToc = useEditorPrefs((s) => s.setTocRail)
+  const browseDefault = useEditorPrefs((s) => s.browseByDefault)
+  const setBrowseDefault = useEditorPrefs((s) => s.setBrowseByDefault)
   return (
     <SettingsPage sub={sub} title={SECTION_TITLE.editor}>
       <Group title="编辑">
+        <label className="settings-row">
+          <span className="settings-row-text row-stack">
+            <span className="settings-row-label">打开笔记时默认仅浏览</span>
+            <span className="settings-meta">打开笔记时直接进入仅浏览（不能改字、不弹键盘，表格和链接照常显示，任务仍可勾选），需要改时点笔记顶栏的“仅浏览”按钮。只影响这台设备。</span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={browseDefault}
+            onChange={(e) => setBrowseDefault(e.target.checked)}
+            data-testid="browse-default-switch"
+          />
+        </label>
         <label className="settings-row">
           <span className="settings-row-text row-stack">
             <span className="settings-row-label">显示格式工具栏</span>
