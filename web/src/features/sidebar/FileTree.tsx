@@ -37,8 +37,30 @@ import {
   promptRenameNote,
 } from '../actions'
 import { importEntries } from '../import/pick'
+import { ITEMS_TYPE, setDragItems } from '../transfer/drop'
+import { type SelectedEntry, normalizeSelection } from '../transfer/items'
+import { transferMenuEntries } from '../transfer/transfer'
+import type { TransferItem } from '../../api/types'
 
 const DRAG_TYPE = 'application/x-lode-item'
+
+/** 按路径找出选中的条目（已不存在的跳过）。 */
+function entriesFor(paths: Iterable<string>): SelectedEntry[] {
+  const { notes, folders } = useVault.getState()
+  const byPath = new Map(Object.values(notes).map((n) => [n.path, n]))
+  const folderSet = new Set(folders)
+  const out: SelectedEntry[] = []
+  for (const p of paths) {
+    const n = byPath.get(p)
+    if (n) out.push({ kind: 'note', path: p, id: n.id })
+    else if (folderSet.has(p)) out.push({ kind: 'folder', path: p })
+  }
+  return out
+}
+
+function itemOf(node: TreeNode): TransferItem {
+  return node.kind === 'folder' ? { kind: 'folder', path: node.path } : { kind: 'note', id: node.note.id }
+}
 
 /** 展开的文件夹按工作空间记住：默认工作空间沿用 `lode.expanded`，其他加 `:<id>`。 */
 function loadExpanded(key: string): Set<string> {
@@ -66,6 +88,9 @@ function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
   const [expanded, setExpanded] = useState(() => loadExpanded(expandedKey))
   const [focusPath, setFocusPath] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  /** 多选的路径（Ctrl/⌘ 点击切换、Shift 点击选范围；普通点击或 Esc 清空） */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
+  const anchor = useRef<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   const root = useMemo(() => buildTree(folders, Object.values(notes)), [folders, notes])
@@ -102,6 +127,64 @@ function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
 
   const virtual = useVirtualRows(listRef, rows.length, rows.length > VIRTUAL_THRESHOLD)
 
+  // 行和选中集合放进 ref，让传给 Row（memo）的回调保持不变
+  const live = useRef({ rows, selected, activePath })
+  live.current = { rows, selected, activePath }
+
+  /** 带修饰键的点击：Ctrl/⌘ 切换一行，Shift 从锚点选到这一行。 */
+  const selectClick = useCallback((path: string, shift: boolean) => {
+    const { rows, activePath } = live.current
+    if (shift) {
+      const from = anchor.current ?? activePath ?? path
+      const i = rows.findIndex((r) => r.node.path === from)
+      const j = rows.findIndex((r) => r.node.path === path)
+      if (i < 0 || j < 0) {
+        anchor.current = path
+        setSelected(new Set([path]))
+        return
+      }
+      const [lo, hi] = i < j ? [i, j] : [j, i]
+      setSelected(new Set(rows.slice(lo, hi + 1).map((r) => r.node.path)))
+      return
+    }
+    setSelected((prev) => {
+      const next = new Set(prev)
+      // 第一次 Ctrl 点击时把打开的笔记也算进来
+      if (!prev.size && activePath && activePath !== path) next.add(activePath)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+    anchor.current = path
+  }, [])
+
+  const plainClick = useCallback((path: string) => {
+    anchor.current = path
+    setSelected((s) => (s.size ? new Set() : s))
+  }, [])
+
+  /** 右键菜单或拖动作用的条目：这一行在多选里时是全部选中项，否则只有这一行。 */
+  const targetsOf = useCallback((node: TreeNode): TransferItem[] => {
+    const { selected } = live.current
+    if (selected.size > 1 && selected.has(node.path)) {
+      const items = normalizeSelection(entriesFor(selected))
+      if (items.length) return items
+    }
+    return [itemOf(node)]
+  }, [])
+
+  const menuOf = useCallback(
+    (node: TreeNode): MenuEntry[] => {
+      const items = targetsOf(node)
+      if (items.length > 1) {
+        const transfer = transferMenuEntries(items).filter((e) => e !== 'separator')
+        if (transfer.length) return [{ heading: `已选 ${items.length} 项` }, ...transfer]
+      }
+      return [...menuFor(node), ...transferMenuEntries([itemOf(node)])]
+    },
+    [targetsOf],
+  )
+
   const focusRow = (path: string) => {
     setFocusPath(path)
     // 虚拟滚动时目标行可能还没渲染：先滚过去并同步渲染，再立即聚焦。
@@ -114,6 +197,11 @@ function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape' && selected.size) {
+      e.preventDefault()
+      setSelected(new Set())
+      return
+    }
     const target = (e.target as HTMLElement).closest<HTMLElement>('[data-path]')
     if (!target) return
     const i = rows.findIndex((r) => r.node.path === target.dataset.path)
@@ -166,15 +254,20 @@ function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
   const drop = (e: DragEvent, dir: string) => {
     e.preventDefault()
     setDropTarget(null)
-    const raw = e.dataTransfer.getData(DRAG_TYPE)
+    const raw = e.dataTransfer.getData(ITEMS_TYPE) || (e.dataTransfer.getData(DRAG_TYPE) ? `[${e.dataTransfer.getData(DRAG_TYPE)}]` : '')
     if (!raw) return
-    const item = JSON.parse(raw) as DragItem
-    if (item.kind === 'note') {
-      const n = useVault.getState().notes[item.id]
-      if (n) void moveNoteTo(n, dir)
-    } else {
-      void moveFolderTo(item.path, dir)
-    }
+    const items = JSON.parse(raw) as DragItem[]
+    void (async () => {
+      // 多选拖动时逐个移动
+      for (const item of items) {
+        if (item.kind === 'note') {
+          const n = useVault.getState().notes[item.id]
+          if (n) await moveNoteTo(n, dir)
+        } else {
+          await moveFolderTo(item.path, dir)
+        }
+      }
+    })()
     if (dir) toggle(dir, true)
   }
 
@@ -207,12 +300,17 @@ function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
       row={r}
       expanded={r.node.kind === 'folder' && expanded.has(r.node.path)}
       active={r.node.kind === 'note' && r.node.note.id === activeId}
+      selected={selected.has(r.node.path)}
       tabbable={r.node.path === tabStop}
       dropping={r.node.kind === 'folder' && dropTarget === r.node.path}
       onToggle={toggle}
       onFocusPath={setFocusPath}
       onDragOverFolder={allowDrop}
       onDropFolder={drop}
+      onSelectClick={selectClick}
+      onPlainClick={plainClick}
+      menuOf={menuOf}
+      targetsOf={targetsOf}
     />
   )
 
@@ -222,6 +320,7 @@ function WorkspaceTree({ expandedKey }: { expandedKey: string }) {
       className={`tree${dropTarget === '' ? ' is-drop-root' : ''}`}
       role="tree"
       aria-label="笔记"
+      aria-multiselectable="true"
       onKeyDown={onKeyDown}
       onDragOver={(e) => allowDrop(e, '')}
       onDragLeave={(e) => {
@@ -339,12 +438,17 @@ interface RowProps {
   row: VisibleRow
   expanded: boolean
   active: boolean
+  selected: boolean
   tabbable: boolean
   dropping: boolean
   onToggle: (path: string, open?: boolean) => void
   onFocusPath: (path: string) => void
   onDragOverFolder: (e: DragEvent, dir: string) => void
   onDropFolder: (e: DragEvent, dir: string) => void
+  onSelectClick: (path: string, shift: boolean) => void
+  onPlainClick: (path: string) => void
+  menuOf: (node: TreeNode) => MenuEntry[]
+  targetsOf: (node: TreeNode) => TransferItem[]
 }
 
 function menuFor(node: TreeNode): MenuEntry[] {
@@ -369,12 +473,17 @@ const Row = memo(function Row({
   row,
   expanded,
   active,
+  selected,
   tabbable,
   dropping,
   onToggle,
   onFocusPath,
   onDragOverFolder,
   onDropFolder,
+  onSelectClick,
+  onPlainClick,
+  menuOf,
+  targetsOf,
 }: RowProps) {
   const { node, depth } = row
   const isFolder = node.kind === 'folder'
@@ -382,11 +491,17 @@ const Row = memo(function Row({
 
   const onClick = (e: MouseEvent) => {
     if (e.button !== 0) return
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      e.preventDefault()
+      onSelectClick(node.path, e.shiftKey)
+      return
+    }
+    onPlainClick(node.path)
     if (isFolder) onToggle(node.path)
     else openNote(node.note.id)
   }
 
-  const showMenu = (x: number, y: number) => openMenu({ x, y }, menuFor(node))
+  const showMenu = (x: number, y: number) => openMenu({ x, y }, menuOf(node))
 
   return (
     <div
@@ -395,11 +510,11 @@ const Row = memo(function Row({
       aria-posinset={row.posInSet}
       aria-setsize={row.setSize}
       aria-expanded={isFolder ? expanded : undefined}
-      aria-selected={active}
+      aria-selected={active || selected}
       aria-current={active ? 'page' : undefined}
       tabIndex={tabbable ? 0 : -1}
       data-path={node.path}
-      className={`tree-row${active ? ' is-active' : ''}${dropping ? ' is-drop' : ''}`}
+      className={`tree-row${active ? ' is-active' : ''}${selected ? ' is-selected' : ''}${dropping ? ' is-drop' : ''}`}
       style={{ paddingLeft: `calc(var(--space-2) + ${depth} * 1rem)` }}
       draggable
       onFocus={() => onFocusPath(node.path)}
@@ -420,8 +535,10 @@ const Row = memo(function Row({
       onDragStart={(e) => {
         const item: DragItem = isFolder ? { kind: 'folder', path: node.path } : { kind: 'note', id: node.note.id }
         e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(item))
+        // 多选时带上全部选中项：拖到别的文件夹或工作空间切换器上一起移动（#72）
+        setDragItems(e.dataTransfer, targetsOf(node))
         e.dataTransfer.setData('text/plain', node.path)
-        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.effectAllowed = 'copyMove'
       }}
       onDragOver={(e) => {
         e.stopPropagation()
