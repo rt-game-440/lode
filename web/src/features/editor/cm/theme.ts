@@ -23,7 +23,7 @@ export const editorTheme = EditorView.theme({
     // 在 flex 的 .cm-scroller 里默认 min-width:auto，宽表格会把正文撑出页面；允许收缩，表格在自己的容器里横向滚动
     minWidth: '0',
     margin: '0 auto',
-    padding: 'var(--space-3) var(--space-6) 40vh',
+    padding: 'var(--space-6) var(--space-6) 40vh',
     caretColor: 'var(--color-accent)',
   },
   '.cm-line': { padding: '0' },

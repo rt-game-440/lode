@@ -145,7 +145,7 @@ async function startSampling(p: Page, ms = 900) {
           hidden,
           lt,
           rt,
-          crumbL: document.querySelector('.editor-crumb')!.getBoundingClientRect().left,
+          crumbL: document.querySelector('.editor-heading')!.getBoundingClientRect().left,
           moreR: byLabel('更多操作')!.getBoundingClientRect().right,
           barCy: bar.top + bar.height / 2,
         })
@@ -400,7 +400,7 @@ test.describe('收起按钮（#19）', () => {
     await p.getByRole('tab', { name: '反链' }).focus()
     await p.keyboard.press('Shift+Tab')
     await expect(button(p, '隐藏右栏')).toBeFocused()
-    await p.locator('.editor-bar').getByRole('button', { name: '助手', exact: true }).focus()
+    await p.getByTestId('note-title').focus()
     await p.keyboard.press('Shift+Tab')
     await expect(button(p, '隐藏侧栏 (Ctrl+\\)')).toBeFocused()
     // Enter 收起；按钮移到编辑区左上角，焦点留在它上面，再按 Enter 展开
@@ -500,7 +500,7 @@ test.describe('收起按钮（#19）', () => {
     const shown = await rect(button(p, '显示侧栏 (Ctrl+\\)'))
     expect(shown.l).toBeCloseTo(INSET, 0)
     expect(shown.cy).toBeCloseTo(bar.cy, 0)
-    expect((await rect(p.locator('.editor-crumb'))).l).toBeGreaterThan(shown.r)
+    expect((await rect(p.locator('.editor-heading'))).l).toBeGreaterThan(shown.r)
     await p.keyboard.press('Control+Backslash')
     await expect(p.getByTestId('shell-sidebar')).toBeVisible()
     await p.waitForTimeout(700)
