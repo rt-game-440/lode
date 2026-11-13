@@ -154,9 +154,9 @@ test('外观：切换主题后首页摘要跟着变；键盘：列出快捷键�
   await expect(heading(p, '键盘')).toBeVisible()
   await expect(p.locator('.shortcut-row').first()).toBeVisible()
   await p.getByRole('button', { name: '在弹窗中查看快捷键' }).click()
-  await expect(p.getByRole('dialog')).toBeVisible()
+  await expect(p.locator('[role="dialog"]:not([data-testid="settings-dialog"])')).toBeVisible()
   await p.keyboard.press('Escape')
-  await expect(p.getByRole('dialog')).toHaveCount(0)
+  await expect(p.locator('[role="dialog"]:not([data-testid="settings-dialog"])')).toHaveCount(0)
   await c.close()
 })
 

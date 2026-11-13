@@ -9,7 +9,7 @@ import { parentTitle, settingsPath } from './stack'
 
 // 设置各级页面共用的部件：顶栏、分组卡片、可以点进去的行、复制框。
 
-export const SettingsContext = createContext({ mobile: false })
+export const SettingsContext = createContext({ mobile: false, dialog: false })
 
 /** 图标底色（tokens 里的 --color-tile-*，上面放白色图标）。 */
 export type Tone = 'azure' | 'emerald' | 'amber' | 'violet' | 'slate' | 'indigo'
@@ -27,13 +27,13 @@ export function RowIcon({ tone, children }: { tone: Tone; children: ReactNode })
  * 首页在手机上返回笔记列表；桌面端侧栏收起时，左上角让位给浮动的展开侧栏按钮（#19）。
  */
 function SettingsBar({ sub, title, actions }: { sub: string[]; title: string; actions?: ReactNode }) {
-  const { mobile } = useContext(SettingsContext)
+  const { mobile, dialog } = useContext(SettingsContext)
   const navigate = useUI((s) => s.navigate)
   const parent = parentTitle(sub)
   return (
     <header className="view-bar settings-bar">
       <div className="settings-bar-lead">
-        {!mobile && <PanelToggleSlot side="left" />}
+        {!mobile && !dialog && <PanelToggleSlot side="left" />}
         {sub.length > 0 ? (
           <button type="button" className="settings-back" aria-label={`返回${parent}`} onClick={() => settingsBack(sub)}>
             <ChevronLeft size={22} aria-hidden="true" />

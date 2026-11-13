@@ -199,7 +199,7 @@ async function doSwitch(id: string, { route = { view: 'home' }, history = 'push'
   useEditor.setState({ revs: {} })
   resetVault()
   useAgent.getState().switchWorkspace()
-  useUI.setState({ agentPopup: false, switcherOpen: false })
+  useUI.setState({ agentPopup: false, switcherOpen: false, underRoute: { view: 'home' } })
 
   // 3. 销毁旧的同步引擎，换上新工作空间的（已启动时新引擎立即连接并补发它自己的写队列）
   switchSyncEngine(id)

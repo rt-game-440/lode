@@ -165,7 +165,8 @@ test('在 token 详情页吊销后返回列表，MCP 请求返回 401', async ()
   // 详情页列出这个 token 的调用
   await expect(detail.getByRole('table')).toContainText('update_note')
   await detail.getByRole('button', { name: '吊销' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: '吊销' }).click()
+  // 设置浮窗里再弹出确认框：两个 dialog，按名称取确认框
+  await page.getByRole('dialog', { name: /吊销/ }).getByRole('button', { name: '吊销' }).click()
   await expect(page.getByText('已吊销“Playwright”')).toBeVisible()
   await expect(page).toHaveURL(/\/settings\/tokens$/)
   await expect(row).toHaveCount(0)

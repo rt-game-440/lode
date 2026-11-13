@@ -15,6 +15,7 @@ import { RightPanel } from '../right/RightPanel'
 import { Sidebar } from '../sidebar/Sidebar'
 import { QuickSwitcher } from '../switcher/QuickSwitcher'
 import { SettingsView } from '../settings/SettingsView'
+import { SettingsDialog } from '../settings/SettingsDialog'
 import { HomeView, TagView, TrashView } from '../views/Views'
 import { AgentPanel } from '../agent/AgentPanel'
 import { AgentPopup } from '../agent/AgentPopup'
@@ -107,12 +108,15 @@ function MainView({ mobile, route, contextNoteId }: { mobile: boolean; route: Ro
 }
 
 export function AppShell() {
-  const route = useUI((s) => s.route)
+  const storeRoute = useUI((s) => s.route)
+  const underRoute = useUI((s) => s.underRoute)
   const rightOpen = useUI((s) => s.rightOpen)
   const toggleRight = useUI((s) => s.toggleRight)
   const mobilePane = useUI((s) => s.mobilePane)
   const mobile = useMedia('(max-width: 767px)')
   const wide = useMedia('(min-width: 1100px)')
+  // 桌面端设置是浮窗：浮窗下面保持原来的页面（笔记、滚动位置和未保存的内容都不动）；手机上设置是全屏页面
+  const route = !mobile && storeRoute.view === 'settings' ? underRoute : storeRoute
 
   // 笔记树和工作空间列表；之后切换工作空间时由 stores/workspace 重新载入
   useEffect(() => {
@@ -182,6 +186,7 @@ export function AppShell() {
   return (
     <>
       <DesktopShell route={route} rightInline={wide && showRight} rightId={lastNoteId.current} />
+      <SettingsDialog />
       {!wide && (
         <Drawer open={showRight} onClose={closeRight} label="笔记信息">
           <RightPanel id={lastNoteId.current} onClose={closeRight} />

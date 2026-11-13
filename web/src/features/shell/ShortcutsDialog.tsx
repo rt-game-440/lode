@@ -17,7 +17,15 @@ export const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: s
       { keys: [MOD, '⇧', 'F'], label: '全文搜索' },
       { keys: [MOD, '\\'], label: '显示 / 隐藏侧栏' },
       { keys: ['?'], label: '显示本快捷键一览' },
-      { keys: ['Esc'], label: '关闭弹出层' },
+      { keys: ['Esc'], label: '关闭弹出层（设置浮窗里关闭浮窗，输入框里不关闭）' },
+    ],
+  },
+  {
+    title: '设置浮窗',
+    items: [
+      { keys: ['Backspace'], label: '返回上一级（输入框外）' },
+      { keys: [MOD, '['], label: '返回上一级' },
+      { keys: ['Esc'], label: '关闭设置浮窗' },
     ],
   },
   {

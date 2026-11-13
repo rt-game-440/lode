@@ -44,7 +44,7 @@ for (const [name, viewport, overflows] of [
     await expect(page).toHaveURL(/\/settings\/agent\/[^/]+$/)
 
     await page.getByTestId('add-model').click()
-    const dialog = page.getByRole('dialog')
+    const dialog = page.locator('[role="dialog"]:not([data-testid="settings-dialog"])')
     await expect(dialog).toBeVisible()
     await page.getByTestId('model-id').fill('overflow-reasoner')
     await page.getByTestId('model-reasoning').check()

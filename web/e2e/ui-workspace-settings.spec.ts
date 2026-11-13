@@ -56,10 +56,13 @@ const heading = (p: Page, name: string) => p.getByRole('heading', { name, level:
 const handle = (p: Page, name: string) => p.getByRole('button', { name: new RegExp(`^调整“${name}”的顺序`) })
 
 /** 侧栏切换器菜单里的工作空间名（按顺序） */
+/** 侧栏切换器的菜单项。设置是桌面浮窗，打开时下面的侧栏不可操作：另开一页读取（工作空间列表来自同一个 store 和服务器）。 */
 async function menuNames(p: Page) {
-  await switcher(p).click()
-  const names = await p.getByRole('menuitemradio').locator('.menu-label').allTextContents()
-  await p.keyboard.press('Escape')
+  const q = await p.context().newPage()
+  await q.goto('/')
+  await switcher(q).click()
+  const names = await q.getByRole('menuitemradio').locator('.menu-label').allTextContents()
+  await q.close()
   return names
 }
 
@@ -124,7 +127,7 @@ test('重命名：详情页改名后列表、侧栏切换器同步更新；名�
   await shot(p, 'ws-detail')
 
   await detail.getByTestId('workspace-rename').click()
-  const dialog = p.getByRole('dialog')
+  const dialog = p.locator('[role="dialog"]:not([data-testid="settings-dialog"])')
   await expect(dialog.getByLabel('名称')).toHaveValue('甲')
   await dialog.getByLabel('名称').fill('   ')
   await dialog.getByRole('button', { name: '保存' }).click()
@@ -144,8 +147,8 @@ test('重命名：详情页改名后列表、侧栏切换器同步更新；名�
   await expect(p.getByTestId('workspace-delete')).toBeDisabled()
   await expect(p.getByText('默认工作空间不能删除，只能改名。')).toBeVisible()
   await p.getByTestId('workspace-rename').click()
-  await p.getByRole('dialog').getByLabel('名称').fill('主库')
-  await p.getByRole('dialog').getByRole('button', { name: '保存' }).click()
+  await p.locator('[role="dialog"]:not([data-testid="settings-dialog"])').getByLabel('名称').fill('主库')
+  await p.locator('[role="dialog"]:not([data-testid="settings-dialog"])').getByRole('button', { name: '保存' }).click()
   await expect(switcher(p)).toHaveAccessibleName('工作空间：主库')
   expect(await serverNames()).toEqual(['主库', '甲甲', '乙', '丙'])
   await c.close()
@@ -269,7 +272,7 @@ test('删除非当前工作空间：确认框写清后果，目录进回收目�
   const { c, p } = await open(browser)
   await p.goto(`/settings/workspaces/${ids['甲']}`)
   await p.getByTestId('workspace-delete').click()
-  const dialog = p.getByRole('dialog')
+  const dialog = p.locator('[role="dialog"]:not([data-testid="settings-dialog"])')
   await expect(dialog).toContainText('删除工作空间“甲甲”？')
   await expect(dialog).toContainText('trash-workspaces/')
   await expect(dialog).toContainText('不会被直接删除')
@@ -318,8 +321,8 @@ test('删除当前所在的工作空间：自动回到默认工作空间，本�
   await rows(p).filter({ hasText: '丙' }).getByRole('link').click()
   await expect(p.getByTestId('workspace-detail')).toContainText('正在使用')
   await p.getByTestId('workspace-delete').click()
-  await expect(p.getByRole('dialog')).toContainText('你现在正在使用它，删除后会回到“主库”')
-  await p.getByRole('dialog').getByRole('button', { name: '删除' }).click()
+  await expect(p.locator('[role="dialog"]:not([data-testid="settings-dialog"])')).toContainText('你现在正在使用它，删除后会回到“主库”')
+  await p.locator('[role="dialog"]:not([data-testid="settings-dialog"])').getByRole('button', { name: '删除' }).click()
 
   // 回到默认工作空间（地址没有 /w/ 前缀）的“工作空间”设置页
   await expect(p).toHaveURL(/\/settings\/workspaces$/)
@@ -358,7 +361,7 @@ test('无障碍、深色、手机布局', async ({ browser }) => {
     const axe = await new AxeBuilder({ page: p }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
     expect(axe.violations.map((v) => `删除确认 ${scheme} ${v.id}：${v.nodes.map((n) => n.target.join(' ')).join('；')}`)).toEqual([])
     await shot(p, `ws-delete-confirm-${scheme}`)
-    await p.getByRole('dialog').getByRole('button', { name: '取消' }).click()
+    await p.locator('[role="dialog"]:not([data-testid="settings-dialog"])').getByRole('button', { name: '取消' }).click()
     expect((await serverList())[1].id).toBe(first.id)
     await c.close()
   }
