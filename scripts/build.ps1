@@ -4,6 +4,8 @@ param([string]$Out = "")
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Out) { $Out = Join-Path $root 'bin/lode.exe' }
+# 相对路径按调用时的目录解析（下面会切到 server 再编译）
+$Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
 $version = (git -C $root describe --tags --always --dirty 2>$null); if (-not $version) { $version = 'dev' }
 $commit = (git -C $root rev-parse --short HEAD 2>$null); if (-not $commit) { $commit = 'unknown' }
 

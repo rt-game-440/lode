@@ -2,6 +2,12 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-14 10:55 本地 CI 脚本
+
+- **`scripts/ci.sh` 的构建产物放 `bin/ci/`**：本机常驻的 8787 实例跑的就是 `bin/lode.exe`，Windows 上无法覆盖正在运行的 exe，所以本地 CI 用 `LODE_BIN` 指向 `bin/ci/lode` 跑 e2e 和基准。
+- **Go 命令一律用 `go -C server`**：不 `cd`，并行的子进程（PowerShell 版用子进程跑两组检查）不受当前目录影响。
+- **`build.sh` / `build.ps1` 的输出路径按调用目录解析**：此前传相对路径会落到 `server/` 下（脚本先 cd 到 server 再编译）。
+
 ## 2026-11-14 09:45 第三轮需求（#72、#74、#75）
 
 - **跨空间传送用新 id**：移动、复制过去的笔记都是新 id、`rev` 从 1 开始，移动保留 `created_at`；目标不存在用单独的 `404 target_workspace_not_found`，不用 `workspace_not_found`（前端收到后者会以为当前空间没了并切回默认空间）。

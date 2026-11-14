@@ -1,6 +1,7 @@
 package secret
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -33,7 +34,14 @@ func TestSealOpen(t *testing.T) {
 	if _, err := New("other").Open(c1, "prov-1"); err == nil {
 		t.Error("换了主密钥不应能解密")
 	}
-	if _, err := b.Open(c1[:len(c1)-2]+"AA", "prov-1"); err == nil {
+	// 解码后翻转最后一个字节的一位再编码回去。不能直接替换末尾字符：无填充 base64 的
+	// 末尾两个字符只表示 1 个字节，换成 "AA" 时若该字节本来是 0（1/256）就等于没改
+	raw, err := base64.RawStdEncoding.DecodeString(strings.TrimPrefix(c1, prefix))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw[len(raw)-1] ^= 1
+	if _, err := b.Open(prefix+base64.RawStdEncoding.EncodeToString(raw), "prov-1"); err == nil {
 		t.Error("篡改过的密文不应能解密")
 	}
 }
