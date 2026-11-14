@@ -47,6 +47,7 @@ func (s *Server) workspaceRoutes() []route {
 		{"GET /api/images", s.listImages},
 		{"GET /api/files/{path...}", s.serveFile},
 		{"GET /api/changes", s.changes},
+		{"POST /api/transfer", s.transfer},
 		{"GET /api/ws", s.ws},
 	}
 	if s.Agent != nil {
@@ -123,6 +124,58 @@ func apiPrefix(ws *workspace.Workspace) string {
 		return "/api"
 	}
 	return "/api/w/" + ws.ID
+}
+
+// transfer 把当前工作空间里的笔记、文件夹移动或复制到另一个工作空间（#72），见 docs/api.md。
+// 目标工作空间不存在返回 404 target_workspace_not_found（不用 workspace_not_found：前端收到它会以为当前工作空间没了），
+// 任一方的笔记目录不可用返回 503 workspace_vault_unavailable，workspace 字段是不可用的那个工作空间。
+func (s *Server) transfer(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Items           []notes.TransferItem `json:"items"`
+		TargetWorkspace string               `json:"target_workspace"`
+		TargetDir       string               `json:"target_dir"`
+		Mode            string               `json:"mode"`
+		DryRun          bool                 `json:"dry_run"`
+	}
+	if err := decode(w, r, &in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if in.Mode != "move" && in.Mode != "copy" {
+		writeError(w, http.StatusBadRequest, "bad_request", "mode 必须是 move 或 copy", nil)
+		return
+	}
+	if in.TargetWorkspace == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "需要 target_workspace", nil)
+		return
+	}
+	src := currentWorkspace(r)
+	res, err := s.Workspaces.Transfer(r.Context(), src, in.TargetWorkspace, notes.TransferOptions{
+		Items: in.Items, Dir: in.TargetDir, Move: in.Mode == "move", DryRun: in.DryRun,
+	})
+	var te *workspace.TargetError
+	switch {
+	case err == nil:
+	case errors.As(err, &te) && errors.Is(err, workspace.ErrNotFound):
+		writeError(w, http.StatusNotFound, "target_workspace_not_found", "目标工作空间不存在", nil)
+		return
+	case errors.Is(err, workspace.ErrVaultUnavailable):
+		id := src.ID
+		if te != nil {
+			id = te.ID
+		}
+		writeError(w, http.StatusServiceUnavailable, "workspace_vault_unavailable",
+			"工作空间的笔记文件夹不可用（已被移动、删除或所在磁盘未挂载），恢复后再试", map[string]any{"workspace": id})
+		return
+	default:
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode": in.Mode, "dry_run": in.DryRun, "source_workspace": src.ID, "target_workspace": in.TargetWorkspace,
+		"target_dir": in.TargetDir, "items": res.Items, "notes": res.Notes, "attachments": res.Attachments,
+		"renamed": res.Renamed, "broken_links": res.BrokenLinks, "trashed": res.Trashed,
+	})
 }
 
 // ---- 工作空间登记（全局接口）----

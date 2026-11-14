@@ -15,7 +15,7 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
   - 两边改动重叠，或 `base_rev` 那一版已被清理：服务器版本不变，请求内容另存为冲突副本 `名称.conflict-<设备名>-<yyyyMMdd-HHmmss>.md`（与原笔记同目录，设备名取 `X-Device-Name`，缺省为“未知设备”），返回 `409 conflict`，带 `current_rev`、`conflict_id`、`conflict_path`。
   - 阶段 1 中 `base_rev` 过期一律返回 409；阶段 2 起只有无法自动合并时才返回 409，且 409 意味着请求内容已经保存在冲突副本里，客户端不需要重试。
 - **请求体上限**：JSON 32 MB；附件 20 MB。
-- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。工作空间的列出和新建见下文“工作空间”一节，设计见 [workspaces.md](workspaces.md)。助手对话（`agent/chats*`）按工作空间隔离（阶段 7，见下文“助手”一节）。
+- **工作空间前缀**（阶段 7）：按工作空间区分的接口同时挂在 `/api/<原路径>` 和 `/api/w/{ws}/<原路径>` 下，不带前缀表示默认工作空间（id `default`），两者结果完全一样。涉及：`notes*`、`tree`、`folders*`、`search`、`tags*`、`images`、`files/*`、`attachments`、`trash*`、`changes`、`ws`、`transfer`、`agent/chats*`。其余接口（鉴权、通行密钥、token、审计、助手供应商/模型/设置、API key 保护、健康检查）是全局的，不挂前缀。工作空间不存在时返回 `404 workspace_not_found`（响应体另带 `"error": "workspace_not_found"`）；未登录时先返回 401。工作空间的列出和新建见下文“工作空间”一节，设计见 [workspaces.md](workspaces.md)。助手对话（`agent/chats*`）按工作空间隔离（阶段 7，见下文“助手”一节）。
 
 ### 错误格式
 
@@ -33,7 +33,8 @@ REST 接口（阶段 1）、实时同步接口（阶段 2）和 API token / MCP�
 | 404 | `not_found` | 笔记、文件夹、回收站条目或文件不存在 | |
 | 400 | `vault_dir_<原因>` | 新建工作空间时 `vault_dir` 不合法，原因见“工作空间”一节的“外部目录” | `reason`（`<原因>`） |
 | 404 | `workspace_not_found` | `/api/w/{ws}/...` 里的工作空间不存在 | `error`（同 `code`） |
-| 503 | `workspace_vault_unavailable` | `/api/w/{ws}/...` 的外部工作空间的笔记文件夹不存在（被删、被移动或所在磁盘没挂载）；不会代为重建 | |
+| 404 | `target_workspace_not_found` | `transfer` 的目标工作空间不存在（#72） | |
+| 503 | `workspace_vault_unavailable` | `/api/w/{ws}/...` 的外部工作空间的笔记文件夹不存在（被删、被移动或所在磁盘没挂载）；不会代为重建 | `transfer` 时带 `workspace`（不可用的空间） |
 | 409 | `conflict` | `base_rev` 过期且无法自动合并，请求内容已另存为冲突副本（PATCH 在 base 版本缺失时不生成副本） | `current_rev`、`conflict_id`、`conflict_path` |
 | 409 | `exists` | 目标路径已被占用 | |
 | 409 | `already_initialized` | 密码已经设置过 | |
@@ -167,6 +168,61 @@ RP ID 取请求的 `Host`（不含端口），origin 是 `协议://Host`；直�
 删除外部工作空间：**外部目录里的笔记文件一个都不动**，只有 `workspaces/<id>/`（索引、回收站里已删除的笔记、助手对话）和内置空间一样移到 `trash-workspaces/<id>-<时间>/`，绑定它的 token 作废。删除后可以重新接入同一个文件夹。
 
 删除内置工作空间时：先让它不能再被访问，停掉文件监听和后台任务、关闭 `index.db`，再把整个 `workspaces/<id>/` 目录移到数据目录的 `trash-workspaces/<id>-<yyyyMMdd-HHmmss>/`（不直接删除，可以在服务器上手动取回），从登记表移除，并删除绑定它的所有 API token（立即返回 401）。该空间上还没断开的 WebSocket 会被关闭。目录移动失败时整体回滚，空间保持可用。
+
+### 在工作空间之间移动、复制（#72）
+
+按工作空间区分的接口：挂在 `/api/transfer` 和 `/api/w/{src}/transfer` 下，`{src}` 是来源工作空间。
+
+| 方法 | 路径 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| POST | `/api/w/{src}/transfer` | `{"items":[{"kind":"note","id":"…"}\|{"kind":"folder","path":"a/b"}],"target_workspace":"k3f9a2","target_dir":"收件","mode":"move"\|"copy","dry_run":false}` | `200 TransferResult`，见下文 |
+
+- `items`：笔记按 `id`（也可以给 `path`），文件夹按 `path`。重复项和已选文件夹里的条目自动去掉。文件夹连同其中的全部内容一起处理，包括子文件夹、笔记和非 Markdown 文件。以 `.` 开头的文件和符号链接跳过。
+- `target_dir`：目标空间里的文件夹，空表示根目录，不存在时自动创建；它是已有文件时返回 `400 bad_request`。
+- **整体原子**：所有文件先写进目标 vault 根目录下的隐藏临时目录 `.lode-transfer-<id>/`（文件监听和对账都忽略以 `.` 开头的路径），再逐项改名到最终位置，索引在同一个事务里提交。任一步失败都会撤掉已放到目标里的文件、回滚索引和临时目录，目标空间不留下部分结果。移动时已经进回收站的源笔记也会被恢复。
+- **重名自动改名**：规则和导入相同。笔记、文件夹改成 `名称 1`、`名称 2`…；附件改成 `名称-1.png`…，并改写引用它的链接。`renamed` 列出全部改了名的条目。
+- **附件跟着走**：笔记里引用的非 Markdown 文件也会复制过去，例如 `![[图.png]]`、`![[attachments/图.png]]`、`![x](attachments/%E5%9B%BE.png)`。查找规则与前端一致：带目录的按 vault 路径；只有文件名的依次找笔记同目录、根目录和 `attachments/`。
+  - 默认放在目标空间里同一相对位置，链接不用改。
+  - 目标里已有内容相同的文件时直接复用。
+  - 同名但内容不同时，附件改名为 `名称-1.png`。改名后仍放在原来的目录；原来在根目录的放到 `attachments/`。引用它的链接改写成完整路径。
+  - 移动不删除源空间里的附件，它们可能还被别的笔记引用。所选文件夹里的非 Markdown 文件和文件夹一起处理：移动时移到源空间回收站的 `trash/folders/`，与删除文件夹相同。
+- **移动**：
+  - 源笔记逐篇进源空间的回收站，可以恢复。历史版本不随笔记移动：目标里是新笔记，id 是新的，`rev` 从 1 开始，`created_at` 保留原值。
+  - 源空间里其他笔记指向被移走笔记的链接不改写，会失效，数量见 `broken_links`。
+  - 复制时源空间不变，`broken_links` 为 0。
+- **变更事件**：目标空间为每篇新笔记产生 `upsert`，移动时源空间为每篇被移走的笔记产生 `delete`，各自推送给订阅该空间的 WebSocket。
+- **`dry_run: true`**：只规划不写入，返回同样的结构（`renamed`、`broken_links` 等），界面用它在确认框里提示“其他笔记里指向它的 N 个链接会失效”。
+- **外部目录**：外部目录工作空间可以作为来源或目标，只往外部目录里写笔记和附件；临时目录在提交后删除。
+
+`TransferResult`：
+
+```ts
+type TransferRename = { kind: 'note' | 'folder' | 'attachment'; from: string; to: string }  // from 是源路径，to 是目标路径
+type TransferResult = {
+  mode: 'move' | 'copy'
+  dry_run: boolean
+  source_workspace: string
+  target_workspace: string
+  target_dir: string
+  items: TransferRename[]       // 每个顶层条目的去向
+  notes: { from_id: string; from_path: string; id: string; path: string }[]  // 每篇笔记（含文件夹里的）
+  attachments: TransferRename[] // 复制过去的附件（复用的同内容文件不在内）
+  renamed: TransferRename[]     // 因重名改了名的条目和附件
+  broken_links: number          // 移动时会失效的链接数（源空间里其他笔记中指向被移走笔记的链接次数）
+  trashed: number               // 移动时进源空间回收站的笔记数
+}
+```
+
+错误：
+
+| HTTP | code | 说明 |
+| --- | --- | --- |
+| 400 | `bad_request` | `mode` 不是 `move` / `copy`；缺少 `target_workspace`；目标与来源相同；`items` 为空；`kind` 不合法；`target_dir` 是文件 |
+| 400 | `invalid_path` | `target_dir` 或条目路径不合法 |
+| 404 | `not_found` | 条目里的笔记或文件夹不存在 |
+| 404 | `target_workspace_not_found` | 目标工作空间不存在。不用 `workspace_not_found`，那个表示 URL 里的来源空间不存在 |
+| 404 | `workspace_not_found` | `/api/w/{src}/...` 里的来源空间不存在 |
+| 503 | `workspace_vault_unavailable` | 来源或目标的外部目录不可用，响应带 `workspace`（不可用的那个空间的 id）；什么都不改 |
 
 ## 笔记
 
