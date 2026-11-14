@@ -5,6 +5,30 @@ import (
 	"testing"
 )
 
+func TestParseURLLinks(t *testing.T) {
+	src := "---\nimg: ![x](fm.png)\n---\n![图](attachments/a%20b.png) 和 [文档](<docs/说明 书.pdf> \"标题\")\n" +
+		"`![不算](code.png)` [外链](https://example.com/x_(y)) ![](img(1).png)\n```\n![不算](fence.png)\n```\n"
+	got := ParseURLLinks(src)
+	want := []struct {
+		url          string
+		angle, image bool
+	}{
+		{"attachments/a%20b.png", false, true},
+		{"docs/说明 书.pdf", true, false},
+		{"https://example.com/x_(y)", false, false},
+		{"img(1).png", false, true},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for i, w := range want {
+		g := got[i]
+		if g.URL != w.url || g.Angle != w.angle || g.Image != w.image || src[g.Start:g.End] != w.url {
+			t.Errorf("#%d = %+v，期望 %+v", i, g, w)
+		}
+	}
+}
+
 func TestParseLinks(t *testing.T) {
 	src := "开头 [[笔记 A]] 和 [[文件夹/笔记 B|别名]]\n" +
 		"![[attachments/图.png]] 与 [[C.md#小节]] [[D#小节|显示]]\n" +

@@ -317,6 +317,17 @@
 .menu-item:focus-visible svg {
   color: inherit;
 }
+.menu-item:disabled,
+.menu-item:disabled:hover {
+  background: transparent;
+  color: var(--color-label-tertiary);
+  cursor: default;
+}
+.menu-item:disabled svg,
+.menu-item:disabled:hover svg,
+.menu-item:disabled:hover .menu-hint {
+  color: var(--color-label-tertiary);
+}
 .menu-item-chevron {
   margin-left: auto;
 }

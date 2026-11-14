@@ -73,6 +73,40 @@ export interface MoveResult {
   updated: Note[]
 }
 
+/** 跨工作空间移动或复制的条目（#72）：笔记按 id，文件夹按路径。 */
+export type TransferItem = { kind: 'note'; id: string } | { kind: 'folder'; path: string }
+
+export interface TransferRequest {
+  items: TransferItem[]
+  target_workspace: string
+  /** 目标文件夹，空为根目录 */
+  target_dir?: string
+  mode: 'move' | 'copy'
+  /** 只规划不执行：返回会改名的条目和会失效的链接数 */
+  dry_run?: boolean
+}
+
+/** 一项路径变化：from 是源空间里的路径，to 是目标空间里的路径。 */
+export interface TransferRename {
+  kind: 'note' | 'folder' | 'attachment'
+  from: string
+  to: string
+}
+
+export interface TransferResult {
+  mode: 'move' | 'copy'
+  dry_run: boolean
+  source_workspace: string
+  target_workspace: string
+  target_dir: string
+  items: TransferRename[]
+  notes: { from_id: string; from_path: string; id: string; path: string }[]
+  attachments: TransferRename[]
+  renamed: TransferRename[]
+  broken_links: number
+  trashed: number
+}
+
 export interface AuthStatus {
   initialized: boolean
   authenticated: boolean

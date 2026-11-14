@@ -350,3 +350,86 @@ func frontmatterTags(src string) []string {
 	}
 	return out
 }
+
+// URLLink 是一个 Markdown 行内链接 [文字](目标) 或图片 ![说明](目标) 的目标部分。偏移都是字节偏移。
+type URLLink struct {
+	URL        string // 原样的目标（不含 <> 和标题）
+	Start, End int    // URL 在原文中的范围
+	Angle      bool   // 目标写在 <...> 里
+	Image      bool   // 是否是 ![...](...)
+	Line       int    // 1 起始的行号
+}
+
+// ParseURLLinks 提取正文中的行内链接和图片目标，跳过 frontmatter、围栏代码块和行内代码。
+// 只做够用的解析：不处理跨行的链接和引用式链接 [文字][id]。
+func ParseURLLinks(src string) []URLLink {
+	var out []URLLink
+	scanLines(src, true, func(l line) {
+		s := l.text
+		spans := codeSpans(s)
+		i := 0
+		for i < len(s) {
+			idx := strings.Index(s[i:], "](")
+			if idx < 0 {
+				return
+			}
+			p := i + idx
+			open := strings.LastIndexByte(s[:p], '[')
+			if inSpans(p, spans) || open < 0 {
+				i = p + 2
+				continue
+			}
+			j := p + 2
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t') {
+				j++
+			}
+			var us, ue int
+			angle := false
+			if j < len(s) && s[j] == '<' {
+				k := strings.IndexByte(s[j+1:], '>')
+				if k < 0 {
+					i = p + 2
+					continue
+				}
+				us, ue, angle = j+1, j+1+k, true
+				j = ue + 1
+			} else {
+				depth, k := 0, j
+			scan:
+				for k < len(s) {
+					switch s[k] {
+					case '\\':
+						k += 2
+						continue
+					case ' ', '\t':
+						break scan
+					case '(':
+						depth++
+					case ')':
+						if depth == 0 {
+							break scan
+						}
+						depth--
+					}
+					k++
+				}
+				if k > len(s) {
+					k = len(s)
+				}
+				us, ue = j, k
+				j = k
+			}
+			end := strings.IndexByte(s[j:], ')')
+			if end < 0 || ue <= us {
+				i = p + 2
+				continue
+			}
+			out = append(out, URLLink{
+				URL: s[us:ue], Start: l.start + us, End: l.start + ue, Angle: angle,
+				Image: open > 0 && s[open-1] == '!', Line: l.no,
+			})
+			i = j + end + 1
+		}
+	})
+	return out
+}
