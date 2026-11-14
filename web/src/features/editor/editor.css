@@ -21,14 +21,59 @@
   position: relative;
   z-index: var(--z-bar);
 }
+/* 顶栏左侧“路径 / 标题”：路径弱化并最先被截断，标题其次；悬停显示完整路径 */
+.editor-heading {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding-left: var(--space-1);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.editor-heading.is-editing {
+  flex: 1 1 auto;
+  max-width: 32rem;
+}
 .editor-crumb {
   min-width: 0;
-  padding-left: var(--space-1);
+  flex: 0 100 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-footnote);
+  color: var(--color-label-tertiary);
+}
+.editor-title {
+  min-width: 3ch;
+  flex: 0 1 auto;
+  margin: 0;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-footnote);
-  color: var(--color-label-tertiary);
+  text-align: left;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--color-label);
+  cursor: text;
+}
+.editor-title[aria-disabled='true'] {
+  cursor: default;
+}
+button.editor-title:not([aria-disabled='true']):hover {
+  background: var(--color-fill);
+}
+input.editor-title {
+  flex: 1 1 auto;
+  background: var(--color-fill);
+}
+.editor-title:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
 }
 .save-status {
   font-size: var(--text-footnote);
@@ -75,24 +120,6 @@
   overflow: auto;
   overscroll-behavior: contain;
 }
-.editor-title {
-  font-family: var(--note-font, inherit);
-  width: 100%;
-  max-width: var(--note-width, var(--editor-max-width));
-  margin: 0 auto;
-  padding: var(--space-6) var(--space-6) 0;
-  border: 0;
-  background: transparent;
-  font-size: var(--text-title1);
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-large);
-  line-height: var(--leading-tight);
-  color: var(--color-label);
-  flex: none;
-}
-.editor-title:focus-visible {
-  outline: none;
-}
 .editor-host {
   flex: 1 0 auto;
 }
@@ -129,22 +156,20 @@
   .editor-scroll[data-width='wide'] {
     --note-width: calc(100% - 2 * var(--editor-gutter-wide));
   }
-  .editor-scroll[data-animate] .editor-title,
   .editor-scroll[data-animate] .cm-content {
     transition: max-width var(--duration-slow) var(--ease-out);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .editor-scroll[data-animate] .editor-title,
   .editor-scroll[data-animate] .cm-content {
     transition: none;
   }
 }
 
 @media (max-width: 767px) {
+  /* 触屏上标题是可点区域，不小于 44px 高（见 visual.spec） */
   .editor-title {
-    padding: var(--space-4) var(--space-4) 0;
-    font-size: var(--text-title2);
+    min-height: var(--hit-target);
   }
   .editor-host .cm-content {
     padding-left: var(--space-4) !important;

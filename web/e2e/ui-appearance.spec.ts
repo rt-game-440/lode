@@ -217,6 +217,7 @@ test.describe('单篇笔记页宽', () => {
 
     // 重命名（标题输入框）
     await p.keyboard.press('Escape')
+    await p.getByTestId('note-title').click()
     const title = p.getByRole('textbox', { name: '笔记标题' })
     await title.fill('读书改名')
     await title.press('Enter')
@@ -256,7 +257,6 @@ test.describe('单篇笔记字体', () => {
     await panel.getByRole('radio', { name: '衬线' }).click()
     await expect(panel.getByRole('radio', { name: '衬线' })).toHaveAttribute('aria-checked', 'true')
     await expect.poll(() => firstFamily(p, '.cm-line:not(.cm-codeblock)')).toBe('ui-serif')
-    expect(await firstFamily(p, '.editor-title')).toBe('ui-serif')
     expect(await firstFamily(p, '.cm-codeblock')).toBe('ui-monospace')
     expect(await firstFamily(p, '.cm-inline-code')).toBe('ui-monospace')
     await saved(p)

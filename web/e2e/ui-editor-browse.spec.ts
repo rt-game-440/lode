@@ -56,7 +56,9 @@ test('顶栏按钮切换仅浏览：正文和标题不可改，切回编辑后�
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-pressed', 'true')
   await expect(content).toHaveAttribute('contenteditable', 'false')
-  await expect(page.getByLabel('笔记标题')).toHaveAttribute('readonly', '')
+  await expect(page.getByTestId('note-title')).toHaveAttribute('aria-disabled', 'true')
+  await page.getByTestId('note-title').click({ force: true })
+  await expect(page.getByRole('textbox', { name: '笔记标题' })).toHaveCount(0)
   await expect(page.getByTestId('format-toolbar')).toHaveCount(0)
   // 点正文再输入：内容不变
   await page.locator('.cm-line', { hasText: '正文第一段' }).click()
