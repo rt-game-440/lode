@@ -1,10 +1,12 @@
 import { ChevronDown, Plus, Settings2 } from 'lucide-react'
+import { useRef } from 'react'
 import { errorMessage } from '../../api/client'
 import { type MenuEntry, openMenu } from '../../components/overlays'
 import { useUI } from '../../stores/ui'
 import { openSettings } from '../settings/nav'
 import { useWorkspace, workspaceName } from '../../stores/workspace'
 import { createWorkspaceDialog } from './CreateWorkspaceDialog'
+import { useSwitcherDrop } from '../transfer/drop'
 import './workspace.css'
 
 
@@ -57,18 +59,26 @@ function openWorkspaceMenu(anchor: HTMLElement) {
 export function WorkspaceSwitcher() {
   const name = useWorkspace((s) => workspaceName(s.list, s.current))
   const many = useWorkspace((s) => s.list.length > 1)
+  const ref = useRef<HTMLButtonElement>(null)
+  // 把文件树里的条目拖到这里：悬停片刻展开工作空间列表，放下即移动或复制（#72）
+  const { switcherProps, highlight, dropList } = useSwitcherDrop(ref)
   return (
+    <>
     <button
+      ref={ref}
       type="button"
-      className={`ws-switcher hit-expand${many ? ' has-many' : ''}`}
+      className={`ws-switcher hit-expand${many ? ' has-many' : ''}${highlight ? ' is-drop-target' : ''}`}
       aria-haspopup="menu"
       aria-label={`工作空间：${name}`}
       title="切换或新建工作空间"
       data-testid="workspace-switcher"
       onClick={(e) => openWorkspaceMenu(e.currentTarget)}
+      {...switcherProps}
     >
       <span className="ws-switcher-name">{name}</span>
       <ChevronDown size={14} strokeWidth={2.2} className="ws-switcher-chevron" aria-hidden="true" />
     </button>
+    {dropList}
+    </>
   )
 }

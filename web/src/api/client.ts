@@ -16,6 +16,8 @@ import type {
   SearchResult,
   TagCount,
   TokenScope,
+  TransferRequest,
+  TransferResult,
   TrashItem,
   Tree,
   WorkspaceInfo,
@@ -48,6 +50,7 @@ export function errorMessage(err: unknown): string {
       case 'network':
         return '网络不可用'
       case 'workspace_not_found':
+      case 'target_workspace_not_found':
         return '工作空间不存在'
     }
     return err.message || '操作失败'
@@ -209,6 +212,9 @@ function notesApi(prefix: () => string) {
       request<{ images: { path: string; size: number; mtime: number }[] }>('GET', `${prefix()}/images`).then((r) => r.images),
 
     changes: (since: number) => request<{ changes: Change[]; seq: number }>('GET', `${prefix()}/changes${q({ since })}`),
+
+    /** 把本工作空间里的笔记、文件夹移动或复制到另一个工作空间（#72）。 */
+    transfer: (req: TransferRequest) => request<TransferResult>('POST', `${prefix()}/transfer`, req),
   }
 }
 

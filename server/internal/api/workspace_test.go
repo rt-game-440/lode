@@ -88,8 +88,8 @@ func TestUnknownWorkspaceReturns404OnEveryRoute(t *testing.T) {
 	}
 	c.setup()
 	routes := srv.workspaceRoutes()
-	if len(routes) != 35 {
-		t.Fatalf("按工作空间区分的路由应有 35 条（26 条笔记相关 + 9 条助手对话），得到 %d", len(routes))
+	if len(routes) != 36 {
+		t.Fatalf("按工作空间区分的路由应有 36 条（27 条笔记相关，含 #72 的 transfer + 9 条助手对话），得到 %d", len(routes))
 	}
 	for _, rt := range routes {
 		method, rest := samplePath(rt.pattern)
