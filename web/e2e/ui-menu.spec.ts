@@ -33,7 +33,7 @@ const menu = () => page.getByRole('menu')
 
 async function openMoreMenu() {
   await page.goto(`/note/${noteId}`)
-  await expect(page.getByLabel('笔记标题')).toBeVisible()
+  await expect(page.getByTestId('note-title')).toBeVisible()
   await moreButton().click()
   await expect(menu()).toBeVisible()
 }

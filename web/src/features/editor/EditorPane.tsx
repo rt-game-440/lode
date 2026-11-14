@@ -2,7 +2,7 @@ import { EditorState, Transaction } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { ArrowLeft, CaseSensitive, Ellipsis, Eye, FileText, PanelRight, Pencil, Sparkles, Trash } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { openMenu } from '../../components/overlays'
 import { EmptyState, IconButton, Spinner } from '../../components/ui'
 import { Autosaver } from '../../lib/autosave'
@@ -65,7 +65,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   const saverRef = useRef<Autosaver | null>(null)
   const loadedFor = useRef<{ id: string; version: number } | null>(null)
   const headingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const titleRef = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<TitleHandle>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   /** 组字期间推迟套用的服务器版本（base 已固定为推迟时的编辑器内容或共同祖先） */
   const deferred = useRef<{ base: string; next: string }[]>([])
@@ -204,7 +204,6 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
       if (takeTitleFocus(id)) {
         if (!startBrowse) {
           titleRef.current?.focus()
-          titleRef.current?.select()
         }
       } else if (!mobile && !startBrowse) {
         view.focus()
@@ -268,7 +267,19 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
           // 桌面端的侧栏、右栏收起按钮浮在三栏之上，收起后停在标题栏两角，这里给它们让位（见 shell/PanelToggle）
           <PanelToggleSlot side="left" />
         )}
-        <div className="editor-crumb">{note && dirname(note.path) ? dirname(note.path).split('/').join(' / ') : ''}</div>
+        {note && showEditor ? (
+          <TitleInput
+            ref={titleRef}
+            path={dirname(note.path)}
+            title={note.title}
+            readOnly={browse}
+            mobile={mobile}
+            onCommit={(v) => renameNote(note, v)}
+            onEnter={() => viewRef.current?.focus()}
+          />
+        ) : (
+          <div className="editor-heading" />
+        )}
         <span className="spacer" />
         <SaveIndicator status={status} error={error} onRetry={() => void saverRef.current?.flush()} />
         {note && (
@@ -304,7 +315,6 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
                         icon: <Pencil size={16} />,
                         run: () => {
                           titleRef.current?.focus()
-                          titleRef.current?.select()
                         },
                       },
                       { label: '外观和布局', icon: <CaseSensitive size={16} />, submenu: true, run: () => openAppearancePanel(anchor) },
@@ -331,16 +341,6 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
       {/* 页宽只在桌面端生效（editor.css）；切换时过渡，载入笔记时直接到位 */}
       <div className="editor-scroll" ref={scrollRef} data-width={pageWidth} data-font={noteFont} data-animate={animateWidth ? '' : undefined}>
         {!mobile && tocRail && showEditor && <TocRail view={view} scrollRef={scrollRef} />}
-        {note && showEditor && (
-          <TitleInput
-            key={note.id + note.title}
-            ref={titleRef}
-            title={note.title}
-            readOnly={browse}
-            onCommit={(v) => renameNote(note, v)}
-            onEnter={() => viewRef.current?.focus()}
-          />
-        )}
         <div className="editor-host" ref={host} hidden={!showEditor} data-testid="editor" />
         {loading && !showEditor && (
           <div className="editor-loading">
@@ -417,49 +417,108 @@ function SaveIndicator({ status, error, onRetry }: { status: keyof typeof STATUS
 }
 
 interface TitleProps {
+  /** 文件夹路径（不含标题），空串表示根目录 */
+  path: string
   title: string
   /** 浏览模式下只读 */
   readOnly: boolean
+  mobile: boolean
   onCommit: (v: string) => Promise<boolean>
   onEnter: () => void
 }
 
-const TitleInput = forwardRef<HTMLInputElement, TitleProps>(function TitleInput({ title, readOnly, onCommit, onEnter }, ref) {
+export interface TitleHandle {
+  /** 进入改名状态并全选（浏览模式下无效） */
+  focus: () => void
+}
+
+/**
+ * 顶栏左侧的“路径 / 标题”：平时标题是按钮，点击（或键盘回车）原地变成输入框；
+ * 回车或失焦提交，Esc 取消。窄宽度下先截断路径，再截断标题（editor.css）。
+ */
+const TitleInput = forwardRef<TitleHandle, TitleProps>(function TitleInput({ path, title, readOnly, mobile, onCommit, onEnter }, ref) {
+  const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(title)
   const committing = useRef(false)
-  const commit = async () => {
-    if (committing.current) return
-    const v = value.trim()
-    if (!v || v === title) {
-      setValue(title)
-      return
-    }
-    committing.current = true
-    const ok = await onCommit(v)
-    committing.current = false
-    if (!ok) setValue(title)
+  const finished = useRef(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const start = () => {
+    if (readOnly) return
+    finished.current = false
+    setValue(title)
+    setEditing(true)
   }
+  useImperativeHandle(ref, () => ({ focus: start }))
+  // 进入编辑后聚焦并全选；浏览模式开启时放弃编辑
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+  useEffect(() => {
+    if (readOnly) setEditing(false)
+  }, [readOnly])
+  const finish = () => {
+    finished.current = true
+    setEditing(false)
+  }
+  const commit = async () => {
+    if (committing.current || finished.current) return
+    const v = value.trim()
+    finish()
+    if (!v || v === title) return
+    committing.current = true
+    await onCommit(v)
+    committing.current = false
+  }
+  const showPath = !mobile && path
   return (
-    <input
-      ref={ref}
-      className="editor-title"
-      aria-label="笔记标题"
-      value={value}
-      spellCheck={false}
-      readOnly={readOnly}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => void commit()}
-      onKeyDown={(e) => {
-        if (e.nativeEvent.isComposing) return
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          void commit()
-          onEnter()
-        } else if (e.key === 'Escape') {
-          setValue(title)
-          onEnter()
-        }
-      }}
-    />
+    <div className={`editor-heading${editing ? ' is-editing' : ''}`} title={path ? `${path} / ${title}` : title}>
+      {showPath && (
+        <span className="editor-crumb" data-testid="note-path">
+          {path.split('/').join(' / ')}
+          <span className="editor-crumb-sep" aria-hidden="true">
+            {' / '}
+          </span>
+        </span>
+      )}
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="editor-title"
+          aria-label="笔记标题"
+          value={value}
+          spellCheck={false}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void commit()
+              onEnter()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              finish()
+              onEnter()
+            }
+          }}
+        />
+      ) : (
+        <button
+          ref={buttonRef}
+          type="button"
+          className="editor-title"
+          data-testid="note-title"
+          aria-label={readOnly ? `笔记标题：${title}` : `笔记标题：${title}，点击重命名`}
+          aria-disabled={readOnly || undefined}
+          onClick={start}
+        >
+          {title}
+        </button>
+      )}
+    </div>
   )
 })

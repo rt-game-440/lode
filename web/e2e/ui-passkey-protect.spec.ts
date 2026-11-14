@@ -277,6 +277,7 @@ test('重启后锁定：助手调用给出明确错误，设置页提示已锁�
 })
 
 test('通行密钥登录即解锁，助手可以正常对话', async () => {
+  await page.goto('/') // 设置是浮窗，打开时下面的页面不可操作
   await logoutButton().click()
   await page.getByRole('dialog', { name: '退出登录？' }).getByRole('button', { name: '退出登录', exact: true }).click()
   await page.getByRole('button', { name: '使用通行密钥登录' }).click()

@@ -22,7 +22,7 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return
-      const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.offsetParent !== null)
+      const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.offsetParent !== null && !x.closest('[inert]'))
       if (!items.length) {
         e.preventDefault()
         return
