@@ -213,5 +213,5 @@
   - #74 设置浮窗（PR #77）：桌面居中模态浮窗，下面保留原页面（`stores/ui` 的 `underRoute`），手机不变。e2e `ui-settings-dialog.spec.ts`，截图 `docs/screenshots/issue-74/`。
   - #72 跨空间移动复制（PR #78）：`POST /api/w/{ws}/transfer`、文件树多选、目标选择对话框、拖到切换器。Go 测试 `internal/notes`、`internal/workspace`、`internal/api` 的 transfer 用例，e2e `ui-workspace-transfer.spec.ts`，截图 `docs/screenshots/issue-72/`。
   - 三个 PR 合并后的代码在本地预览版上人工验收通过（清单 `docs/checklist/stage-7.md` 第 F–P 条）；完整 e2e 在合并后代码上 205 通过，`split-view` 的动画速度用例偶发超阈值 0.6%，单独重跑通过。
-- 下一步：派发 #71（记忆浏览位置）和 #73（选中文字悬浮框）。
+- 进行中：#71 记忆浏览位置（PR #79，待人工验收）；#73 选中文字悬浮框（开发中）。
 - 遗留：手机 375 宽下顶栏标题只剩约 6 个字宽（右侧 4 个按钮）；跨空间移动没有“撤销”，触屏上不能拖到切换器（用长按菜单）。
