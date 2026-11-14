@@ -203,3 +203,18 @@
 - 拖拽导入（2026-11-11）：把 `.md/.txt` 文件或文件夹从资源管理器拖进窗口即导入，落点决定目录，导入后自动打开第一篇；拖拽时显示全窗提示。单测 `dropped.test.ts`，e2e `ui-import-drop.spec.ts`。
 - 表格渲染（2026-11-11）：编辑器里的 GFM 表格在光标不在表格内时渲染成真正的 `<table>`（对齐、加粗/代码/链接/wikilink/标签/图片），点击单元格或方向键进入时切回源码。单测 `tableModel.test.ts`，e2e `ui-editor-table.spec.ts`。顺手修了 `visual.spec` 的 2500 篇虚拟滚动用例（大量笔记目录改名排到最后，避免被后面新增的根目录笔记挤出可视区）。
 - 仅浏览模式（2026-11-11）：笔记顶栏“仅浏览”按钮、Ctrl+Shift+E、设置里“打开笔记时默认仅浏览”（默认关）。浏览时正文和标题只读、不弹键盘、不显示格式工具栏和手机底部工具栏；表格保持渲染，链接直接打开，任务复选框仍可勾选。状态只在内存里，不写入笔记。e2e `ui-editor-browse.spec.ts`。手机真机上的滑动不弹键盘见 stage-7 清单 E。
+
+## 第三轮需求（2026-11-14）
+
+用户整理的 5 个需求发为 issue #71–#75（标签 `enhancement`、`ready-for-agent`，正文带指标）。#71、#73、#75 都改 `EditorPane.tsx`，所以先并行做 #72、#74、#75，#75 合并后再做 #71、#73。
+
+- 已完成（三个代理在各自 worktree 并行开发，e2e 端口分别为 18871–18873）：
+  - #75 标题移到顶栏（PR #76）：顶栏“路径 / 标题”，点击原地改名，去掉正文上方大标题。e2e `ui-title-topbar.spec.ts`，截图 `docs/screenshots/issue-75/`。
+  - #74 设置浮窗（PR #77）：桌面居中模态浮窗，下面保留原页面（`stores/ui` 的 `underRoute`），手机不变。e2e `ui-settings-dialog.spec.ts`，截图 `docs/screenshots/issue-74/`。
+  - #72 跨空间移动复制（PR #78）：`POST /api/w/{ws}/transfer`、文件树多选、目标选择对话框、拖到切换器。Go 测试 `internal/notes`、`internal/workspace`、`internal/api` 的 transfer 用例，e2e `ui-workspace-transfer.spec.ts`，截图 `docs/screenshots/issue-72/`。
+  - 三个 PR 合并后的代码在本地预览版上人工验收通过（清单 `docs/checklist/stage-7.md` 第 F–P 条）；完整 e2e 在合并后代码上 205 通过，`split-view` 的动画速度用例偶发超阈值 0.6%，单独重跑通过。
+- #71 记忆浏览位置（PR #79）：`lib/scrollMemory.ts` 改为按工作空间的本机记录（键 `lode.readpos[:<ws>]`，最近 200 篇），记“视口顶端行 + 行内偏移 + 光标”，`features/editor/useReadingPosition.ts` 负责记录和分几次校正恢复，用户一有操作就停止校正。e2e `ui-reading-position.spec.ts`。
+- #73 选中文字悬浮框（PR #81）：`SelectionToolbar.tsx`、定位纯函数 `selectionLayout.ts`、`cm/selectionEvents.ts`；问助手经 `stores/agentDraft` 的 `quote` 带引用。e2e `ui-selection-toolbar.spec.ts`，截图 `docs/screenshots/issue-73/`（已推送 Telegram）。
+- #79、#81 合并后的本地预览版人工验收通过（清单第 Q–Y 条）；合并后代码单测 204 个、相关 e2e 38 个通过。
+- 遗留：`[[笔记#标题]]` 这类带目标位置的入口还没有，浏览位置“以目标为准”只能靠大纲 / 目录条验证；在已有 `**` 标记的行上拖选，实时预览显示标记导致文字右移，选区终点可能偏（编辑器原有行为）。
+- 遗留：手机 375 宽下顶栏标题只剩约 6 个字宽（右侧 4 个按钮）；跨空间移动没有“撤销”，触屏上不能拖到切换器（用长按菜单）。
