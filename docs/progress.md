@@ -213,5 +213,8 @@
   - #74 设置浮窗（PR #77）：桌面居中模态浮窗，下面保留原页面（`stores/ui` 的 `underRoute`），手机不变。e2e `ui-settings-dialog.spec.ts`，截图 `docs/screenshots/issue-74/`。
   - #72 跨空间移动复制（PR #78）：`POST /api/w/{ws}/transfer`、文件树多选、目标选择对话框、拖到切换器。Go 测试 `internal/notes`、`internal/workspace`、`internal/api` 的 transfer 用例，e2e `ui-workspace-transfer.spec.ts`，截图 `docs/screenshots/issue-72/`。
   - 三个 PR 合并后的代码在本地预览版上人工验收通过（清单 `docs/checklist/stage-7.md` 第 F–P 条）；完整 e2e 在合并后代码上 205 通过，`split-view` 的动画速度用例偶发超阈值 0.6%，单独重跑通过。
-- 进行中：#71 记忆浏览位置（PR #79，待人工验收）；#73 选中文字悬浮框（开发中）。
+- #71 记忆浏览位置（PR #79）：`lib/scrollMemory.ts` 改为按工作空间的本机记录（键 `lode.readpos[:<ws>]`，最近 200 篇），记“视口顶端行 + 行内偏移 + 光标”，`features/editor/useReadingPosition.ts` 负责记录和分几次校正恢复，用户一有操作就停止校正。e2e `ui-reading-position.spec.ts`。
+- #73 选中文字悬浮框（PR #81）：`SelectionToolbar.tsx`、定位纯函数 `selectionLayout.ts`、`cm/selectionEvents.ts`；问助手经 `stores/agentDraft` 的 `quote` 带引用。e2e `ui-selection-toolbar.spec.ts`，截图 `docs/screenshots/issue-73/`（已推送 Telegram）。
+- #79、#81 合并后的本地预览版人工验收通过（清单第 Q–Y 条）；合并后代码单测 204 个、相关 e2e 38 个通过。
+- 遗留：`[[笔记#标题]]` 这类带目标位置的入口还没有，浏览位置“以目标为准”只能靠大纲 / 目录条验证；在已有 `**` 标记的行上拖选，实时预览显示标记导致文字右移，选区终点可能偏（编辑器原有行为）。
 - 遗留：手机 375 宽下顶栏标题只剩约 6 个字宽（右侧 4 个按钮）；跨空间移动没有“撤销”，触屏上不能拖到切换器（用长按菜单）。
