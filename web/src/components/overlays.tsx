@@ -248,6 +248,8 @@ export interface MenuItem {
   checked?: boolean
   /** 右侧的简短提示（例如模型的能力） */
   hint?: string
+  /** 禁用：显示但不能点（原因写在 hint 里） */
+  disabled?: boolean
   run: () => void
 }
 /** 分组标题：不可聚焦，只起分隔和说明作用 */
@@ -329,7 +331,9 @@ export function MenuHost() {
   // 定位完成、菜单可见之后再聚焦（visibility: hidden 的元素聚焦不了）。单选菜单先聚焦当前项，其余聚焦第一项
   useLayoutEffect(() => {
     if (!pos || !ref.current) return
-    const first = ref.current.querySelector<HTMLButtonElement>('.menu-item[aria-checked="true"]') ?? ref.current.querySelector<HTMLButtonElement>('.menu-item')
+    const first =
+      ref.current.querySelector<HTMLButtonElement>('.menu-item[aria-checked="true"]') ??
+      ref.current.querySelector<HTMLButtonElement>('.menu-item:not(:disabled)')
     first?.focus()
     first?.scrollIntoView({ block: 'nearest' })
   }, [pos])
@@ -353,7 +357,7 @@ export function MenuHost() {
       }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
-        const items = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('.menu-item') ?? [])
+        const items = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('.menu-item:not(:disabled)') ?? [])
         const i = items.indexOf(document.activeElement as HTMLButtonElement)
         const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length
         items[next]?.focus()
@@ -398,6 +402,7 @@ export function MenuHost() {
                 aria-checked={it.checked}
                 className={`menu-item${it.danger ? ' is-danger' : ''}`}
                 aria-haspopup={it.submenu ? 'dialog' : undefined}
+                disabled={it.disabled}
                 onClick={() => {
                   closeMenu()
                   it.run()

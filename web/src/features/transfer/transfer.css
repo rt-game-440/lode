@@ -1,0 +1,163 @@
+/* 跨工作空间移动、复制（#72）：目标选择对话框、拖到切换器时的工作空间列表 */
+.transfer-targets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.transfer-targets > legend {
+  padding: 0;
+  margin-bottom: var(--space-1-5);
+}
+.transfer-target {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0 var(--space-2-5);
+  border-radius: var(--radius-md);
+  background: var(--color-fill);
+  font-size: var(--text-subhead);
+  color: var(--color-label);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px transparent;
+  transition:
+    box-shadow var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+.transfer-target.is-selected {
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+.transfer-target input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+.transfer-target-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer-target-hint {
+  flex: none;
+  font-size: var(--text-caption);
+  color: var(--color-label-tertiary);
+}
+.transfer-select {
+  height: 2.25rem;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-fill);
+  font: inherit;
+  font-size: var(--text-subhead);
+  color: var(--color-label);
+}
+.transfer-select:disabled {
+  color: var(--color-label-tertiary);
+}
+.transfer-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.transfer-notes:empty {
+  display: none;
+}
+.transfer-hint,
+.transfer-warning {
+  margin: 0;
+  font-size: var(--text-footnote);
+  line-height: var(--leading-snug);
+  color: var(--color-label-secondary);
+}
+.transfer-warning {
+  color: var(--color-danger);
+  font-weight: var(--weight-medium);
+}
+.transfer-renamed {
+  margin: 0;
+  padding-left: var(--space-5);
+  max-height: 16rem;
+  overflow-y: auto;
+  font-size: var(--text-subhead);
+  line-height: var(--leading-snug);
+  color: var(--color-label-secondary);
+}
+@media (pointer: coarse) {
+  .transfer-target,
+  .transfer-select {
+    min-height: var(--hit-target);
+  }
+}
+
+/* 拖动条目悬停在工作空间切换器上：切换器高亮，下方展开工作空间列表 */
+.ws-switcher.is-drop-target {
+  background: var(--color-accent-fill);
+  color: var(--color-on-accent);
+}
+.ws-switcher.is-drop-target .ws-switcher-chevron {
+  color: inherit;
+}
+.ws-drop-list {
+  position: fixed;
+  z-index: var(--z-popover);
+  min-width: 12rem;
+  max-width: 18rem;
+  padding: var(--space-1);
+  background: var(--color-bg-popover);
+  -webkit-backdrop-filter: var(--material-blur-thick);
+  backdrop-filter: var(--material-blur-thick);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.ws-drop-heading {
+  padding: var(--space-1-5) var(--space-2) var(--space-0-5);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  color: var(--color-label-tertiary);
+}
+.ws-drop-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.25rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-subhead);
+  color: var(--color-label);
+  box-shadow: inset 0 0 0 1px transparent;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.ws-drop-item.is-current {
+  color: var(--color-label-tertiary);
+}
+.ws-drop-item.is-over {
+  background: var(--color-accent-fill);
+  color: var(--color-on-accent);
+  box-shadow: inset 0 0 0 2px var(--color-focus-ring);
+}
+.ws-drop-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-drop-hint {
+  flex: none;
+  font-size: var(--text-caption);
+}
+.ws-drop-foot {
+  padding: var(--space-1) var(--space-2) var(--space-0-5);
+  font-size: var(--text-caption);
+  color: var(--color-label-tertiary);
+}

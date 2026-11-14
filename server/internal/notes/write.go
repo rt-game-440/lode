@@ -411,6 +411,10 @@ func (s *Service) getTrash(ctx context.Context, id string) (trashRow, error) {
 func (s *Service) Restore(ctx context.Context, id string) (Note, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.restoreLocked(ctx, id)
+}
+
+func (s *Service) restoreLocked(ctx context.Context, id string) (Note, error) {
 	t, err := s.getTrash(ctx, id)
 	if err != nil {
 		return Note{}, err

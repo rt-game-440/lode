@@ -162,21 +162,30 @@ func (s *Service) DeleteFolder(ctx context.Context, p string) (int, error) {
 			return 0, err
 		}
 	}
-	abs := s.vault.Abs(p)
-	if hasFiles(abs) {
-		dst := filepath.Join(s.trashDir, "folders", fmt.Sprintf("%d-%s", time.Now().UnixMilli(), path.Base(p)))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return 0, err
-		}
-		if err := vault.MoveDirOut(abs, dst); err != nil {
-			return 0, err
-		}
-	} else if err := os.RemoveAll(abs); err != nil {
+	if err := s.removeFolderLocked(ctx, p); err != nil {
 		return 0, err
 	}
 	a := actorFrom(ctx)
 	s.log.Info("文件夹已删除", "path", p, "notes", len(rows), "device_id", a.DeviceID, "device", a.DeviceName)
-	return len(rows), deleteFolders(ctx, s.db, p)
+	return len(rows), nil
+}
+
+// removeFolderLocked 在其中的笔记都进了回收站之后删除文件夹：剩下的非笔记文件整体移到 trash/folders 下，
+// 空目录直接删除，再从索引里去掉这些文件夹。
+func (s *Service) removeFolderLocked(ctx context.Context, p string) error {
+	abs := s.vault.Abs(p)
+	if hasFiles(abs) {
+		dst := filepath.Join(s.trashDir, "folders", fmt.Sprintf("%d-%s", time.Now().UnixMilli(), path.Base(p)))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		if err := vault.MoveDirOut(abs, dst); err != nil {
+			return err
+		}
+	} else if err := os.RemoveAll(abs); err != nil {
+		return err
+	}
+	return deleteFolders(ctx, s.db, p)
 }
 
 func hasFiles(dir string) bool {
