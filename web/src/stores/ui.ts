@@ -94,8 +94,25 @@ export function applyTheme(t: Theme) {
   else root.setAttribute('data-theme', t)
 }
 
+/**
+ * 设置浮窗的历史记录标记（写在 history.state.lodeSettings 里）：
+ * depth 是从打开浮窗那一条算起、在浮窗内又推入了几级；entry 表示打开浮窗之前还有一条应用内的历史（可以 history.go 回去）。
+ * 关闭浮窗时据此一次退回打开前的地址（见 features/settings/nav 的 closeSettings）。
+ */
+export interface SettingsHistory {
+  depth: number
+  entry: boolean
+}
+
+export function settingsHistory(state: unknown): SettingsHistory {
+  const v = (state as { lodeSettings?: Partial<SettingsHistory> } | null)?.lodeSettings
+  return { depth: typeof v?.depth === 'number' ? v.depth : 0, entry: v?.entry === true }
+}
+
 interface UIState {
   route: Route
+  /** 桌面端设置是浮窗：浮窗下面显示的页面，即最近一个不是设置的页面（初始是首页） */
+  underRoute: Route
   /** 在当前工作空间内跳转（地址栏自动带上工作空间前缀）；切换工作空间见 stores/workspace */
   navigate: (r: Route, replace?: boolean) => void
   /** 按地址栏更新页面（浏览器前进后退）；地址栏换了工作空间时由 stores/workspace 先切换 */
@@ -151,17 +168,36 @@ export const useUI = create<UIState>((set, get) => {
   if (initialRoute.view === 'agent' && history.state) history.replaceState(withoutAgentFrom(history.state), '')
   return {
     route: initialRoute,
+    underRoute: initialRoute.view === 'settings' ? { view: 'home' } : initialRoute,
     navigate: (r, replace = false) => {
       const path = workspacePath(currentWorkspace(), routePath(r))
       if (path !== location.pathname) {
-        if (replace) history.replaceState(null, '', path)
-        else history.pushState(null, '', path)
+        let state: unknown = null
+        if (r.view === 'settings') {
+          // 设置浮窗里逐级推入：深度加一；从别的页面进入：深度 0，打开前还有一条历史
+          const inSettings = get().route.view === 'settings'
+          const cur = settingsHistory(history.state)
+          const next: SettingsHistory = inSettings ? { depth: replace ? cur.depth : cur.depth + 1, entry: cur.entry } : { depth: 0, entry: !replace }
+          state = { lodeSettings: next }
+        }
+        if (replace) history.replaceState(state, '', path)
+        else history.pushState(state, '', path)
       }
-      set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail', ...(r.view === 'note' ? {} : { agentPopup: false }) })
+      set((s) => ({
+        route: r,
+        underRoute: r.view === 'settings' ? s.underRoute : r,
+        mobilePane: r.view === 'home' ? 'list' : 'detail',
+        ...(r.view === 'note' ? {} : { agentPopup: false }),
+      }))
     },
     syncFromLocation: () => {
       const r = parseRoute(splitWorkspacePath(location.pathname).rest)
-      set({ route: r, mobilePane: r.view === 'home' ? 'list' : 'detail', ...(r.view === 'note' ? {} : { agentPopup: false }) })
+      set((s) => ({
+        route: r,
+        underRoute: r.view === 'settings' ? s.underRoute : r,
+        mobilePane: r.view === 'home' ? 'list' : 'detail',
+        ...(r.view === 'note' ? {} : { agentPopup: false }),
+      }))
     },
 
     ...layout,

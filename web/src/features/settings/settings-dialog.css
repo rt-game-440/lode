@@ -1,0 +1,28 @@
+/* 桌面端设置浮窗（SettingsDialog）：居中，宽高有上限，内部滚动 */
+.settings-dialog {
+  position: relative;
+  width: min(720px, 100%);
+  height: min(80vh, 760px);
+  max-height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-secondary);
+  box-shadow: var(--shadow-lg);
+}
+.settings-dialog:focus {
+  outline: none;
+}
+/* 关闭按钮在顶栏右端，垂直居中于顶栏 */
+.settings-dialog-close {
+  position: absolute;
+  top: calc((var(--bar-height) - var(--hit-target)) / 2);
+  right: var(--space-2);
+  z-index: var(--z-bar);
+}
+/* 页面右侧的操作按钮给关闭按钮让位 */
+.settings-dialog .settings-bar-trail {
+  padding-right: calc(var(--hit-target) + var(--space-1));
+}
+.settings-dialog .view-bar {
+  padding-top: 0;
+}

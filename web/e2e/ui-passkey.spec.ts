@@ -65,6 +65,8 @@ const passkeyLoginButton = () => page.getByRole('button', { name: '使用通行�
 const list = () => page.getByRole('list', { name: '通行密钥列表' })
 
 async function logout() {
+  // 设置是桌面浮窗，打开时下面的页面不可操作：先回到首页
+  await page.goto('/')
   await logoutButton().click()
   await page.getByRole('dialog', { name: '退出登录？' }).getByRole('button', { name: '退出登录', exact: true }).click()
   await expect(page.getByRole('heading', { name: '登录 Lode' })).toBeVisible()

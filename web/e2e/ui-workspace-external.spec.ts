@@ -128,7 +128,7 @@ test('新建对话框：使用已有文件夹，路径不合法时在输入框�
   await page.goto('/')
   await switcher(page).click()
   await page.getByRole('menuitem', { name: '新建工作空间…' }).click()
-  const dialog = page.getByRole('dialog')
+  const dialog = page.locator('[role="dialog"]:not([data-testid="settings-dialog"])')
   await expect(dialog.getByRole('heading', { name: '新建工作空间' })).toBeVisible()
   // 默认不显示路径输入
   await expect(dialog.getByTestId('create-workspace-dir')).toHaveCount(0)
@@ -222,7 +222,7 @@ test('设置页：外部空间显示路径；删除确认框写明不会删除�
   await expect(page.getByText('外部目录')).toBeVisible()
   const before = hashes(extDir)
   await page.getByTestId('workspace-delete').click()
-  const dialog = page.getByRole('dialog')
+  const dialog = page.locator('[role="dialog"]:not([data-testid="settings-dialog"])')
   await expect(dialog).toContainText('删除工作空间“Obsidian 库”？')
   await expect(dialog.getByTestId('workspace-delete-external-note')).toContainText('不会删除你的笔记文件')
   await expect(dialog).toContainText('一个都不会动')

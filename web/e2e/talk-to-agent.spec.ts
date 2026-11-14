@@ -177,7 +177,7 @@ test('添加供应商和模型 → 对话 → 流式回复 → 工具卡片 → 
     await page.getByTestId('model-context').fill('32000')
     await page.getByTestId('model-max-output').fill('4096')
     await page.getByTestId('model-save').click()
-    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(page.locator('[role="dialog"]:not([data-testid="settings-dialog"])')).toHaveCount(0)
   }
   await expect(card.getByTestId('model-row')).toHaveCount(2)
   await shot(page, 'agent-provider')

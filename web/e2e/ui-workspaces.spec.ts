@@ -174,7 +174,7 @@ test('新建工作空间 → 写笔记 → 切回默认空间看不到 → 再�
   // 侧栏列表 → 新建
   await switcher(p).click()
   await p.getByRole('menuitem', { name: '新建工作空间…' }).click()
-  const dialog = p.getByRole('dialog')
+  const dialog = p.locator('[role="dialog"]:not([data-testid="settings-dialog"])')
   await expect(dialog.getByRole('heading', { name: '新建工作空间' })).toBeVisible()
   await shot(p, 'ws-create-dialog')
   // 名称为空不能创建

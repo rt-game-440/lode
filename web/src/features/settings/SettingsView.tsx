@@ -25,7 +25,7 @@ const shortFmt = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'nume
  * 点进去是子页面，单个供应商、单个 token 可以再进一层。每一级有自己的地址（见 stack.ts），
  * 浏览器后退、Android 返回键、返回按钮和左缘手势都逐级返回。
  */
-export function SettingsView({ mobile }: { mobile: boolean }) {
+export function SettingsView({ mobile, dialog = false }: { mobile: boolean; dialog?: boolean }) {
   const route = useUI((s) => s.route)
   // 手机上离开设置时，详情层滑出期间路由已经变了：继续显示最后的设置页面
   const last = useRef<string[]>([])
@@ -35,7 +35,7 @@ export function SettingsView({ mobile }: { mobile: boolean }) {
   useSettingsSync()
 
   return (
-    <SettingsContext.Provider value={{ mobile }}>
+    <SettingsContext.Provider value={{ mobile, dialog }}>
       <NavStack path={sub} renderPage={(s) => <Page sub={s} />} onBack={() => settingsBack(sub)} edgeSwipe={mobile} />
     </SettingsContext.Provider>
   )
