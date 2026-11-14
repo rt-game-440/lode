@@ -4,6 +4,8 @@
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-"$root/bin/lode$(go env GOEXE)"}
+# 相对路径按调用时的目录解析（下面会 cd 到 server 再编译）
+case $out in /* | [A-Za-z]:*) ;; *) out="$PWD/$out" ;; esac
 version=$(git -C "$root" describe --tags --always --dirty 2>/dev/null || echo dev)
 commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)
 
