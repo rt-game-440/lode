@@ -2,6 +2,14 @@
 
 跨任务复用的开发决策与经验，按时间降序。
 
+## 2026-11-14 09:45 第三轮需求（#72、#74、#75）
+
+- **跨空间传送用新 id**：移动、复制过去的笔记都是新 id、`rev` 从 1 开始，移动保留 `created_at`；目标不存在用单独的 `404 target_workspace_not_found`，不用 `workspace_not_found`（前端收到后者会以为当前空间没了并切回默认空间）。
+- **传送先暂存再提交**：文件先写到目标里的隐藏临时目录（`.lode-transfer-*`），最后一起提交，失败全部撤回；本机有未同步修改时拒绝执行。
+- **设置浮窗是模态的**：打开时 `.shell` 设 `inert`，`useFocusTrap` 跳过 inert 里的元素；e2e 里用 `getByRole('dialog')` 找其他对话框时要排除设置浮窗。768 宽按桌面处理（沿用 `max-width: 767px` 的手机断点）。
+- **顶栏标题用界面字体**：不跟随笔记的 serif / mono 字体；浏览模式下标题按钮用 `aria-disabled` 而不是 `disabled`（保留键盘聚焦和读屏），e2e 点它要 `force: true`。
+- **并行代理跑 e2e 要分端口**：`LODE_E2E_PORT` 区分（例如 18871–18873）；停掉代理时 `bin/lode.exe` 子进程可能残留占住端口和 `.e2e-data`，按端口查 PID 再杀。
+
 ## 2026-11-11 22:20 笔记页仅浏览模式
 
 - **只读靠 Compartment 而不是临时改 dispatch**：`browseCompartment`（`editor/cm/setup.ts`）装 `EditorState.readOnly` + `EditorView.editable(false)`。`editorRef.extensions` 不含它，create / setState 时由 EditorPane 单独带上当前值，切换用 `reconfigure`，文档和光标都不动。
