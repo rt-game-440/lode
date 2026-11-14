@@ -47,6 +47,7 @@ export const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: s
       { keys: ['[['], label: '插入笔记链接（带补全）' },
       { keys: [MOD, 'B'], label: '加粗（斜体 I，行内代码 E；其余见格式工具栏按钮提示）' },
       { keys: [MOD, '单击'], label: '打开正在编辑那一行里的链接（其他行直接单击）' },
+      { keys: [ALT, 'F10'], label: '选中文字后进入悬浮工具框（← → 切换按钮，Esc 回到正文）' },
     ],
   },
   {

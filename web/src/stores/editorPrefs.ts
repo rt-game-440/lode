@@ -4,6 +4,7 @@ import { create } from 'zustand'
 const KEY = 'lode.editor.formatToolbar'
 const TOC_KEY = 'lode.editor.tocRail'
 const BROWSE_KEY = 'lode.editor.browseByDefault'
+const SELECTION_KEY = 'lode.editor.selectionToolbar'
 
 function load(key: string, off: string): boolean {
   try {
@@ -40,6 +41,9 @@ interface EditorPrefs {
   /** 打开笔记时是否默认进入浏览模式（默认关闭） */
   browseByDefault: boolean
   setBrowseByDefault: (on: boolean) => void
+  /** 选中文字时是否在选区附近浮出工具框（#73，默认开） */
+  selectionToolbar: boolean
+  setSelectionToolbar: (show: boolean) => void
 }
 
 export const useEditorPrefs = create<EditorPrefs>((set) => ({
@@ -57,5 +61,10 @@ export const useEditorPrefs = create<EditorPrefs>((set) => ({
   setBrowseByDefault: (on) => {
     store(BROWSE_KEY, on ? 'on' : 'off')
     set({ browseByDefault: on })
+  },
+  selectionToolbar: load(SELECTION_KEY, 'hidden'),
+  setSelectionToolbar: (show) => {
+    store(SELECTION_KEY, show ? 'shown' : 'hidden')
+    set({ selectionToolbar: show })
   },
 }))
