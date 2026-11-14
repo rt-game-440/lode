@@ -78,6 +78,8 @@ export function EditorPage({ sub }: { sub: string[] }) {
   const setShow = useEditorPrefs((s) => s.setFormatToolbar)
   const toc = useEditorPrefs((s) => s.tocRail)
   const setToc = useEditorPrefs((s) => s.setTocRail)
+  const selection = useEditorPrefs((s) => s.selectionToolbar)
+  const setSelection = useEditorPrefs((s) => s.setSelectionToolbar)
   const browseDefault = useEditorPrefs((s) => s.browseByDefault)
   const setBrowseDefault = useEditorPrefs((s) => s.setBrowseByDefault)
   return (
@@ -109,6 +111,20 @@ export function EditorPage({ sub }: { sub: string[] }) {
             checked={show}
             onChange={(e) => setShow(e.target.checked)}
             data-testid="format-toolbar-switch"
+          />
+        </label>
+        <label className="settings-row">
+          <span className="settings-row-text row-stack">
+            <span className="settings-row-label">选中文字时显示悬浮工具</span>
+            <span className="settings-meta">选中正文后在选区附近浮出格式、问助手和复制按钮（Alt+F10 用键盘进入）。与格式工具栏各自开关。只影响这台设备。</span>
+          </span>
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={selection}
+            onChange={(e) => setSelection(e.target.checked)}
+            data-testid="selection-toolbar-switch"
           />
         </label>
         <label className="settings-row">

@@ -10,6 +10,7 @@ import { noteAppearance } from './appearance'
 import { type LinkCandidate, type LinkHandlers, autoCloseWikiLink, imagePaste, linkClicks, wikiLinkCompletion } from './extras'
 import { FORMAT_ACTIONS } from './formatActions'
 import { type PreviewContext, livePreview } from './livePreview'
+import { editorUpdateEvents } from './selectionEvents'
 import { tablePreview } from './tablePreview'
 import { editorHighlight, editorTheme } from './theme'
 import { wikiLinkSyntax } from './wikilinkSyntax'
@@ -85,6 +86,7 @@ export function editorExtensions(env: EditorEnv): Extension[] {
       ...defaultKeymap,
       indentWithTab,
     ]),
+    editorUpdateEvents,
     EditorView.updateListener.of((u) => {
       if (u.docChanged && u.transactions.some((tr) => !tr.annotation(remoteSync))) env.onDocChange(u.state.doc.toString())
     }),

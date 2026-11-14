@@ -1,4 +1,4 @@
-import { ArrowUp, AtSign, FileText, Image, Paperclip, Square, X } from 'lucide-react'
+import { ArrowUp, AtSign, FileText, Image, Paperclip, Square, TextQuote, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { type KeyboardEvent, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Attachment, Modality } from '../../api/agent'
@@ -6,7 +6,7 @@ import { openMenu } from '../../components/overlays'
 import { IconButton } from '../../components/ui'
 import { usePop } from '../../components/usePop'
 import { chatModel, useAgent } from '../../stores/agent'
-import { useAgentDraft } from '../../stores/agentDraft'
+import { useAgentDraft, withQuote } from '../../stores/agentDraft'
 import { useUI } from '../../stores/ui'
 import { findByPath, useVault } from '../../stores/vault'
 import { springSnappy } from '../../styles/tokens/motion'
@@ -42,7 +42,7 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
   const notes = useVault((s) => s.notes)
 
   // 草稿在全局：弹窗和助手页之间切换时带过去（见 stores/agentDraft）
-  const { text, mentions, attachments, suppressed, setText, setMentions, setAttachments } = useAgentDraft()
+  const { text, mentions, attachments, suppressed, quote, setText, setMentions, setAttachments, setQuote } = useAgentDraft()
   const [imagePicker, setImagePicker] = useState(false)
   const [sending, setSending] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -84,7 +84,7 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
   // 当前笔记只在第一次发送时自动附上；用户移除过、或之前的消息已经附过，就不再自动附上（#44）
   const sent = useMemo(() => sentMentions(current?.messages), [current?.messages])
   const { all: allMentions } = resolveMentions({ contextPath: contextNote?.path, mentions, suppressed, sent })
-  const canSend = !running && !sending && (text.trim() !== '' || attachments.length > 0) && !!model
+  const canSend = !running && !sending && (text.trim() !== '' || attachments.length > 0 || !!quote) && !!model
 
   const mention = findMention(text, Math.min(caret, text.length))
   const listOpen = focused && !!mention && mention.start !== dismissed
@@ -105,7 +105,7 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
   const submit = async () => {
     if (!canSend) return
     setSending(true)
-    const ok = await send(text.trim(), allMentions, attachments)
+    const ok = await send(withQuote(quote, text.trim()), allMentions, attachments)
     setSending(false)
     if (ok) {
       // 这一轮附过的笔记不再自动附上
@@ -253,6 +253,15 @@ export function Composer({ contextPath, mobile, autoFocus }: { contextPath: stri
           </motion.div>
         )}
       </AnimatePresence>
+      {quote && (
+        <blockquote className="composer-quote" data-testid="agent-quote" title={quote}>
+          <TextQuote size={14} aria-hidden="true" className="composer-quote-icon" />
+          <span className="composer-quote-text">{quote}</span>
+          <button type="button" className="chip-x" aria-label="移除引用" onClick={() => setQuote(null)}>
+            <X size={12} />
+          </button>
+        </blockquote>
+      )}
       {(allMentions.length > 0 || attachments.length > 0 || showGhost) && (
         <div className="composer-chips">
           {allMentions.map((p) => {

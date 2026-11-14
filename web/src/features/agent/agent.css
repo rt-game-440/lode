@@ -135,6 +135,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* 消息开头的引用（选中文字后“问助手”，#73）：左侧竖线，字色减弱 */
+.msg-quote {
+  margin: 0 0 var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 2px solid currentColor;
+  opacity: 0.85;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .msg-chips {
   display: flex;
   flex-wrap: wrap;
@@ -589,6 +600,38 @@ button.mention-chip:not(:disabled):hover {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
+}
+/* 输入框上方的引用块：最多三行，可移除 */
+.composer-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-fill);
+  font-size: var(--text-footnote);
+  color: var(--color-label-secondary);
+}
+.composer-quote-icon {
+  flex: none;
+  margin-top: 0.15em;
+  color: var(--color-accent);
+}
+.composer-quote-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.composer-quote .chip-x {
+  flex: none;
+  margin-right: calc(-1 * var(--space-1));
 }
 .composer .mention-chip {
   border-radius: var(--radius-md);

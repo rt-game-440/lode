@@ -18,7 +18,7 @@ import { sync } from '../../sync/engine'
 import { diffChangeSet, rebase } from '../../sync/textdiff'
 import { type EditorEnv, browseCompartment, browseExtension, editorExtensions, remoteSync } from './cm/setup'
 import { editorRef, takeTitleFocus } from './editorRef'
-import { takeNoteScroll } from '../../lib/scrollMemory'
+import { useReadingPosition } from './useReadingPosition'
 import { useEditorPrefs } from '../../stores/editorPrefs'
 import { useBrowseMode } from '../../stores/browseMode'
 import { PanelToggleSlot } from '../shell/PanelToggle'
@@ -28,6 +28,7 @@ import { bodyStart } from './cm/appearance'
 import { FormatToolbar } from './FormatToolbar'
 import { TocRail } from './TocRail'
 import { MobileToolbar } from './MobileToolbar'
+import { SelectionToolbar } from './SelectionToolbar'
 import './editor.css'
 
 const SAVE_DELAY = 500
@@ -67,6 +68,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
   const headingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const titleRef = useRef<TitleHandle>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const reading = useReadingPosition(scrollRef, viewRef)
   /** 组字期间推迟套用的服务器版本（base 已固定为推迟时的编辑器内容或共同祖先） */
   const deferred = useRef<{ base: string; next: string }[]>([])
 
@@ -167,7 +169,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
     if (prev && prev.id === id) {
       applyRemoteTo(view, null, doc.content)
     } else {
-      // 切换笔记：先保存上一篇
+      // 切换笔记：先记下上一篇的浏览位置，再保存它的内容
+      reading.flush()
       const old = saverRef.current
       if (old) {
         void old.flush().finally(() => old.dispose())
@@ -197,10 +200,8 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
           extensions: [editorRef.extensions, browseCompartment.of(browseExtension(startBrowse))],
         }),
       )
-      // 从助手页返回同一篇笔记时回到进入前的滚动位置，其余情况回到顶部
-      const restore = takeNoteScroll(id)
-      scrollRef.current?.scrollTo({ top: restore ?? 0 })
-      if (restore !== null) requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: restore }))
+      // 回到上次的浏览位置（滚动 + 光标，见 useReadingPosition）；新建的笔记没有记录，从顶部开始
+      reading.restore(id)
       if (takeTitleFocus(id)) {
         if (!startBrowse) {
           titleRef.current?.focus()
@@ -354,6 +355,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         )}
       </div>
       <AppearancePanelHost mobile={mobile} />
+      {showEditor && <SelectionToolbar view={view} mobile={mobile} browse={browse} noteId={id} />}
       {mobile && (
         <MobileToolbar
           view={browse ? null : view}

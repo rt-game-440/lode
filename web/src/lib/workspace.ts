@@ -69,6 +69,8 @@ export const WORKSPACE_STORAGE = {
   recent: 'lode.recent',
   /** 文件树展开的文件夹 */
   expanded: 'lode.expanded',
+  /** 笔记浏览位置（滚动 + 光标），最近 200 篇 */
+  readPos: 'lode.readpos',
   /** 当前助手对话 */
   agentChat: 'lode.agent.chat',
 } as const
