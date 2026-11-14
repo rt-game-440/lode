@@ -19,10 +19,16 @@ interface DraftState {
    * 换会话或新建会话时清空（见 stores/agent 的 open）。
    */
   suppressed: string[]
+  /**
+   * 引用的正文片段（#73 选中文字后“问助手”）：输入框上方显示成引用块，
+   * 发送时以 Markdown 引用（> ）放在消息开头。
+   */
+  quote: string | null
   setText: (u: Update<string>) => void
   setMentions: (u: Update<string[]>) => void
   setAttachments: (u: Update<Attachment[]>) => void
   suppress: (paths: string[]) => void
+  setQuote: (quote: string | null) => void
   /** 发送成功后清空草稿；suppressed 保留 */
   clear: () => void
   resetSuppressed: () => void
@@ -33,10 +39,41 @@ export const useAgentDraft = create<DraftState>((set) => ({
   mentions: [],
   attachments: [],
   suppressed: [],
+  quote: null,
   setText: (u) => set((s) => ({ text: apply(u, s.text) })),
   setMentions: (u) => set((s) => ({ mentions: apply(u, s.mentions) })),
   setAttachments: (u) => set((s) => ({ attachments: apply(u, s.attachments) })),
   suppress: (paths) => set((s) => ({ suppressed: [...new Set([...s.suppressed, ...paths])] })),
-  clear: () => set({ text: '', mentions: [], attachments: [] }),
+  setQuote: (quote) => set({ quote: quote?.trim() ? quote : null }),
+  clear: () => set({ text: '', mentions: [], attachments: [], quote: null }),
   resetSuppressed: () => set((s) => (s.suppressed.length ? { suppressed: [] } : s)),
 }))
+
+/** 引用片段写成 Markdown 引用块（每行加 > ），去掉首尾空行。 */
+export function quoteMarkdown(quote: string): string {
+  return quote
+    .replace(/^(\s*\n)+|(\n\s*)+$/g, '')
+    .split('\n')
+    .map((l) => (l ? `> ${l}` : '>'))
+    .join('\n')
+}
+
+/** 发送的正文：有引用时引用块在前，空一行后接用户的话。 */
+export function withQuote(quote: string | null, text: string): string {
+  if (!quote) return text
+  const q = quoteMarkdown(quote)
+  return text ? `${q}\n\n${text}` : q
+}
+
+/** 把消息开头的引用块拆出来，用于在消息气泡里单独显示。 */
+export function splitQuote(text: string): { quote: string | null; body: string } {
+  const lines = text.split('\n')
+  let i = 0
+  while (i < lines.length && /^>( |$)/.test(lines[i])) i++
+  if (i === 0) return { quote: null, body: text }
+  const quote = lines
+    .slice(0, i)
+    .map((l) => l.replace(/^> ?/, ''))
+    .join('\n')
+  return { quote, body: lines.slice(i).join('\n').replace(/^\n+/, '') }
+}

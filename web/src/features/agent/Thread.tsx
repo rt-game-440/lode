@@ -20,6 +20,7 @@ import type { Draft, Message, Pending, ToolCall, ToolResult } from '../../api/ag
 import { Button, Spinner } from '../../components/ui'
 import { basename } from '../../lib/paths'
 import { useAgent } from '../../stores/agent'
+import { splitQuote } from '../../stores/agentDraft'
 import { findByPath, useVault } from '../../stores/vault'
 import { openNote, openWikiLink } from '../actions'
 import { Markdown } from './Markdown'
@@ -169,7 +170,7 @@ export function MessageView({ m, results, running }: { m: Message; results: Map<
             ))}
           </div>
         )}
-        {text && <div className="msg-bubble">{text}</div>}
+        {text && <UserBubble text={text} />}
       </div>
     )
   }
@@ -272,6 +273,17 @@ function Diff({ lines }: { lines: NonNullable<Pending['preview']['diff']> }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** 用户消息：开头的引用块（选中文字后“问助手”带来的，#73）单独显示成引用样式。 */
+function UserBubble({ text }: { text: string }) {
+  const { quote, body } = splitQuote(text)
+  return (
+    <div className="msg-bubble">
+      {quote !== null && <blockquote className="msg-quote">{quote}</blockquote>}
+      {body}
     </div>
   )
 }

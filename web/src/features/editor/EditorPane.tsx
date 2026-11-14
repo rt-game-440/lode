@@ -28,6 +28,7 @@ import { bodyStart } from './cm/appearance'
 import { FormatToolbar } from './FormatToolbar'
 import { TocRail } from './TocRail'
 import { MobileToolbar } from './MobileToolbar'
+import { SelectionToolbar } from './SelectionToolbar'
 import './editor.css'
 
 const SAVE_DELAY = 500
@@ -354,6 +355,7 @@ export function EditorPane({ id, mobile }: { id: string; mobile: boolean }) {
         )}
       </div>
       <AppearancePanelHost mobile={mobile} />
+      {showEditor && <SelectionToolbar view={view} mobile={mobile} browse={browse} noteId={id} />}
       {mobile && (
         <MobileToolbar
           view={browse ? null : view}
