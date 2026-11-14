@@ -141,7 +141,7 @@ describe('页面路径', () => {
 
 describe('本机存储按工作空间区分', () => {
   it('localStorage 键名：默认工作空间沿用原键名，其他加 :<id>', () => {
-    expect(WORKSPACE_STORAGE).toEqual({ recent: 'lode.recent', expanded: 'lode.expanded', agentChat: 'lode.agent.chat' })
+    expect(WORKSPACE_STORAGE).toEqual({ recent: 'lode.recent', expanded: 'lode.expanded', agentChat: 'lode.agent.chat', readPos: 'lode.readpos' })
     expect(storageKey(WORKSPACE_STORAGE.recent, DEFAULT_WORKSPACE)).toBe('lode.recent')
     expect(storageKey(WORKSPACE_STORAGE.expanded, DEFAULT_WORKSPACE)).toBe('lode.expanded')
     expect(storageKey(WORKSPACE_STORAGE.agentChat, DEFAULT_WORKSPACE)).toBe('lode.agent.chat')
