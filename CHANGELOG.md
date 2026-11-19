@@ -2,7 +2,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [v0.3.0] - 2026-11-19
 
 ### 新增
 
@@ -14,6 +14,7 @@
 - 从本地文档导入笔记：侧栏“导入笔记”和文件树右键菜单，可选多个文件或整个文件夹；也可以直接把文件或文件夹拖进窗口。（#67）
 - 编辑器里的 Markdown 表格在光标不在表格内时渲染成真正的表格。（#68）
 - 笔记页“仅浏览”模式（Ctrl+Shift+E），设置里可设为打开笔记时默认仅浏览。（#69）
+- 新增 `scripts/ci.sh` / `.ps1`：本地运行与 GitHub CI 相同的检查（Go vet/test/govulncheck、前端检查、构建、Playwright 冒烟等）。（#82）
 
 ## [v0.2.0] - 2026-11-11
 
